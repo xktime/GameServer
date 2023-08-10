@@ -1,4 +1,4 @@
-module server_demo
+module GameServer
 
 go 1.20
 

@@ -2,36 +2,40 @@ package main
 
 import (
 	"fmt"
-	"net"
+	"github.com/aceld/zinx/ziface"
+	"github.com/aceld/zinx/znet"
 	"time"
 )
 
-func main() {
-	fmt.Println("Client start")
-	time.Sleep(1 * time.Second)
-	// 连接远程服务器 得到conn
-	conn, err := net.Dial("tcp", "127.0.0.1:8999")
-	if err != nil {
-		fmt.Println("client start err, exit")
-		return
-	}
-
-	// 调用Write方法写入数据
+// 客户端自定义业务
+func pingLoop(conn ziface.IConnection) {
 	for {
-		_, err := conn.Write([]byte("hello"))
+		err := conn.SendMsg(1, []byte("Ping...Ping...Ping...[FromClient]"))
 		if err != nil {
-			fmt.Println("write conn err", err)
-			return
+			fmt.Println(err)
+			break
 		}
 
-		buf := make([]byte, 512)
-		cnt, err := conn.Read(buf)
-		if err != nil {
-			fmt.Println("read buf err", err)
-			return
-		}
-		fmt.Printf("server call back:%s,cnt=%d \n", buf, cnt)
 		time.Sleep(1 * time.Second)
-
 	}
+}
+
+// 创建连接的时候执行
+func onClientStart(conn ziface.IConnection) {
+	fmt.Println("onClientStart is Called ... ")
+	go pingLoop(conn)
+}
+
+func main() {
+	//创建Client客户端
+	client := znet.NewClient("127.0.0.1", 8999)
+
+	//设置链接建立成功后的钩子函数
+	client.SetOnConnStart(onClientStart)
+
+	//启动客户端
+	client.Start()
+
+	//防止进程退出，等待中断信号
+	select {}
 }
