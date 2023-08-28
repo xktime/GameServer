@@ -17,7 +17,7 @@ func OnTestLogin(conn ziface.IConnection) {
 // 客户端自定义业务
 func testLogin(conn ziface.IConnection) {
 	for {
-		var login messages.Login
+		var login messages.LoginMessage
 		login.ServerId = 15
 		login.Account = 123
 		output, _ := json.Marshal(&login)

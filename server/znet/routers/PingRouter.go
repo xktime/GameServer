@@ -15,8 +15,9 @@ type PingRouter struct {
 
 // Ping Handle MsgId=1的路由处理方法
 func (r *PingRouter) Handle(request ziface.IRequest) {
+	// todo 要根据msgId转发到对应的模块处理
 	//读取客户端的数据
-	var login messages.Login
+	var login messages.LoginMessage
 	err := json.Unmarshal(request.GetData(), &login)
 	if err != nil {
 		fmt.Println("格式化异常:", request.GetData())

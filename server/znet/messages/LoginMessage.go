@@ -1,6 +1,6 @@
 package messages
 
-type Login struct {
+type LoginMessage struct {
 	ServerId int
 	Account  int
 }
