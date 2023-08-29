@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	// todo 加载方式要修改 单例
+	//todo 加载方式要修改 单例
 	// 加载配置
 	new(common.Config).Load()
 	// 加载数据库
