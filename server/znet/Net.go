@@ -8,7 +8,7 @@ import (
 type Net struct {
 }
 
-func (n *Net) Load() {
+func Load() {
 	//1 创建一个server服务
 	s := znet.NewServer()
 

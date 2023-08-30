@@ -5,10 +5,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Config struct {
+func Load() {
+	loadConfig()
 }
 
-func (n *Config) Load() {
+func loadConfig() {
 	viper.AddConfigPath("$.")
 	viper.AddConfigPath("conf")
 	viper.SetConfigName("config")

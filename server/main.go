@@ -7,11 +7,13 @@ import (
 )
 
 func main() {
-	//todo 加载方式要修改 单例
+	// todo 加载后面要统一处理
 	// 加载配置
-	new(common.Config).Load()
+	common.Load()
 	// 加载数据库
-	new(db.DBManager).Load()
+	db.Load()
+	// todo znet Load会阻塞 停止之后才会执行之后的逻辑
 	// 加载znet
-	new(znet.Net).Load()
+	znet.Load()
+
 }

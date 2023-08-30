@@ -19,8 +19,11 @@ func (manager *MongoManager) Load() {
 		panic(err)
 	}
 	manager.client = client
-	usersCollection := client.Database("testing").Collection("users")
-	user := bson.D{{"fullName", "User 1"}, {"age", 22}}
+}
+
+func (manager *MongoManager) Insert() {
+	usersCollection := manager.client.Database("testing").Collection("users")
+	user := bson.D{{"fullName", "User 1"}, {"age", 70}}
 	result, err := usersCollection.InsertOne(context.TODO(), user)
 	if err != nil {
 		panic(err)

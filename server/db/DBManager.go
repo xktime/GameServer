@@ -3,15 +3,34 @@ package db
 import (
 	"fmt"
 	"github.com/spf13/viper"
+	"sync"
 )
 
-type DBManager struct {
+type DB struct {
 	MongoClient MongoManager `mapstructure:"mongo"`
 }
 
-func (manager *DBManager) Load() {
+var (
+	mu       sync.Mutex
+	instance *DB
+)
+
+func GetDBInstance() *DB {
+	if instance == nil {
+		mu.Lock()
+		defer mu.Unlock()
+		if instance == nil {
+			instance = &DB{}
+		}
+	}
+	return instance
+}
+
+func Load() {
+	manager := GetDBInstance()
 	if err := viper.Unmarshal(&manager); err != nil {
 		fmt.Printf("Error Unmarshal dbManager, %s", err)
 	}
+	// 加载mongo
 	manager.MongoClient.Load()
 }
