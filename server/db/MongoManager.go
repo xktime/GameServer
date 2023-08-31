@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
@@ -37,9 +38,10 @@ func (manager *MongoManager) InsertOne(db, collection string, document interface
 	return result
 }
 
-func (manager *MongoManager) FindOne(db, collection string, filter interface{}) *mongo.Cursor {
+func (manager *MongoManager) FindOne(db, collection string, filter interface{}) interface{} {
+	var result bson.M
 	usersCollection := manager.client.Database(db).Collection(collection)
-	result, err := usersCollection.Find(context.TODO(), filter)
+	err := usersCollection.FindOne(context.TODO(), filter).Decode(&result)
 	if err != nil {
 		panic(err)
 	}

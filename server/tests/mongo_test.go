@@ -17,8 +17,8 @@ func TestMongo(t *testing.T) {
 	// 加载数据库
 	db.Load()
 
-	result := db.GetDBInstance().MongoClient.InsertOne("testing", "users", bson.D{{"fullName", "User 1"}, {"age", 89}})
+	result := db.GetDBInstance().MongoClient.InsertOne("testing", "users", bson.D{{"fullName", "User 2"}, {"age", 89}})
 	fmt.Println("inset:", result.InsertedID)
-	findResult := db.GetDBInstance().MongoClient.FindOne("testing", "users", bson.D{{"fullName", "User 1"}})
+	findResult := db.GetDBInstance().MongoClient.FindOne("testing", "users", bson.D{{"fullName", "User 2"}})
 	fmt.Println("findResult:", findResult)
 }
