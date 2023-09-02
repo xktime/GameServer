@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	// todo 加载后面要统一处理
+	//// todo 加载后面要统一处理
 	// 加载配置
 	common.Load()
 	// 加载数据库

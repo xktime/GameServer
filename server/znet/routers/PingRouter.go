@@ -17,11 +17,11 @@ type PingRouter struct {
 func (r *PingRouter) Handle(request ziface.IRequest) {
 	// todo 要根据msgId转发到对应的模块处理
 	//读取客户端的数据
-	var login messages.LoginMessage
-	err := json.Unmarshal(request.GetData(), &login)
+	message := messages.GetMessage(request.GetMsgID())
+	err := json.Unmarshal(request.GetData(), &message)
 	if err != nil {
 		fmt.Println("格式化异常:", request.GetData())
 		return
 	}
-	fmt.Println("recv from client : msgId=", request.GetMsgID(), ", serverId=", login.ServerId, ", Account=", login.Account)
+	fmt.Println("recv from client : msgId=", request.GetMsgID(), ", serverId=", message)
 }
