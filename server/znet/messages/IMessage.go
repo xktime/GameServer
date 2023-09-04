@@ -1,14 +1,16 @@
 package messages
 
+type MessageId uint32
+
 const (
-	LOGIN = 1
+	LOGIN MessageId = 1
 )
 
 type IMessage interface {
-	GetMessageId() uint32
+	GetMessageId() MessageId
 }
 
-func GetMessage(messageId uint32) IMessage {
+func GetMessage(messageId MessageId) IMessage {
 	// todo 双向绑定有点蠢
 	switch messageId {
 	case LOGIN:

@@ -35,7 +35,7 @@ func testLogin(conn ziface.IConnection) {
 		login.ServerId = 15
 		login.Account = 123
 		output, _ := json.Marshal(&login)
-		err := conn.SendMsg(login.GetMessageId(), output)
+		err := conn.SendMsg(uint32(login.GetMessageId()), output)
 		if err != nil {
 			fmt.Println(err)
 			break

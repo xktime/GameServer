@@ -5,6 +5,6 @@ type LoginMessage struct {
 	Account  int
 }
 
-func (login *LoginMessage) GetMessageId() uint32 {
+func (login *LoginMessage) GetMessageId() MessageId {
 	return LOGIN
 }
