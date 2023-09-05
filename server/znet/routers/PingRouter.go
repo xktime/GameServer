@@ -12,10 +12,8 @@ type PingRouter struct {
 	znet.BaseRouter
 }
 
-// Ping Handle MsgId=1的路由处理方法
+// Ping Handle 路由处理方法
 func (r *PingRouter) Handle(request ziface.IRequest) {
-	// todo 要根据msgId转发到对应的模块处理
-	//读取客户端的数据
 	err := messages.DoAction(messages.MessageId(request.GetMsgID()), request.GetData())
 	if err != nil {
 		fmt.Println("执行异常:", request.GetData())

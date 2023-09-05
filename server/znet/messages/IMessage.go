@@ -2,6 +2,7 @@ package messages
 
 import (
 	"GameServer/server/common/Tools"
+	"encoding/json"
 	"fmt"
 )
 
@@ -13,7 +14,7 @@ const (
 
 type IMessage interface {
 	GetMessageId() MessageId
-	DoAction(data []byte) error
+	DoAction() error
 }
 
 func DoAction(messageId MessageId, data []byte) error {
@@ -26,9 +27,14 @@ func DoAction(messageId MessageId, data []byte) error {
 	default:
 		return nil
 	}
-	return message.DoAction(data)
+	err := json.Unmarshal(data, &message)
+	if err != nil {
+		return err
+	}
+	return message.DoAction()
 }
 
+// Load todo 用反射方式加载或自注册解决双向绑定
 func Load() {
 	structList := Tools.GetStructListByDir("./server/znet/messages/")
 	fmt.Print(structList)

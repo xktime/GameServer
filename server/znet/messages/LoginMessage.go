@@ -1,7 +1,6 @@
 package messages
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -14,11 +13,7 @@ func (login *LoginMessage) GetMessageId() MessageId {
 	return LOGIN
 }
 
-func (login *LoginMessage) DoAction(data []byte) error {
-	err := json.Unmarshal(data, &login)
-	if err != nil {
-		return err
-	}
+func (login *LoginMessage) DoAction() error {
 	fmt.Println("DoAction", login)
 	return nil
 }
