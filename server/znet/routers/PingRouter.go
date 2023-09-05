@@ -2,7 +2,6 @@ package routers
 
 import (
 	"GameServer/server/znet/messages"
-	"encoding/json"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"github.com/aceld/zinx/znet"
@@ -17,11 +16,10 @@ type PingRouter struct {
 func (r *PingRouter) Handle(request ziface.IRequest) {
 	// todo 要根据msgId转发到对应的模块处理
 	//读取客户端的数据
-	message := messages.GetMessage(messages.MessageId(request.GetMsgID()))
-	err := json.Unmarshal(request.GetData(), &message)
+	err := messages.DoAction(messages.MessageId(request.GetMsgID()), request.GetData())
 	if err != nil {
-		fmt.Println("格式化异常:", request.GetData())
+		fmt.Println("执行异常:", request.GetData())
 		return
 	}
-	fmt.Println("recv from client : msgId=", request.GetMsgID(), ", serverId=", message)
+	fmt.Println("recv from client : msgId=", request.GetMsgID())
 }
