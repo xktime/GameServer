@@ -26,6 +26,10 @@ func GetDBInstance() *DB {
 	return instance
 }
 
+func GetMongoClient() *MongoManager {
+	return &GetDBInstance().MongoClient
+}
+
 func Load() {
 	manager := GetDBInstance()
 	if err := viper.Unmarshal(&manager); err != nil {

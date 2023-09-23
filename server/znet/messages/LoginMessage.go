@@ -1,19 +1,26 @@
 package messages
 
 import (
+	"GameServer/server/db"
 	"fmt"
 )
 
-type LoginMessage struct {
+type ReqLoginMessage struct {
 	ServerId int
 	Account  int
 }
 
-func (login *LoginMessage) GetMessageId() MessageId {
+func (login *ReqLoginMessage) GetMessageId() MessageId {
 	return LOGIN
 }
 
-func (login *LoginMessage) DoAction() error {
-	fmt.Println("DoAction", login)
+func (login *ReqLoginMessage) DoAction() error {
+	fmt.Println("receive login message")
+	user, err := db.FindByAccount(login.Account)
+	if err != nil {
+		db.RegisterUser(login.ServerId, login.Account)
+		return err
+	}
+	fmt.Println(user)
 	return nil
 }

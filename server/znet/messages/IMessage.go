@@ -18,11 +18,10 @@ type IMessage interface {
 }
 
 func DoAction(messageId MessageId, data []byte) error {
-	// todo 双向绑定有点蠢
 	var message IMessage
 	switch messageId {
 	case LOGIN:
-		message = &LoginMessage{}
+		message = &ReqLoginMessage{}
 		break
 	default:
 		return nil

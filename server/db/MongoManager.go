@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
@@ -29,21 +28,12 @@ func (manager *MongoManager) Load() {
 	fmt.Println("Connected to MongoDB!")
 }
 
-func (manager *MongoManager) InsertOne(db, collection string, document interface{}) *mongo.InsertOneResult {
+func (manager *MongoManager) InsertOne(db, collection string, document interface{}) (*mongo.InsertOneResult, error) {
 	usersCollection := manager.client.Database(db).Collection(collection)
-	result, err := usersCollection.InsertOne(context.TODO(), document)
-	if err != nil {
-		panic(err)
-	}
-	return result
+	return usersCollection.InsertOne(context.TODO(), document)
 }
 
-func (manager *MongoManager) FindOne(db, collection string, filter interface{}) interface{} {
-	var result bson.M
+func (manager *MongoManager) FindOne(db, collection string, filter interface{}) *mongo.SingleResult {
 	usersCollection := manager.client.Database(db).Collection(collection)
-	err := usersCollection.FindOne(context.TODO(), filter).Decode(&result)
-	if err != nil {
-		panic(err)
-	}
-	return result
+	return usersCollection.FindOne(context.TODO(), filter)
 }
