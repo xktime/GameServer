@@ -4,6 +4,7 @@ import (
 	"GameServer/server/common/Tools"
 	"encoding/json"
 	"fmt"
+	"os"
 )
 
 type MessageId uint32
@@ -34,7 +35,10 @@ func DoAction(messageId MessageId, data []byte) error {
 }
 
 // Load todo 用反射方式加载或自注册解决双向绑定
-func Load() {
-	structList := Tools.GetStructListByDir("./server/znet/messages/")
+func _() {
+	pwd, _ := os.Getwd()
+	structList := Tools.GetStructListByDir(pwd)
+	// todo 根据返回结构体初始化对象
+	// todo 反射messageId类型，缓存进map
 	fmt.Print(structList)
 }

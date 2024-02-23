@@ -12,7 +12,7 @@ func GetStructListByDir(dirPath string) []string {
 	files, _ := os.ReadDir(dirPath)
 	var result []string
 	for _, file := range files {
-		structList, _ := GetStructListByFile(dirPath + file.Name())
+		structList, _ := GetStructListByFile(dirPath + "\\" + file.Name())
 		result = append(result, structList...)
 	}
 	return result
