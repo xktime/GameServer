@@ -12,13 +12,28 @@ func GetStructListByDir(dirPath string) []string {
 	files, _ := os.ReadDir(dirPath)
 	var result []string
 	for _, file := range files {
-		structList, _ := GetStructListByFile(dirPath + "\\" + file.Name())
+		structList, _ := GetStructInfoByFile(dirPath + "\\" + file.Name())
 		result = append(result, structList...)
 	}
 	return result
 }
 
-func GetStructListByFile(filePath string) ([]string, map[string][]string) {
+// GetMethodsByDir
+// result <structName, methods>
+// /**
+func GetMethodsByDir(dirPath string) map[string][]string {
+	files, _ := os.ReadDir(dirPath)
+	result := make(map[string][]string, 8)
+	for _, file := range files {
+		_, methodMap := GetStructInfoByFile(dirPath + "\\" + file.Name())
+		for s := range methodMap {
+			result[s] = methodMap[s]
+		}
+	}
+	return result
+}
+
+func GetStructInfoByFile(filePath string) ([]string, map[string][]string) {
 	src, _ := os.ReadFile(filePath)
 	fSet := token.NewFileSet()
 	f, err := parser.ParseFile(fSet, "", src, 0)
