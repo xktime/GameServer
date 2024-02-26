@@ -31,9 +31,10 @@ func TestOnTestLogin(t *testing.T) {
 
 func testLogin(conn ziface.IConnection) {
 	for {
-		var login messages.ReqLoginMessage
-		login.ServerId = 15
-		login.Account = 123
+		login := &messages.ReqLoginMessage{
+			ServerId: 15,
+			Account:  123,
+		}
 		output, _ := json.Marshal(&login)
 		err := conn.SendMsg(uint32(login.GetMessageId()), output)
 		if err != nil {
