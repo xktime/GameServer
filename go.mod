@@ -6,6 +6,7 @@ require (
 	github.com/aceld/zinx v1.2.0
 	github.com/spf13/viper v1.16.0
 	go.mongodb.org/mongo-driver v1.12.1
+	google.golang.org/protobuf v1.30.0
 )
 
 require (

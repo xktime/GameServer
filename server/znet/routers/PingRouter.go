@@ -2,6 +2,7 @@ package routers
 
 import (
 	"GameServer/server/znet/messages"
+	"GameServer/server/znet/messages/proto"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"github.com/aceld/zinx/znet"
@@ -14,7 +15,7 @@ type PingRouter struct {
 
 // Ping Handle 路由处理方法
 func (r *PingRouter) Handle(request ziface.IRequest) {
-	err := messages.DoAction(messages.MessageId(request.GetMsgID()), request.GetData())
+	err := messages.DoAction(proto.MessageId(request.GetMsgID()), request.GetData())
 	if err != nil {
 		fmt.Println("执行异常:", request.GetData())
 		return

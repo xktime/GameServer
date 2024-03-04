@@ -2,6 +2,7 @@ package messages
 
 import (
 	"GameServer/server/db"
+	"GameServer/server/znet/messages/proto"
 	"fmt"
 )
 
@@ -10,8 +11,8 @@ type ReqLoginMessage struct {
 	Account  int
 }
 
-func (login *ReqLoginMessage) GetMessageId() MessageId {
-	return LOGIN
+func (login *ReqLoginMessage) GetMessageId() proto.MessageId {
+	return proto.MessageId_LOGIN
 }
 
 func (login *ReqLoginMessage) DoAction() error {

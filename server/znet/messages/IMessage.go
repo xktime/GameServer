@@ -2,24 +2,19 @@ package messages
 
 import (
 	"GameServer/server/common/Tools"
+	"GameServer/server/znet/messages/proto"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 )
 
-type MessageId uint32
-
-const (
-	LOGIN MessageId = 1
-)
-
 type IMessage interface {
-	GetMessageId() MessageId
+	GetMessageId() proto.MessageId
 	DoAction() error
 }
 
-func DoAction(messageId MessageId, data []byte) error {
+func DoAction(messageId proto.MessageId, data []byte) error {
 	var message = getMessage(messageId)
 	if message == nil {
 		return errors.New("no such message")
@@ -31,9 +26,9 @@ func DoAction(messageId MessageId, data []byte) error {
 	return message.DoAction()
 }
 
-func getMessage(messageId MessageId) IMessage {
+func getMessage(messageId proto.MessageId) IMessage {
 	switch messageId {
-	case LOGIN:
+	case proto.MessageId_LOGIN:
 		return &ReqLoginMessage{}
 	default:
 		return nil
