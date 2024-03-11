@@ -36,6 +36,7 @@ func testLogin(conn ziface.IConnection) {
 			Account:  123,
 		}
 		output, _ := json.Marshal(&login)
+		// todo: 请求消息需要封装，只需要传消息结构就行了，messageId不要分开传
 		err := conn.SendMsg(uint32(login.GetMessageId()), output)
 		if err != nil {
 			fmt.Println(err)

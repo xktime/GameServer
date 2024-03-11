@@ -1,12 +1,9 @@
 package messages
 
 import (
-	"GameServer/server/common/Tools"
 	"GameServer/server/znet/messages/proto"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
 )
 
 type IMessage interface {
@@ -14,6 +11,7 @@ type IMessage interface {
 	DoAction() error
 }
 
+// DoAction todo: messageId和data耦合性太强了（方案：GetMessageId要非重复；一次配置，不需要getMessage配一次，结构体内也配一次）
 func DoAction(messageId proto.MessageId, data []byte) error {
 	var message = getMessage(messageId)
 	if message == nil {
@@ -33,13 +31,4 @@ func getMessage(messageId proto.MessageId) IMessage {
 	default:
 		return nil
 	}
-}
-
-// Load todo 用反射方式加载或自注册解决双向绑定
-func _() {
-	pwd, _ := os.Getwd()
-	structList := Tools.GetStructListByDir(pwd)
-	// todo 根据返回结构体初始化对象
-	// todo 反射messageId类型，缓存进map
-	fmt.Print(structList)
 }
