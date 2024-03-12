@@ -2,7 +2,6 @@ package tests
 
 import (
 	"GameServer/server/znet/messages"
-	"encoding/json"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"github.com/aceld/zinx/znet"
@@ -35,14 +34,11 @@ func testLogin(conn ziface.IConnection) {
 			ServerId: 15,
 			Account:  123,
 		}
-		output, _ := json.Marshal(&login)
-		// todo: 请求消息需要封装，只需要传消息结构就行了，messageId不要分开传
-		err := conn.SendMsg(uint32(login.GetMessageId()), output)
+		err := messages.SendMessage(conn, login)
 		if err != nil {
 			fmt.Println(err)
 			break
 		}
-
 		time.Sleep(1 * time.Second)
 	}
 }

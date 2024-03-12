@@ -4,6 +4,7 @@ import (
 	"GameServer/server/znet/messages/proto"
 	"encoding/json"
 	"errors"
+	"github.com/aceld/zinx/ziface"
 )
 
 type IMessage interface {
@@ -22,6 +23,16 @@ func DoAction(messageId proto.MessageId, data []byte) error {
 		return err
 	}
 	return message.DoAction()
+}
+
+// SendMessage 消息发送：客户端=》服务器
+func SendMessage(conn ziface.IConnection, message IMessage) error {
+	output, _ := json.Marshal(&message)
+	err := conn.SendMsg(uint32(message.GetMessageId()), output)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func getMessage(messageId proto.MessageId) IMessage {
