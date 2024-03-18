@@ -2,23 +2,23 @@ package routers
 
 import (
 	"GameServer/server/znet/messages"
-	"GameServer/server/znet/messages/proto"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"github.com/aceld/zinx/znet"
 )
 
-// PingRouter MsgId=1的路由
-type PingRouter struct {
+// ServerRouter MsgId=1的路由
+type ServerRouter struct {
 	znet.BaseRouter
 }
 
-// Ping Handle 路由处理方法
-func (r *PingRouter) Handle(request ziface.IRequest) {
-	err := messages.DoAction(proto.MessageId(request.GetMsgID()), request.GetData())
+// ServerRouter Handle 路由处理方法
+func (r *ServerRouter) Handle(request ziface.IRequest) {
+	err := messages.DoAction(request)
 	if err != nil {
 		fmt.Println("执行异常:", request.GetData())
 		return
 	}
 	fmt.Println("recv from client : msgId=", request.GetMsgID())
+
 }

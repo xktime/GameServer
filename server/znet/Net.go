@@ -12,8 +12,9 @@ func Load() {
 	//1 创建一个server服务
 	s := znet.NewServer()
 
+	// todo: 这里的msgID跟路由绑定，需要整理proto.MessageId
 	//2 配置路由
-	s.AddRouter(1, &routers.PingRouter{})
+	s.AddRouter(1, &routers.ServerRouter{})
 
 	//3 启动服务
 	s.Serve()

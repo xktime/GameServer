@@ -9,11 +9,13 @@ import (
 
 type IMessage interface {
 	GetMessageId() proto.MessageId
-	DoAction() error
+	DoAction(request ziface.IRequest) error
 }
 
 // DoAction todo: messageId和data耦合性太强了（方案：GetMessageId要非重复；一次配置，不需要getMessage配一次，结构体内也配一次）
-func DoAction(messageId proto.MessageId, data []byte) error {
+func DoAction(request ziface.IRequest) error {
+	messageId := proto.MessageId(request.GetMsgID())
+	data := request.GetData()
 	var message = getMessage(messageId)
 	if message == nil {
 		return errors.New("no such message")
@@ -22,7 +24,7 @@ func DoAction(messageId proto.MessageId, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return message.DoAction()
+	return message.DoAction(request)
 }
 
 // SendMessage 消息发送：客户端=》服务器
