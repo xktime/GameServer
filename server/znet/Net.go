@@ -1,7 +1,8 @@
 package znet
 
 import (
-	"GameServer/server/znet/routers"
+	"GameServer/server/znet/messages/proto"
+	ServerToClient "GameServer/server/znet/routers/ClientToServer"
 	"github.com/aceld/zinx/znet"
 )
 
@@ -12,9 +13,8 @@ func Load() {
 	//1 创建一个server服务
 	s := znet.NewServer()
 
-	// todo: 这里的msgID跟路由绑定，需要整理proto.MessageId
 	//2 配置路由
-	s.AddRouter(1, &routers.ServerRouter{})
+	s.AddRouter(uint32(proto.C2SMessageId_C2S_LOGIN), &ServerToClient.C2SLogin{})
 
 	//3 启动服务
 	s.Serve()

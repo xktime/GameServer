@@ -20,60 +20,229 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type MessageId int32
+type C2SMessageId int32
 
 const (
-	MessageId_NULL  MessageId = 0
-	MessageId_LOGIN MessageId = 1
+	C2SMessageId_C2S_NULL  C2SMessageId = 0
+	C2SMessageId_C2S_LOGIN C2SMessageId = 1
 )
 
-// Enum value maps for MessageId.
+// Enum value maps for C2SMessageId.
 var (
-	MessageId_name = map[int32]string{
-		0: "NULL",
-		1: "LOGIN",
+	C2SMessageId_name = map[int32]string{
+		0: "C2S_NULL",
+		1: "C2S_LOGIN",
 	}
-	MessageId_value = map[string]int32{
-		"NULL":  0,
-		"LOGIN": 1,
+	C2SMessageId_value = map[string]int32{
+		"C2S_NULL":  0,
+		"C2S_LOGIN": 1,
 	}
 )
 
-func (x MessageId) Enum() *MessageId {
-	p := new(MessageId)
+func (x C2SMessageId) Enum() *C2SMessageId {
+	p := new(C2SMessageId)
 	*p = x
 	return p
 }
 
-func (x MessageId) String() string {
+func (x C2SMessageId) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (MessageId) Descriptor() protoreflect.EnumDescriptor {
+func (C2SMessageId) Descriptor() protoreflect.EnumDescriptor {
 	return file_BaseMessage_proto_enumTypes[0].Descriptor()
 }
 
-func (MessageId) Type() protoreflect.EnumType {
+func (C2SMessageId) Type() protoreflect.EnumType {
 	return &file_BaseMessage_proto_enumTypes[0]
 }
 
-func (x MessageId) Number() protoreflect.EnumNumber {
+func (x C2SMessageId) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use MessageId.Descriptor instead.
-func (MessageId) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use C2SMessageId.Descriptor instead.
+func (C2SMessageId) EnumDescriptor() ([]byte, []int) {
 	return file_BaseMessage_proto_rawDescGZIP(), []int{0}
+}
+
+type S2CMessageId int32
+
+const (
+	S2CMessageId_S2C_NULL  S2CMessageId = 0
+	S2CMessageId_S2C_LOGIN S2CMessageId = 1
+)
+
+// Enum value maps for S2CMessageId.
+var (
+	S2CMessageId_name = map[int32]string{
+		0: "S2C_NULL",
+		1: "S2C_LOGIN",
+	}
+	S2CMessageId_value = map[string]int32{
+		"S2C_NULL":  0,
+		"S2C_LOGIN": 1,
+	}
+)
+
+func (x S2CMessageId) Enum() *S2CMessageId {
+	p := new(S2CMessageId)
+	*p = x
+	return p
+}
+
+func (x S2CMessageId) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (S2CMessageId) Descriptor() protoreflect.EnumDescriptor {
+	return file_BaseMessage_proto_enumTypes[1].Descriptor()
+}
+
+func (S2CMessageId) Type() protoreflect.EnumType {
+	return &file_BaseMessage_proto_enumTypes[1]
+}
+
+func (x S2CMessageId) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use S2CMessageId.Descriptor instead.
+func (S2CMessageId) EnumDescriptor() ([]byte, []int) {
+	return file_BaseMessage_proto_rawDescGZIP(), []int{1}
+}
+
+type ReqLogin struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ServerId uint32 `protobuf:"varint,1,opt,name=serverId,proto3" json:"serverId,omitempty"`
+	Account  string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+}
+
+func (x *ReqLogin) Reset() {
+	*x = ReqLogin{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_BaseMessage_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ReqLogin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReqLogin) ProtoMessage() {}
+
+func (x *ReqLogin) ProtoReflect() protoreflect.Message {
+	mi := &file_BaseMessage_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReqLogin.ProtoReflect.Descriptor instead.
+func (*ReqLogin) Descriptor() ([]byte, []int) {
+	return file_BaseMessage_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ReqLogin) GetServerId() uint32 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
+}
+
+func (x *ReqLogin) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
+type ResLogin struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// todo: 返回详细信息
+	ServerId uint32 `protobuf:"varint,1,opt,name=serverId,proto3" json:"serverId,omitempty"`
+	Account  string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+}
+
+func (x *ResLogin) Reset() {
+	*x = ResLogin{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_BaseMessage_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ResLogin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResLogin) ProtoMessage() {}
+
+func (x *ResLogin) ProtoReflect() protoreflect.Message {
+	mi := &file_BaseMessage_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResLogin.ProtoReflect.Descriptor instead.
+func (*ResLogin) Descriptor() ([]byte, []int) {
+	return file_BaseMessage_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ResLogin) GetServerId() uint32 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
+}
+
+func (x *ResLogin) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
 }
 
 var File_BaseMessage_proto protoreflect.FileDescriptor
 
 var file_BaseMessage_proto_rawDesc = []byte{
 	0x0a, 0x11, 0x42, 0x61, 0x73, 0x65, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2a, 0x20, 0x0a, 0x09, 0x4d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x64, 0x12, 0x08, 0x0a, 0x04, 0x4e, 0x55, 0x4c, 0x4c, 0x10,
-	0x00, 0x12, 0x09, 0x0a, 0x05, 0x4c, 0x4f, 0x47, 0x49, 0x4e, 0x10, 0x01, 0x42, 0x0a, 0x5a, 0x08,
-	0x2e, 0x2f, 0x3b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6f, 0x74, 0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x40, 0x0a, 0x08, 0x52, 0x65,
+	0x71, 0x4c, 0x6f, 0x67, 0x69, 0x6e, 0x12, 0x1a, 0x0a, 0x08, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72,
+	0x49, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x08, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72,
+	0x49, 0x64, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x22, 0x40, 0x0a, 0x08,
+	0x52, 0x65, 0x73, 0x4c, 0x6f, 0x67, 0x69, 0x6e, 0x12, 0x1a, 0x0a, 0x08, 0x73, 0x65, 0x72, 0x76,
+	0x65, 0x72, 0x49, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x08, 0x73, 0x65, 0x72, 0x76,
+	0x65, 0x72, 0x49, 0x64, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x2a, 0x2b,
+	0x0a, 0x0c, 0x43, 0x32, 0x53, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x64, 0x12, 0x0c,
+	0x0a, 0x08, 0x43, 0x32, 0x53, 0x5f, 0x4e, 0x55, 0x4c, 0x4c, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09,
+	0x43, 0x32, 0x53, 0x5f, 0x4c, 0x4f, 0x47, 0x49, 0x4e, 0x10, 0x01, 0x2a, 0x2b, 0x0a, 0x0c, 0x53,
+	0x32, 0x43, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x64, 0x12, 0x0c, 0x0a, 0x08, 0x53,
+	0x32, 0x43, 0x5f, 0x4e, 0x55, 0x4c, 0x4c, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x53, 0x32, 0x43,
+	0x5f, 0x4c, 0x4f, 0x47, 0x49, 0x4e, 0x10, 0x01, 0x42, 0x0a, 0x5a, 0x08, 0x2e, 0x2f, 0x3b, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -88,9 +257,13 @@ func file_BaseMessage_proto_rawDescGZIP() []byte {
 	return file_BaseMessage_proto_rawDescData
 }
 
-var file_BaseMessage_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_BaseMessage_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_BaseMessage_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_BaseMessage_proto_goTypes = []interface{}{
-	(MessageId)(0), // 0: proto.MessageId
+	(C2SMessageId)(0), // 0: proto.C2SMessageId
+	(S2CMessageId)(0), // 1: proto.S2CMessageId
+	(*ReqLogin)(nil),  // 2: proto.ReqLogin
+	(*ResLogin)(nil),  // 3: proto.ResLogin
 }
 var file_BaseMessage_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -105,19 +278,46 @@ func file_BaseMessage_proto_init() {
 	if File_BaseMessage_proto != nil {
 		return
 	}
+	if !protoimpl.UnsafeEnabled {
+		file_BaseMessage_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ReqLogin); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_BaseMessage_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ResLogin); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_BaseMessage_proto_rawDesc,
-			NumEnums:      1,
-			NumMessages:   0,
+			NumEnums:      2,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_BaseMessage_proto_goTypes,
 		DependencyIndexes: file_BaseMessage_proto_depIdxs,
 		EnumInfos:         file_BaseMessage_proto_enumTypes,
+		MessageInfos:      file_BaseMessage_proto_msgTypes,
 	}.Build()
 	File_BaseMessage_proto = out.File
 	file_BaseMessage_proto_rawDesc = nil

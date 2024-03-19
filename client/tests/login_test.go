@@ -2,7 +2,8 @@ package tests
 
 import (
 	"GameServer/server/znet/messages"
-	"GameServer/server/znet/routers"
+	"GameServer/server/znet/messages/proto"
+	"GameServer/server/znet/routers/ServerToClient"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"github.com/aceld/zinx/znet"
@@ -22,7 +23,7 @@ func TestOnTestLogin(t *testing.T) {
 	client.SetOnConnStart(onClientStart)
 
 	//设置消息读取路由
-	client.AddRouter(1, &routers.ClientRouter{})
+	client.AddRouter(uint32(proto.S2CMessageId_S2C_LOGIN), &ServerToClient.S2CLogin{})
 
 	//启动客户端
 	client.Start()
@@ -40,11 +41,11 @@ func onClientStart(conn ziface.IConnection) {
 
 func testLogin(conn ziface.IConnection) {
 	for {
-		login := &messages.ReqLoginMessage{
+		login := &proto.ReqLogin{
 			ServerId: 15,
-			Account:  123,
+			Account:  "123",
 		}
-		err := messages.SendMessage(conn, login)
+		err := messages.SendMessage(conn, uint32(proto.C2SMessageId_C2S_LOGIN), login)
 		if err != nil {
 			fmt.Println(err)
 			break
