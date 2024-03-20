@@ -45,7 +45,9 @@ func testLogin(conn ziface.IConnection) {
 			ServerId: 15,
 			Account:  "123",
 		}
-		err := messages.SendMessage(conn, uint32(proto.C2SMessageId_C2S_LOGIN), login)
+
+		message := messages.NewC2SMessage(proto.C2SMessageId_C2S_LOGIN, login)
+		err := messages.SendMessage(conn, message)
 		if err != nil {
 			fmt.Println(err)
 			break

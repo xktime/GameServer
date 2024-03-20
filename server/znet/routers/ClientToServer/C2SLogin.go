@@ -38,5 +38,6 @@ func (r *C2SLogin) Handle(request ziface.IRequest) {
 	}
 	fmt.Println(user)
 
-	err = messages.SendMessage(request.GetConnection(), uint32(proto.C2SMessageId_C2S_LOGIN), &proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()})
+	resMessage := messages.NewS2CMessage(proto.S2CMessageId_S2C_LOGIN, &proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()})
+	err = messages.SendMessage(request.GetConnection(), resMessage)
 }

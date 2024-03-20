@@ -6,7 +6,6 @@ import (
 	"github.com/aceld/zinx/znet"
 )
 
-// todo: 看一下这个基类源码，Handle这些映射是怎么实现的
 // S2CLogin 登录返回
 type S2CLogin struct {
 	znet.BaseRouter
