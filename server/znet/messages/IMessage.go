@@ -5,22 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type IMessage interface {
 	GetMessageId() uint32
-	GetMessage() interface{}
+	GetProtoMessage() ProtoMessage
 }
 
-// todo: message需要一个基类
-func NewC2SMessage(messageId proto.C2SMessageId, message interface{}) IMessage {
+type ProtoMessage interface {
+	ProtoReflect() protoreflect.Message
+}
+
+func NewC2SMessage(messageId proto.C2SMessageId, message ProtoMessage) IMessage {
 	return &C2SMessage{
 		MessageId: messageId,
 		Message:   message,
 	}
 }
 
-func NewS2CMessage(messageId proto.S2CMessageId, message interface{}) IMessage {
+func NewS2CMessage(messageId proto.S2CMessageId, message ProtoMessage) IMessage {
 	return &S2CMessage{
 		MessageId: messageId,
 		Message:   message,
@@ -28,18 +32,18 @@ func NewS2CMessage(messageId proto.S2CMessageId, message interface{}) IMessage {
 }
 
 // SendMessage 消息发送
-func SendMessage(conn ziface.IConnection, imessage IMessage) error {
-	messageId := imessage.GetMessageId()
+func SendMessage(conn ziface.IConnection, message IMessage) error {
+	messageId := message.GetMessageId()
 	if messageId == 0 {
 		return fmt.Errorf("no such messageId:%d", messageId)
 	}
 
-	message := imessage.GetMessage()
-	if message == nil {
-		return fmt.Errorf("no such message:%q", message)
+	protoMessage := message.GetProtoMessage()
+	if protoMessage == nil {
+		return fmt.Errorf("no such message:%q", protoMessage)
 	}
 
-	output, _ := json.Marshal(message)
+	output, _ := json.Marshal(protoMessage)
 	err := conn.SendMsg(messageId, output)
 	if err != nil {
 		return err
