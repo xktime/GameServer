@@ -10,7 +10,6 @@ func Load() {
 }
 
 func loadConfig() {
-	viper.AddConfigPath("$.")
 	viper.AddConfigPath("conf")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")

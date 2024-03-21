@@ -10,7 +10,6 @@ import (
 
 // 创建连接的时候执行
 func TestMongo(t *testing.T) {
-	// todo 加载路径适配
 	// 加载配置
 	common.Load()
 	// 加载数据库

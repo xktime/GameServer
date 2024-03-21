@@ -21,7 +21,6 @@ message ReqLogin {
 }
 
 message ResLogin {
-  // todo: 返回详细信息
   uint32 serverId = 1;
   string account = 2;
 }
