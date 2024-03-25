@@ -112,6 +112,7 @@ func (S2CMessageId) EnumDescriptor() ([]byte, []int) {
 	return file_BaseMessage_proto_rawDescGZIP(), []int{1}
 }
 
+// todo: 消息结构需要跟messageId绑定
 type ReqLogin struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -172,7 +173,6 @@ type ResLogin struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// todo: 返回详细信息
 	ServerId uint32 `protobuf:"varint,1,opt,name=serverId,proto3" json:"serverId,omitempty"`
 	Account  string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 }
