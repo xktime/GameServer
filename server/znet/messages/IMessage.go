@@ -1,14 +1,13 @@
 package messages
 
 import (
-	"GameServer/server/znet/messages/proto"
 	"encoding/json"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-type IMessage interface {
+type Message interface {
 	GetMessageId() uint32
 	GetProtoMessage() ProtoMessage
 }
@@ -17,22 +16,8 @@ type ProtoMessage interface {
 	ProtoReflect() protoreflect.Message
 }
 
-func NewC2SMessage(messageId proto.C2SMessageId, message ProtoMessage) IMessage {
-	return &C2SMessage{
-		MessageId: messageId,
-		Message:   message,
-	}
-}
-
-func NewS2CMessage(messageId proto.S2CMessageId, message ProtoMessage) IMessage {
-	return &S2CMessage{
-		MessageId: messageId,
-		Message:   message,
-	}
-}
-
 // SendMessage 消息发送
-func SendMessage(conn ziface.IConnection, message IMessage) error {
+func SendMessage(conn ziface.IConnection, message Message) error {
 	messageId := message.GetMessageId()
 	if messageId == 0 {
 		return fmt.Errorf("no such messageId:%d", messageId)

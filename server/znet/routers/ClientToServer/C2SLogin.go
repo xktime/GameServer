@@ -1,9 +1,10 @@
-package ServerToClient
+package ClientToServer
 
 import (
 	"GameServer/server/db"
 	"GameServer/server/znet/messages"
 	"GameServer/server/znet/messages/proto"
+	"GameServer/server/znet/routers/ServerToClient"
 	"encoding/json"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
@@ -13,6 +14,15 @@ import (
 // C2SLogin 请求登录
 type C2SLogin struct {
 	znet.BaseRouter
+	ProtoMessage proto.ReqLogin
+}
+
+func (r *C2SLogin) GetMessageId() uint32 {
+	return uint32(proto.C2SMessageId_C2S_LOGIN)
+}
+
+func (r *C2SLogin) GetProtoMessage() messages.ProtoMessage {
+	return &r.ProtoMessage
 }
 
 // C2SLogin Handle 路由处理方法
@@ -38,6 +48,8 @@ func (r *C2SLogin) Handle(request ziface.IRequest) {
 	}
 	fmt.Println(user)
 
-	resMessage := messages.NewS2CMessage(proto.S2CMessageId_S2C_LOGIN, &proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()})
+	resMessage := &ServerToClient.S2CLogin{
+		Message: proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()},
+	}
 	err = messages.SendMessage(request.GetConnection(), resMessage)
 }
