@@ -15,8 +15,5 @@ func FindByAccount(account string) (User, error) {
 
 func RegisterUser(ServerId uint32, account string) error {
 	_, err := GetMongoClient().InsertOne("game", "users", &User{ServerId, account})
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }

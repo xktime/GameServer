@@ -29,9 +29,5 @@ func SendMessage(conn ziface.IConnection, message Message) error {
 	}
 
 	output, _ := json.Marshal(protoMessage)
-	err := conn.SendMsg(messageId, output)
-	if err != nil {
-		return err
-	}
-	return nil
+	return conn.SendMsg(messageId, output)
 }

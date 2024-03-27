@@ -51,5 +51,5 @@ func (r *C2SLogin) Handle(request ziface.IRequest) {
 	resMessage := &ServerToClient.S2CLogin{
 		Message: proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()},
 	}
-	err = messages.SendMessage(request.GetConnection(), resMessage)
+	_ = messages.SendMessage(request.GetConnection(), resMessage)
 }

@@ -3,8 +3,8 @@ package tests
 import (
 	"GameServer/server/znet/messages"
 	"GameServer/server/znet/messages/proto"
+	"GameServer/server/znet/routers"
 	"GameServer/server/znet/routers/ClientToServer"
-	"GameServer/server/znet/routers/ServerToClient"
 	"fmt"
 	"github.com/aceld/zinx/ziface"
 	"github.com/aceld/zinx/znet"
@@ -23,10 +23,8 @@ func TestOnTestLogin(t *testing.T) {
 	//设置链接建立成功后的钩子函数
 	client.SetOnConnStart(onClientStart)
 
-	// todo 遍历反射设置
 	//设置消息读取路由
-	login := &ServerToClient.S2CLogin{}
-	client.AddRouter(login.GetMessageId(), login)
+	routers.GetInstance().RegisterS2CRouters(client)
 
 	//启动客户端
 	client.Start()
