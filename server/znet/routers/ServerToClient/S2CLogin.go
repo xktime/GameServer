@@ -11,7 +11,7 @@ import (
 // S2CLogin 登录返回
 type S2CLogin struct {
 	znet.BaseRouter
-	Message proto.ResLogin
+	ProtoMessage proto.ResLogin
 }
 
 func (r *S2CLogin) GetMessageId() uint32 {
@@ -19,7 +19,7 @@ func (r *S2CLogin) GetMessageId() uint32 {
 }
 
 func (r *S2CLogin) GetProtoMessage() messages.ProtoMessage {
-	return &r.Message
+	return &r.ProtoMessage
 }
 
 // S2CLogin Handle 路由处理方法

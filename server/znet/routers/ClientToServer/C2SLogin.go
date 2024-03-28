@@ -49,7 +49,7 @@ func (r *C2SLogin) Handle(request ziface.IRequest) {
 	fmt.Println(user)
 
 	resMessage := &ServerToClient.S2CLogin{
-		Message: proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()},
+		ProtoMessage: proto.ResLogin{ServerId: message.GetServerId(), Account: message.GetAccount()},
 	}
 	_ = messages.SendMessage(request.GetConnection(), resMessage)
 }

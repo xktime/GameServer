@@ -23,7 +23,7 @@ func TestOnTestLogin(t *testing.T) {
 	//设置链接建立成功后的钩子函数
 	client.SetOnConnStart(onClientStart)
 
-	//设置消息读取路由
+	//监听服务器回复的消息
 	routers.GetInstance().RegisterS2CRouters(client)
 
 	//启动客户端
