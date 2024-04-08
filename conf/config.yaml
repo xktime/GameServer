@@ -1,2 +1,0 @@
-mongo:
-  uri: "mongodb://root:1234@localhost:27017/?serverSelectionTimeoutMS=5000;connectTimeoutMS=10000"
