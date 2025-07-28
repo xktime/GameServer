@@ -1,0 +1,11 @@
+{
+      "indexes": [
+        {
+          "collection": "User",
+          "create": [
+            { "keys": { "ServerId": 1, "OpenId": 1}, "unique": true },
+            { "keys": { "PlayerId": 1}, "unique": true }
+          ]
+        }
+      ]
+  }

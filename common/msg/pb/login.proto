@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+enum LoginType {
+    None = 0;
+    DouYin = 1;
+    WeChat = 2;
+}
+
+// todo llw 返回角色其他信息
+message S2C_Login {
+    option (message_id) = 1;
+    int32 login_result = 1; // 为0登录成功，其他都登录失败
+}
+
+// client -> server -> toDouyinCheck
+message C2S_Login {
+    option (message_id) = 1;
+    LoginType login_type = 1;
+    int32 server_id = 2;
+    string code = 3;
+}
+
+message C2S_Reconnect {
+    option (message_id) = 2;
+}
+
+message C2S_Heart {
+    option (message_id) = 0;
+}

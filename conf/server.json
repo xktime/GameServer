@@ -1,0 +1,22 @@
+{
+    "LogLevel": "debug",
+    "LogPath": "",
+    "TCPAddr": ":3563",
+    "WSAddr": ":3653",
+    "MaxConnNum": 20000,
+    "MachineID": 1,
+    "Actor": {
+        "TimeoutMillisecond": 2000
+    },
+    "DouYinInfo": {
+        "Appid": "1234",
+        "Secret": "1234",
+        "IsSandBox": 0
+    },
+    "MongoDB": {
+        "Host": "mongodb://localhost:27017",
+        "Database": "test",
+        "MinPoolSize": 10,
+        "MaxPoolSize": 100
+    }
+}
