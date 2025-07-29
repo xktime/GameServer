@@ -3,7 +3,9 @@ package actor_manager
 type ActorGroup string
 
 const (
-	Test1 ActorGroup = "test1"
-	Test2 ActorGroup = "test2"
-	User  ActorGroup = "user"
+	Test1    ActorGroup = "test1"
+	Test2    ActorGroup = "test2"
+	User     ActorGroup = "user"
+	Login    ActorGroup = "login"
+	Recharge ActorGroup = "recharge"
 )

@@ -8,16 +8,18 @@ import (
 	"time"
 )
 
+// Skeleton 结构体用于管理模块的协程、定时器、RPC 通信等核心功能。
+// 各字段含义如下：
 type Skeleton struct {
-	GoLen              int
-	TimerDispatcherLen int
-	AsynCallLen        int
-	ChanRPCServer      *chanrpc.Server
-	g                  *g.Go
-	dispatcher         *timer.Dispatcher
-	client             *chanrpc.Client
-	server             *chanrpc.Server
-	commandServer      *chanrpc.Server
+	GoLen              int               // 协程池容量，控制可并发执行的 goroutine 数量
+	TimerDispatcherLen int               // 定时器分发器容量，控制定时任务的并发处理能力
+	AsynCallLen        int               // 异步调用队列长度，影响异步 RPC 调用的缓冲区大小
+	ChanRPCServer      *chanrpc.Server   // 对外暴露的 RPC 服务器，用于模块间通信
+	g                  *g.Go             // 协程管理器，封装了 goroutine 的调度与回收
+	dispatcher         *timer.Dispatcher // 定时器分发器，负责定时任务的调度
+	client             *chanrpc.Client   // RPC 客户端，用于发起异步 RPC 调用
+	server             *chanrpc.Server   // 内部 RPC 服务器，处理本模块的 RPC 请求
+	commandServer      *chanrpc.Server   // 命令专用 RPC 服务器，处理控制台或管理命令
 }
 
 func (s *Skeleton) Init() {

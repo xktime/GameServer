@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
+	actor_manager "gameserver/core/actor"
+	"gameserver/modules/game/managers"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -64,7 +67,7 @@ func TestServer_WebSocket(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	for k := 0; k < 10; k++ {
+	for k := 0; k < 1000000; k++ {
 		pbData := &message.C2S_Login{
 			LoginType: message.LoginType_DouYin,
 			Code:      "123456",
@@ -108,6 +111,24 @@ func TestServer_GetMessageId(t *testing.T) {
 	fmt.Println("S2C_Login", getId(&message.S2C_Login{}))
 	fmt.Println("C2S_Login", getId(&message.C2S_Login{}))
 
+}
+
+func TestServer_GetMessageType(t *testing.T) {
+	method := reflect.ValueOf(&managers.UserManager{}).MethodByName("DoLogin")
+	if !method.IsValid() {
+		t.Fatalf("未找到方法 DoLogin")
+	}
+	methodType := method.Type()
+	fmt.Println(methodType)
+}
+
+func TestServer_Func(t *testing.T) {
+	actor_manager.Init(2000)
+	msg := []interface{}{managers.GetUserManager().DoLogin, "123456", 1}
+	_, err := utils.CallMethodWithParams(msg[0], msg[1:]...)
+	if err != nil {
+		t.Fatalf("调用方法失败: %v", err)
+	}
 }
 
 func TestServer_SnowFlake(t *testing.T) {

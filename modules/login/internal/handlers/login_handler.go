@@ -3,18 +3,22 @@ package handlers
 import (
 	"context"
 	"gameserver/common/msg/message"
+	"gameserver/modules/game"
 	"gameserver/modules/login/internal/processor"
-	"gameserver/modules/login/managers"
 
 	"gameserver/core/gate"
 	"gameserver/core/log"
 )
 
-// todollw 直接传参进来就行了，没必要在里面再处理一遍
 func HandleLogin(args []interface{}) {
 	m := args[0].(*message.C2S_Login)
-	// // 消息的发送者
 	agent := args[1].(gate.Agent)
+	DoHandleLogin(m, agent)
+}
+
+// todo 默认都要放actor执行？不用的自己go出去，静态方法需要放actor吗？
+// todo gate->login(处理登录校验逻辑)->user(处理登录数据初始化逻辑)
+func DoHandleLogin(m *message.C2S_Login, agent gate.Agent) {
 	loginProcessor := getLoginProcessor(m.LoginType)
 	if loginProcessor == nil {
 		log.Error("loginProcessor is nil")
@@ -31,7 +35,7 @@ func HandleLogin(args []interface{}) {
 	}
 	result.LoginResult = 0
 
-	managers.GetLoginManager().DoLogin(agent, loginResp.Openid, m.ServerId)
+	game.UserManager.DoLogin(agent, loginResp.Openid, m.ServerId)
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

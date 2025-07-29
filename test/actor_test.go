@@ -2,12 +2,14 @@ package test
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	"gameserver/common/msg/message"
 	actor_manager "gameserver/core/actor"
+	"gameserver/core/log"
 
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +25,22 @@ type TestActor struct {
 func (a *TestActor) Receive(context actor.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.receivedMessages = append(a.receivedMessages, context.Message())
+	if context.Message() == nil {
+		return
+	}
+	msg, ok := context.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	a.receivedMessages = append(a.receivedMessages, msg[1])
 }
 
 func (a *TestActor) GetMessages() []interface{} {
@@ -38,13 +55,25 @@ type TestActorWithResponse struct {
 }
 
 func (a *TestActorWithResponse) Receive(context actor.Context) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	switch msg := context.Message().(type) {
+	if context.Message() == nil {
+		return
+	}
+	msg, ok := context.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	switch msg := msg[1].(type) {
 	case *message.C2S_Login:
 		// 发送响应
-		a.receivedMessages = append(a.receivedMessages, context.Message())
+		a.receivedMessages = append(a.receivedMessages, msg)
 		if context.Sender() != nil {
 			context.Respond("response to: " + msg.Code)
 		}
@@ -64,14 +93,13 @@ func TestActorFactory_Init(t *testing.T) {
 // TestActorFactory_Register 测试注册 Actor
 func TestActorFactory_Register(t *testing.T) {
 	actor_manager.Init(2000)
-	testA := &TestActor{}
 	// 测试注册
-	pid, err := actor_manager.Register[TestActor]("test1", actor_manager.Test1, testA, "test_tag")
+	pid, err := actor_manager.Register[TestActor]("test1", actor_manager.Test1)
 	assert.NoError(t, err)
 	assert.NotNil(t, pid)
 
 	// 测试重复注册
-	pid2, err := actor_manager.Register[TestActor]("test1", actor_manager.Test1, testA, "test_tag")
+	pid2, err := actor_manager.Register[TestActor]("test1", actor_manager.Test1)
 	assert.NoError(t, err)
 	assert.Nil(t, pid2) // 应该返回 nil，因为已存在
 }
@@ -81,7 +109,8 @@ func TestActorFactory_Get(t *testing.T) {
 	actor_manager.Init(2000)
 
 	// 注册 Actor
-	pid, _ := actor_manager.Register[TestActor]("test1", actor_manager.Test1, &TestActor{})
+	meta, _ := actor_manager.Register[TestActor]("test1", actor_manager.Test1)
+	pid := meta.PID
 	assert.NotNil(t, pid)
 
 	// 获取 Actor
@@ -97,28 +126,25 @@ func TestActorFactory_Get(t *testing.T) {
 func TestActorFactory_Send(t *testing.T) {
 	actor_manager.Init(2000)
 
-	// 创建测试 Actor
-	testActor := &TestActor{}
-
 	// 注册 Actor
-	pid, _ := actor_manager.Register[TestActor]("test1", actor_manager.Test1, testActor)
-	assert.NotNil(t, pid)
+	meta, _ := actor_manager.Register[TestActor]("test1", actor_manager.Test1)
+	assert.NotNil(t, meta)
 
 	// 发送消息
-	actor_manager.Send[TestActor]("test1", &message.C2S_Login{Code: "hello"})
-	actor_manager.Send[TestActor]("test1", &message.C2S_Login{Code: "world"})
+	actor_manager.Send[TestActor]("test1", (*TestActor).Receive, []interface{}{&message.C2S_Login{Code: "hello"}})
+	actor_manager.Send[TestActor]("test1", (*TestActor).Receive, []interface{}{&message.C2S_Login{Code: "world"}})
 
 	// 等待消息处理
 	time.Sleep(100 * time.Millisecond)
 
 	// 验证消息接收
-	messages := testActor.GetMessages()
-	assert.Len(t, messages, 3)
-	assert.Equal(t, "hello", messages[1].(*message.C2S_Login).Code)
-	assert.Equal(t, "world", messages[2].(*message.C2S_Login).Code)
+	messages := meta.Actor.(*TestActor).GetMessages()
+	assert.Len(t, messages, 2)
+	assert.Equal(t, "hello", messages[0].(*message.C2S_Login).Code)
+	assert.Equal(t, "world", messages[1].(*message.C2S_Login).Code)
 
 	// 测试发送给不存在的 Actor
-	actor_manager.Send[SerialActor]("test1", &message.C2S_Login{Code: "test"})
+	actor_manager.Send[SerialActor]("test1", (*SerialActor).Receive, []interface{}{&message.C2S_Login{Code: "test"}})
 	// 不应该 panic
 }
 
@@ -128,7 +154,7 @@ func TestActorFactory_Stop(t *testing.T) {
 	uniqueID := "test1"
 
 	// 注册 Actor
-	pid, _ := actor_manager.Register[TestActor](uniqueID, actor_manager.Test1, &TestActor{}, "test_tag")
+	pid, _ := actor_manager.Register[TestActor](uniqueID, actor_manager.Test1)
 	assert.NotNil(t, pid)
 
 	// 验证 Actor 存在
@@ -149,12 +175,10 @@ func TestActorFactory_Stop(t *testing.T) {
 func TestActorFactory_StopGroup(t *testing.T) {
 	actor_manager.Init(2000)
 
-	props := &TestActor{}
-
 	// 注册多个同组 Actor
-	actor_manager.Register[TestActor]("test1", actor_manager.Test1, props, "tag1")
-	actor_manager.Register[SerialActor]("test1", actor_manager.Test1, props, "tag2")
-	actor_manager.Register[TestActorWithResponse]("test2", actor_manager.Test2, props, "tag1")
+	actor_manager.Register[TestActor]("test1", actor_manager.Test1)
+	actor_manager.Register[SerialActor]("test1", actor_manager.Test1)
+	actor_manager.Register[TestActorWithResponse]("test2", actor_manager.Test2)
 
 	// 验证 Actor 存在
 	assert.NotNil(t, actor_manager.Get[TestActor]("test1"))
@@ -170,41 +194,14 @@ func TestActorFactory_StopGroup(t *testing.T) {
 	assert.NotNil(t, actor_manager.Get[TestActorWithResponse]("test2"))
 }
 
-// TestActorFactory_StopByTag 测试按标签停止
-func TestActorFactory_StopByTag(t *testing.T) {
-	actor_manager.Init(2000)
-
-	props := &TestActor{}
-
-	// 注册多个带标签的 Actor
-	actor_manager.Register[TestActor]("test1", actor_manager.Test1, props, "tag1")
-	actor_manager.Register[SerialActor]("test1", actor_manager.Test2, props, "tag2")
-	actor_manager.Register[TestActorWithResponse]("test2", actor_manager.Test1, props, "tag1")
-
-	// 验证 Actor 存在
-	assert.NotNil(t, actor_manager.Get[TestActor]("test1"))
-	assert.NotNil(t, actor_manager.Get[SerialActor]("test1"))
-	assert.NotNil(t, actor_manager.Get[TestActorWithResponse]("test2"))
-
-	// 停止带 tag1 的 Actor
-	actor_manager.StopByTag("tag1")
-
-	// 验证带 tag1 的 Actor 被移除，其他还在
-	assert.Nil(t, actor_manager.Get[TestActor]("test1"))
-	assert.NotNil(t, actor_manager.Get[SerialActor]("test1"))
-	assert.Nil(t, actor_manager.Get[TestActorWithResponse]("test2"))
-}
-
 // TestActorFactory_StopAll 测试停止所有 Actor
 func TestActorFactory_StopAll(t *testing.T) {
 	actor_manager.Init(2000)
 
-	props := &TestActor{}
-
 	// 注册多个 Actor
-	actor_manager.Register[TestActor]("test1", actor_manager.Test1, props, "tag1")
-	actor_manager.Register[SerialActor]("test1", actor_manager.Test1, props, "tag2")
-	actor_manager.Register[TestActorWithResponse]("test2", actor_manager.Test2, props, "tag1")
+	actor_manager.Register[TestActor]("test1", actor_manager.Test1)
+	actor_manager.Register[SerialActor]("test1", actor_manager.Test1)
+	actor_manager.Register[TestActorWithResponse]("test2", actor_manager.Test2)
 
 	// 验证 Actor 存在
 	assert.NotNil(t, actor_manager.Get[TestActor]("test1"))
@@ -224,8 +221,6 @@ func TestActorFactory_StopAll(t *testing.T) {
 func TestActorFactory_ConcurrentRegister(t *testing.T) {
 	actor_manager.Init(2000)
 
-	props := &TestActor{}
-
 	var wg sync.WaitGroup
 	actorCount := 100
 
@@ -235,7 +230,7 @@ func TestActorFactory_ConcurrentRegister(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			// 这里用TestActor类型注册
-			pid, err := actor_manager.Register[TestActor](fmt.Sprintf("test%d", i), actor_manager.Test1, props, "concurrent_tag")
+			pid, err := actor_manager.Register[TestActor](fmt.Sprintf("test%d", i), actor_manager.Test1)
 			assert.NoError(t, err)
 			assert.NotNil(t, pid)
 		}(i)
@@ -253,10 +248,8 @@ func TestActorFactory_ConcurrentRegister(t *testing.T) {
 func TestActorFactory_ConcurrentSend(t *testing.T) {
 	actor_manager.Init(2000)
 
-	testActor := &TestActor{}
-
 	// 注册 Actor
-	actor_manager.Register[TestActor]("test1", actor_manager.Test1, testActor)
+	meta, _ := actor_manager.Register[TestActor]("test1", actor_manager.Test1)
 
 	var wg sync.WaitGroup
 	messageCount := 10000
@@ -266,7 +259,7 @@ func TestActorFactory_ConcurrentSend(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			actor_manager.Send[TestActor]("test1", &message.C2S_Login{Code: fmt.Sprintf("message_%d", id)})
+			actor_manager.Send[TestActor]("test1", (*TestActor).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("message_%d", id)}})
 		}(i)
 	}
 
@@ -276,22 +269,20 @@ func TestActorFactory_ConcurrentSend(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// 验证消息接收
-	messages := testActor.GetMessages()
-	assert.Len(t, messages, messageCount+1)
+	messages := meta.Actor.(*TestActor).GetMessages()
+	assert.Len(t, messages, messageCount)
 }
 
 // TestActorFactory_RequestResponse 测试请求-响应模式
 func TestActorFactory_RequestResponse(t *testing.T) {
 	actor_manager.Init(2000)
 
-	testActor := &TestActorWithResponse{}
-
 	// 注册 Actor
-	pid, _ := actor_manager.Register[TestActorWithResponse]("test1", actor_manager.Test1, testActor)
-	assert.NotNil(t, pid)
+	meta, _ := actor_manager.Register[TestActorWithResponse]("test1", actor_manager.Test1)
+	assert.NotNil(t, meta)
 
 	// 发送请求并等待响应
-	future := actor_manager.RequestFuture[TestActorWithResponse]("test1", &message.C2S_Login{Code: "hello"})
+	future := actor_manager.RequestFuture[TestActorWithResponse]("test1", (*TestActorWithResponse).Receive, []interface{}{&message.C2S_Login{Code: "hello"}})
 
 	// 等待响应
 	result, err := future.Result()
@@ -299,7 +290,7 @@ func TestActorFactory_RequestResponse(t *testing.T) {
 	assert.Equal(t, "response to: hello", result)
 
 	// 验证消息接收
-	messages := testActor.GetMessages()
+	messages := meta.Actor.(*TestActorWithResponse).GetMessages()
 	assert.Len(t, messages, 1)
 	assert.Equal(t, "hello", messages[0].(*message.C2S_Login).Code)
 }
@@ -309,26 +300,25 @@ func TestActorFactory_ActorLifecycle(t *testing.T) {
 	actor_manager.Init(2000)
 
 	// 创建带生命周期的测试 Actor
-	lifecycleActor := &LifecycleTestActor{}
 	uniqueID := "test1"
 
 	// 注册 Actor
-	pid, _ := actor_manager.Register[LifecycleTestActor](uniqueID, actor_manager.Test1, lifecycleActor)
-	assert.NotNil(t, pid)
+	meta, _ := actor_manager.Register[LifecycleTestActor](uniqueID, actor_manager.Test1)
+	assert.NotNil(t, meta)
 
 	// 等待 Actor 启动
 	time.Sleep(100 * time.Millisecond)
-	assert.True(t, lifecycleActor.started)
+	assert.True(t, meta.Actor.(*LifecycleTestActor).started)
 
 	// 发送消息
-	actor_manager.Send[LifecycleTestActor](uniqueID, &message.C2S_Login{Code: "test"})
+	actor_manager.Send[LifecycleTestActor](uniqueID, (*LifecycleTestActor).Receive, []interface{}{&message.C2S_Login{Code: "test"}})
 	time.Sleep(100 * time.Millisecond)
-	assert.True(t, lifecycleActor.received)
+	assert.True(t, meta.Actor.(*LifecycleTestActor).received)
 
 	// 停止 Actor
 	actor_manager.Stop[LifecycleTestActor](uniqueID)
 	time.Sleep(100 * time.Millisecond)
-	assert.True(t, lifecycleActor.stopped)
+	assert.True(t, meta.Actor.(*LifecycleTestActor).stopped)
 }
 
 // LifecycleTestActor 用于测试生命周期的 Actor
@@ -355,7 +345,7 @@ func TestActorFactory_ErrorHandling(t *testing.T) {
 	actor_manager.Init(2000)
 
 	// 测试发送给不存在的 Actor
-	actor_manager.Send[SerialActor]("test1", &message.C2S_Login{Code: "test"})
+	actor_manager.Send[SerialActor]("test1", (*SerialActor).Receive, []interface{}{&message.C2S_Login{Code: "test"}})
 	// 不应该 panic
 
 	// 测试停止不存在的 Actor
@@ -366,8 +356,6 @@ func TestActorFactory_ErrorHandling(t *testing.T) {
 	actor_manager.StopGroup(actor_manager.Test1)
 	// 不应该 panic
 
-	// 测试停止不存在的标签
-	actor_manager.StopByTag("tag1")
 	// 不应该 panic
 }
 
@@ -380,7 +368,7 @@ func TestActorFactory_Performance(t *testing.T) {
 	actorCount := 1000
 
 	for i := 0; i < actorCount; i++ {
-		actor_manager.Register[TestActor](fmt.Sprintf("test%d", i), actor_manager.Test1, &TestActor{}, "perf_tag")
+		actor_manager.Register[TestActor](fmt.Sprintf("test%d", i), actor_manager.Test1)
 	}
 
 	registerTime := time.Since(start)
@@ -391,7 +379,7 @@ func TestActorFactory_Performance(t *testing.T) {
 	messageCount := 10000
 
 	for i := 0; i < messageCount; i++ {
-		actor_manager.Send[TestActor](fmt.Sprintf("test%d", i), &message.C2S_Login{Code: fmt.Sprintf("message_%d", i)})
+		actor_manager.Send[TestActor](fmt.Sprintf("test%d", i), (*TestActor).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("message_%d", i)}})
 	}
 
 	sendTime := time.Since(start)
@@ -412,7 +400,22 @@ type SerialActor struct {
 
 // 子actor处理时记录顺序
 func (a *SerialActor) Receive(ctx actor.Context) {
-	switch msg := ctx.Message().(type) {
+	if ctx.Message() == nil {
+		return
+	}
+	msg, ok := ctx.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	switch msg := msg[1].(type) {
 	case *message.C2S_Login:
 		a.mu.Lock()
 		*a.order = append(*a.order, a.id+":"+msg.Code)
@@ -426,17 +429,23 @@ func (a *SerialActor) Receive(ctx actor.Context) {
 }
 func TestActorFactory_GroupSerial(t *testing.T) {
 	actor_manager.Init(2000)
-
 	order := []string{}
 	mu := &sync.Mutex{}
+
 	// 注册两个子actor到同一group
-	actor_manager.Register[SerialActor]("login", actor_manager.User, &SerialActor{id: "login", order: &order, mu: mu})
-	actor_manager.Register[SerialActor]("recharge", actor_manager.User, &SerialActor{id: "recharge", order: &order, mu: mu})
+	actor_manager.Register[SerialActor]("login", actor_manager.User, func(a actor.Actor) {
+		a.(*SerialActor).order = &order
+		a.(*SerialActor).mu = mu
+	})
+	actor_manager.Register[SerialActor]("recharge", actor_manager.User, func(a actor.Actor) {
+		a.(*SerialActor).order = &order
+		a.(*SerialActor).mu = mu
+	})
 
 	// 并发发送消息
 	for i := 0; i < 100; i++ {
-		actor_manager.Send[SerialActor]("login", &message.C2S_Login{Code: fmt.Sprintf("L%d", i)})
-		actor_manager.Send[SerialActor]("recharge", &message.C2S_Login{Code: fmt.Sprintf("R%d", i)})
+		actor_manager.Send[SerialActor]("login", (*SerialActor).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("L%d", i)}})
+		actor_manager.Send[SerialActor]("recharge", (*SerialActor).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("R%d", i)}})
 	}
 
 	time.Sleep(500 * time.Millisecond)
@@ -460,8 +469,14 @@ func TestActorFactory_RequestFutureInGroup(t *testing.T) {
 	mu := &sync.Mutex{}
 
 	// 注册两个子actor到同一group
-	actor_manager.Register[SerialActor]("login", actor_manager.User, &SerialActor{id: "login", order: &order, mu: mu})
-	actor_manager.Register[SerialActor]("recharge", actor_manager.User, &SerialActor{id: "recharge", order: &order, mu: mu})
+	actor_manager.Register[SerialActor]("login", actor_manager.User, func(a actor.Actor) {
+		a.(*SerialActor).order = &order
+		a.(*SerialActor).mu = mu
+	})
+	actor_manager.Register[SerialActor]("recharge", actor_manager.User, func(a actor.Actor) {
+		a.(*SerialActor).order = &order
+		a.(*SerialActor).mu = mu
+	})
 
 	// 并发发送RequestFuture请求
 	var wg sync.WaitGroup
@@ -470,7 +485,7 @@ func TestActorFactory_RequestFutureInGroup(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			// 发送RequestFuture请求
-			future := actor_manager.RequestFuture[SerialActor]("login", &message.C2S_Login{Code: fmt.Sprintf("L%d", id)})
+			future := actor_manager.RequestFuture[SerialActor]("login", (*SerialActor).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("L%d", id)}})
 			if future != nil {
 				// 等待响应
 				result, err := future.Result()
@@ -483,7 +498,7 @@ func TestActorFactory_RequestFutureInGroup(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			// 发送RequestFuture请求
-			future := actor_manager.RequestFuture[SerialActor]("recharge", &message.C2S_Login{Code: fmt.Sprintf("R%d", id)})
+			future := actor_manager.RequestFuture[SerialActor]("recharge", (*SerialActor).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("R%d", id)}})
 			if future != nil {
 				// 等待响应
 				result, err := future.Result()
@@ -512,7 +527,7 @@ func TestActorFactory_GetGroupPID(t *testing.T) {
 	actor_manager.Init(2000)
 
 	// 注册带group的actor
-	actor_manager.Register[TestActor]("test1", actor_manager.User, &TestActor{})
+	actor_manager.Register[TestActor]("test1", actor_manager.User)
 
 	// 获取group PID
 	groupPID := actor_manager.GetGroupPID(actor_manager.User)
@@ -525,52 +540,26 @@ func TestActorFactory_GetGroupPID(t *testing.T) {
 	actor_manager.StopAll()
 }
 
-// TestActorFactory_MultiTags 测试多标签管理
-func TestActorFactory_MultiTags(t *testing.T) {
-	actor_manager.Init(2000)
-
-	// 注册带多个标签的actor
-	actor_manager.Register[TestActor]("test1", actor_manager.User, &TestActor{}, "tag1", "tag2", "tag3")
-
-	// 验证actor存在
-	assert.NotNil(t, actor_manager.Get[TestActor]("test1"))
-
-	// 停止带tag1的actor
-	actor_manager.StopByTag("tag1")
-	assert.Nil(t, actor_manager.Get[TestActor]("test1"))
-
-	// 注册多个actor到不同标签
-	actor_manager.Register[TestActor]("test2", actor_manager.User, &TestActor{}, "tag1", "tag2")
-	actor_manager.Register[SerialActor]("test3", actor_manager.User, &SerialActor{id: "test3", order: &[]string{}, mu: &sync.Mutex{}}, "tag2", "tag3")
-
-	// 停止tag2，应该停止两个actor
-	actor_manager.StopByTag("tag2")
-	assert.Nil(t, actor_manager.Get[TestActor]("test2"))
-	assert.Nil(t, actor_manager.Get[SerialActor]("test3"))
-
-	actor_manager.StopAll()
-}
-
 // TestActorFactory_EmptyGroupAndTags 测试空group和空标签的边界情况
 func TestActorFactory_EmptyGroupAndTags(t *testing.T) {
 	actor_manager.Init(2000)
 
 	// 测试空group
-	pid, err := actor_manager.Register[TestActor]("test1", "", &TestActor{})
+	pid, err := actor_manager.Register[TestActor]("test1", "")
 	assert.NoError(t, err)
 	assert.NotNil(t, pid)
 
 	// 验证可以正常发送消息
-	actor_manager.Send[TestActor]("test1", &message.C2S_Login{Code: "test"})
+	actor_manager.Send[TestActor]("test1", (*TestActor).Receive, []interface{}{&message.C2S_Login{Code: "test"}})
 	time.Sleep(100 * time.Millisecond)
 
 	// 测试空标签
-	pid2, err := actor_manager.Register[TestActor]("test2", actor_manager.User, &TestActor{})
+	pid2, err := actor_manager.Register[TestActor]("test2", actor_manager.User)
 	assert.NoError(t, err)
 	assert.NotNil(t, pid2)
 
 	// 验证可以正常发送消息
-	actor_manager.Send[TestActor]("test2", &message.C2S_Login{Code: "test"})
+	actor_manager.Send[TestActor]("test2", (*TestActor).Receive, []interface{}{&message.C2S_Login{Code: "test"}})
 	time.Sleep(100 * time.Millisecond)
 
 	actor_manager.StopAll()
@@ -581,14 +570,14 @@ func TestActorFactory_GroupActorLifecycle(t *testing.T) {
 	actor_manager.Init(2000)
 
 	// 注册第一个actor到group
-	actor_manager.Register[TestActor]("test1", actor_manager.User, &TestActor{})
+	actor_manager.Register[TestActor]("test1", actor_manager.User)
 
 	// 验证group PID存在
 	groupPID1 := actor_manager.GetGroupPID(actor_manager.User)
 	assert.NotNil(t, groupPID1)
 
 	// 注册第二个actor到同一个group
-	actor_manager.Register[TestActor]("test2", actor_manager.User, &TestActor{})
+	actor_manager.Register[TestActor]("test2", actor_manager.User)
 
 	// 验证group PID没有变化（同一个group）
 	groupPID2 := actor_manager.GetGroupPID(actor_manager.User)
@@ -615,10 +604,8 @@ func TestActorFactory_GroupActorLifecycle(t *testing.T) {
 func TestActorFactory_ConcurrentRequestFuture(t *testing.T) {
 	actor_manager.Init(2000)
 
-	testActor := &TestActorWithResponse{}
-
 	// 注册 Actor
-	actor_manager.Register[TestActorWithResponse]("test1", actor_manager.User, testActor)
+	meta, _ := actor_manager.Register[TestActorWithResponse]("test1", actor_manager.User)
 
 	var wg sync.WaitGroup
 	requestCount := 100
@@ -628,7 +615,7 @@ func TestActorFactory_ConcurrentRequestFuture(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			future := actor_manager.RequestFuture[TestActorWithResponse]("test1", &message.C2S_Login{Code: fmt.Sprintf("request_%d", id)})
+			future := actor_manager.RequestFuture[TestActorWithResponse]("test1", (*TestActorWithResponse).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("request_%d", id)}})
 			if future != nil {
 				result, err := future.Result()
 				assert.NoError(t, err)
@@ -641,7 +628,7 @@ func TestActorFactory_ConcurrentRequestFuture(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// 验证所有请求都被处理
-	messages := testActor.GetMessages()
+	messages := meta.Actor.(*TestActorWithResponse).GetMessages()
 	assert.Len(t, messages, requestCount) // +1 for Started message
 
 	actor_manager.StopAll()
@@ -651,18 +638,16 @@ func TestActorFactory_ConcurrentRequestFuture(t *testing.T) {
 func TestActorFactory_MixedSendAndRequestFuture(t *testing.T) {
 	actor_manager.Init(2000)
 
-	testActor := &TestActorWithResponse{}
-
 	// 注册 Actor
-	actor_manager.Register[TestActorWithResponse]("test1", actor_manager.User, testActor)
+	meta, _ := actor_manager.Register[TestActorWithResponse]("test1", actor_manager.User)
 
 	// 混合发送Send和RequestFuture
 	for i := 0; i < 50; i++ {
 		// Send消息
-		actor_manager.Send[TestActorWithResponse]("test1", &message.C2S_Login{Code: fmt.Sprintf("send_%d", i)})
+		actor_manager.Send[TestActorWithResponse]("test1", (*TestActorWithResponse).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("send_%d", i)}})
 
 		// RequestFuture消息
-		future := actor_manager.RequestFuture[TestActorWithResponse]("test1", &message.C2S_Login{Code: fmt.Sprintf("request_%d", i)})
+		future := actor_manager.RequestFuture[TestActorWithResponse]("test1", (*TestActorWithResponse).Receive, []interface{}{&message.C2S_Login{Code: fmt.Sprintf("request_%d", i)}})
 		if future != nil {
 			result, err := future.Result()
 			assert.NoError(t, err)
@@ -673,7 +658,7 @@ func TestActorFactory_MixedSendAndRequestFuture(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// 验证所有消息都被处理
-	messages := testActor.GetMessages()
+	messages := meta.Actor.(*TestActorWithResponse).GetMessages()
 	assert.Len(t, messages, 100) // 50 sends + 50 requests
 
 	actor_manager.StopAll()
@@ -684,11 +669,10 @@ func TestActorFactory_RequestFutureTimeout(t *testing.T) {
 	actor_manager.Init(100) // 设置较短的超时时间
 
 	// 创建一个会阻塞的actor
-	blockingActor := &BlockingActor{}
-	actor_manager.Register[BlockingActor]("test1", actor_manager.User, blockingActor)
+	actor_manager.Register[BlockingActor]("test1", actor_manager.User)
 
 	// 发送RequestFuture请求
-	future := actor_manager.RequestFuture[BlockingActor]("test1", &message.C2S_Login{Code: "block"})
+	future := actor_manager.RequestFuture[BlockingActor]("test1", (*BlockingActor).Receive, []interface{}{&message.C2S_Login{Code: "block"}})
 
 	// 等待超时
 	result, err := future.Result()
@@ -704,7 +688,22 @@ type BlockingActor struct {
 }
 
 func (a *BlockingActor) Receive(ctx actor.Context) {
-	switch msg := ctx.Message().(type) {
+	if ctx.Message() == nil {
+		return
+	}
+	msg, ok := ctx.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	switch msg := msg[1].(type) {
 	case *message.C2S_Login:
 		if msg.Code == "block" {
 			// 阻塞不响应
@@ -726,24 +725,38 @@ func TestActorFactory_ConcurrentGroupSerialization(t *testing.T) {
 	group1 := actor_manager.ActorGroup("group1")
 	group2 := actor_manager.ActorGroup("group2")
 
-	// 在group1中创建多个actor
-	actor1_1 := &SerialTestActor{name: "actor1_1", group: string(group1)}
-	actor1_2 := &SerialTestActor{name: "actor1_2", group: string(group1)}
-	actor1_3 := &SerialTestActor{name: "actor1_3", group: string(group1)}
-
-	// 在group2中创建多个actor
-	actor2_1 := &SerialTestActor{name: "actor2_1", group: string(group2)}
-	actor2_2 := &SerialTestActor{name: "actor2_2", group: string(group2)}
-	actor2_3 := &SerialTestActor{name: "actor2_3", group: string(group2)}
-
 	// 注册所有actor
-	actor_manager.Register[SerialTestActor]("test1_1", group1, actor1_1, "group1")
-	actor_manager.Register[SerialTestActor]("test1_2", group1, actor1_2, "group1")
-	actor_manager.Register[SerialTestActor]("test1_3", group1, actor1_3, "group1")
+	meta1_1, _ := actor_manager.Register[SerialTestActor]("test1_1", group1, func(a actor.Actor) {
+		a.(*SerialTestActor).name = "actor1_1"
+		a.(*SerialTestActor).group = string(group1)
+	})
+	meta1_2, _ := actor_manager.Register[SerialTestActor]("test1_2", group1, func(a actor.Actor) {
+		a.(*SerialTestActor).name = "actor1_2"
+		a.(*SerialTestActor).group = string(group1)
+	})
+	meta1_3, _ := actor_manager.Register[SerialTestActor]("test1_3", group1, func(a actor.Actor) {
+		a.(*SerialTestActor).name = "actor1_3"
+		a.(*SerialTestActor).group = string(group1)
+	})
+	actor1_1 := meta1_1.Actor.(*SerialTestActor)
+	actor1_2 := meta1_2.Actor.(*SerialTestActor)
+	actor1_3 := meta1_3.Actor.(*SerialTestActor)
 
-	actor_manager.Register[SerialTestActor]("test2_1", group2, actor2_1, "group2")
-	actor_manager.Register[SerialTestActor]("test2_2", group2, actor2_2, "group2")
-	actor_manager.Register[SerialTestActor]("test2_3", group2, actor2_3, "group2")
+	meta2_1, _ := actor_manager.Register[SerialTestActor]("test2_1", group2, func(a actor.Actor) {
+		a.(*SerialTestActor).name = "actor2_1"
+		a.(*SerialTestActor).group = string(group2)
+	})
+	meta2_2, _ := actor_manager.Register[SerialTestActor]("test2_2", group2, func(a actor.Actor) {
+		a.(*SerialTestActor).name = "actor2_2"
+		a.(*SerialTestActor).group = string(group2)
+	})
+	meta2_3, _ := actor_manager.Register[SerialTestActor]("test2_3", group2, func(a actor.Actor) {
+		a.(*SerialTestActor).name = "actor2_3"
+		a.(*SerialTestActor).group = string(group2)
+	})
+	actor2_1 := meta2_1.Actor.(*SerialTestActor)
+	actor2_2 := meta2_2.Actor.(*SerialTestActor)
+	actor2_3 := meta2_3.Actor.(*SerialTestActor)
 
 	// 等待actor启动
 	time.Sleep(100 * time.Millisecond)
@@ -758,9 +771,9 @@ func TestActorFactory_ConcurrentGroupSerialization(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			msg := fmt.Sprintf("group1_msg_%d", id)
-			actor_manager.Send[SerialTestActor]("test1_1", &message.C2S_Login{Code: msg})
-			actor_manager.Send[SerialTestActor]("test1_2", &message.C2S_Login{Code: msg})
-			actor_manager.Send[SerialTestActor]("test1_3", &message.C2S_Login{Code: msg})
+			actor_manager.Send[SerialTestActor]("test1_1", (*SerialTestActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
+			actor_manager.Send[SerialTestActor]("test1_2", (*SerialTestActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
+			actor_manager.Send[SerialTestActor]("test1_3", (*SerialTestActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
 		}(i)
 	}
 
@@ -770,9 +783,9 @@ func TestActorFactory_ConcurrentGroupSerialization(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			msg := fmt.Sprintf("group2_msg_%d", id)
-			actor_manager.Send[SerialTestActor]("test2_1", &message.C2S_Login{Code: msg})
-			actor_manager.Send[SerialTestActor]("test2_2", &message.C2S_Login{Code: msg})
-			actor_manager.Send[SerialTestActor]("test2_3", &message.C2S_Login{Code: msg})
+			actor_manager.Send[SerialTestActor]("test2_1", (*SerialTestActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
+			actor_manager.Send[SerialTestActor]("test2_2", (*SerialTestActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
+			actor_manager.Send[SerialTestActor]("test2_3", (*SerialTestActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
 		}(i)
 	}
 
@@ -822,10 +835,25 @@ type SerialTestActor struct {
 }
 
 func (a *SerialTestActor) Receive(ctx actor.Context) {
-	switch msg := ctx.Message().(type) {
+	if ctx.Message() == nil {
+		return
+	}
+	msg, ok := ctx.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	switch msg := msg[1].(type) {
 	case *message.C2S_Login:
-		a.mu.Lock()
-		defer a.mu.Unlock()
+		// a.mu.Lock()
+		// defer a.mu.Unlock()
 
 		// 记录消息处理时间
 		now := time.Now()
@@ -864,11 +892,10 @@ func TestActorFactory_SerialExecutionVerification(t *testing.T) {
 	// 创建一个group
 	group := actor_manager.ActorGroup("serial_test")
 
-	// 创建一个专门用于验证串行性的actor
-	serialActor := &SerialVerificationActor{name: "serial_actor"}
-
 	// 注册actor
-	actor_manager.Register[SerialVerificationActor]("serial_test", group, serialActor, "serial_test")
+	meta, _ := actor_manager.Register[SerialVerificationActor]("serial_test", group, func(a actor.Actor) {
+		a.(*SerialVerificationActor).name = "serial_actor"
+	})
 
 	// 等待actor启动
 	time.Sleep(100 * time.Millisecond)
@@ -882,7 +909,7 @@ func TestActorFactory_SerialExecutionVerification(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			msg := fmt.Sprintf("msg_%d", id)
-			actor_manager.Send[SerialVerificationActor]("serial_test", &message.C2S_Login{Code: msg})
+			actor_manager.Send[SerialVerificationActor]("serial_test", (*SerialVerificationActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
 		}(i)
 	}
 
@@ -893,17 +920,17 @@ func TestActorFactory_SerialExecutionVerification(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	// 验证串行性
-	assert.True(t, serialActor.isStrictlySerial(), "Actor should process messages strictly serially")
+	assert.True(t, meta.Actor.(*SerialVerificationActor).isStrictlySerial(), "Actor should process messages strictly serially")
 
 	fmt.Printf("=== 串行执行验证结果 ===\n")
-	fmt.Printf("处理的消息数量: %d\n", len(serialActor.messages))
-	fmt.Printf("时间戳数量: %d\n", len(serialActor.timestamps))
-	fmt.Printf("是否严格串行: %v\n", serialActor.isStrictlySerial())
+	fmt.Printf("处理的消息数量: %d\n", len(meta.Actor.(*SerialVerificationActor).messages))
+	fmt.Printf("时间戳数量: %d\n", len(meta.Actor.(*SerialVerificationActor).timestamps))
+	fmt.Printf("是否严格串行: %v\n", meta.Actor.(*SerialVerificationActor).isStrictlySerial())
 
 	// 打印前10个消息的时间戳
 	fmt.Printf("前10个消息的时间戳:\n")
-	for i := 0; i < 10 && i < len(serialActor.timestamps); i++ {
-		fmt.Printf("  %d: %v\n", i, serialActor.timestamps[i])
+	for i := 0; i < 10 && i < len(meta.Actor.(*SerialVerificationActor).timestamps); i++ {
+		fmt.Printf("  %d: %v\n", i, meta.Actor.(*SerialVerificationActor).timestamps[i])
 	}
 }
 
@@ -916,11 +943,23 @@ type SerialVerificationActor struct {
 }
 
 func (a *SerialVerificationActor) Receive(ctx actor.Context) {
-	switch msg := ctx.Message().(type) {
+	if ctx.Message() == nil {
+		return
+	}
+	msg, ok := ctx.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	switch msg := msg[1].(type) {
 	case *message.C2S_Login:
-		a.mu.Lock()
-		defer a.mu.Unlock()
-
 		// 记录当前时间戳
 		now := time.Now()
 		a.timestamps = append(a.timestamps, now)
@@ -960,11 +999,10 @@ func TestActorFactory_SingleActorSerialOrder(t *testing.T) {
 	// 创建一个group
 	group := actor_manager.ActorGroup("single_actor_test")
 
-	// 创建一个专门用于验证消息顺序的actor
-	orderActor := &MessageOrderActor{name: "order_actor"}
-
 	// 注册actor
-	actor_manager.Register[MessageOrderActor]("order_test", group, orderActor, "order_test")
+	meta, _ := actor_manager.Register[MessageOrderActor]("order_test", group, func(a actor.Actor) {
+		a.(*MessageOrderActor).name = "order_actor"
+	})
 
 	// 等待actor启动
 	time.Sleep(100 * time.Millisecond)
@@ -975,27 +1013,27 @@ func TestActorFactory_SingleActorSerialOrder(t *testing.T) {
 
 	for i := 0; i < messageCount; i++ {
 		msg := fmt.Sprintf("msg_%03d", i) // 使用3位数字确保排序正确
-		actor_manager.Send[MessageOrderActor]("order_test", &message.C2S_Login{Code: msg})
+		actor_manager.Send[MessageOrderActor]("order_test", (*MessageOrderActor).Receive, []interface{}{&message.C2S_Login{Code: msg}})
 	}
 
 	// 等待消息处理完成
 	time.Sleep(30 * time.Second)
 
 	// 验证串行执行（时间戳严格递增）
-	assert.True(t, orderActor.isSerialExecution(), "Actor should process messages serially")
+	assert.True(t, meta.Actor.(*MessageOrderActor).isSerialExecution(), "Actor should process messages serially")
 
 	fmt.Printf("=== 消息执行验证结果 ===\n")
-	fmt.Printf("处理的消息数量: %d\n", len(orderActor.messages))
-	fmt.Printf("是否串行执行: %v\n", orderActor.isSerialExecution())
+	fmt.Printf("处理的消息数量: %d\n", len(meta.Actor.(*MessageOrderActor).messages))
+	fmt.Printf("是否串行执行: %v\n", meta.Actor.(*MessageOrderActor).isSerialExecution())
 
 	// 打印前20个消息的时间戳
 	fmt.Printf("前20个消息的处理时间戳:\n")
-	for i := 0; i < 20 && i < len(orderActor.timestamps); i++ {
-		fmt.Printf("  %d: %s (时间戳: %v)\n", i, orderActor.messages[i], orderActor.timestamps[i])
+	for i := 0; i < 20 && i < len(meta.Actor.(*MessageOrderActor).timestamps); i++ {
+		fmt.Printf("  %d: %s (时间戳: %v)\n", i, meta.Actor.(*MessageOrderActor).messages[i], meta.Actor.(*MessageOrderActor).timestamps[i])
 	}
 
 	// 验证消息数量
-	assert.Equal(t, messageCount, len(orderActor.messages), "Should process all messages")
+	assert.Equal(t, messageCount, len(meta.Actor.(*MessageOrderActor).messages), "Should process all messages")
 }
 
 // MessageOrderActor 专门用于验证消息顺序的actor
@@ -1007,11 +1045,23 @@ type MessageOrderActor struct {
 }
 
 func (a *MessageOrderActor) Receive(ctx actor.Context) {
-	switch msg := ctx.Message().(type) {
+	if ctx.Message() == nil {
+		return
+	}
+	msg, ok := ctx.Message().([]interface{})
+	if !ok {
+		return
+	}
+	if len(msg) == 0 {
+		return
+	}
+	// 检查是否为函数
+	if reflect.TypeOf(msg[0]).Kind() != reflect.Func {
+		log.Error("method 不是一个函数类型")
+		return
+	}
+	switch msg := msg[1].(type) {
 	case *message.C2S_Login:
-		a.mu.Lock()
-		defer a.mu.Unlock()
-
 		// 记录当前时间戳和消息
 		now := time.Now()
 		a.timestamps = append(a.timestamps, now)
