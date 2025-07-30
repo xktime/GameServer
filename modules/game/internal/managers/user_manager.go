@@ -32,6 +32,10 @@ func GetUserManager() *UserManager {
 	return userManager
 }
 
+func (m *UserManager) DoLoginByActor(agent gate.Agent, openId string, serverId int32) {
+	m.AddToActor(m.DoLogin, []interface{}{agent, openId, serverId})
+}
+
 // todollw 根据openid和区服去取数据
 // todollw 登录成功之后，需要去对应区服取数据，返回数据并给登录信息存到userdata
 func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {
@@ -48,8 +52,11 @@ func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {
 			ServerId: serverId,
 			Platform: models.DouYin,
 		}
+		mongodb.Save(user)
+		log.Debug("DoLogin new user: %v", user)
 	} else {
 		// 老用户流程
+		log.Debug("DoLogin old user: %v", user)
 	}
 }
 

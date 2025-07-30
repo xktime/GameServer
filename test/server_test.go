@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
-	actor_manager "gameserver/core/actor"
-	"gameserver/modules/game/managers"
 	"net"
-	"reflect"
 	"testing"
 	"time"
 
@@ -17,7 +14,7 @@ import (
 )
 
 func TestServer_TcpServer(t *testing.T) {
-	conn, err := net.Dial("tcp", "127.0.0.1:3563")
+	conn, err := net.Dial("tcp", "localhost:3563")
 	if err != nil {
 		panic(err)
 	}
@@ -63,13 +60,16 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	conn, _, err := websocket.DefaultDialer.Dial("ws://127.0.0.1:3653", nil)
+	// 如果服务器在Docker中运行，使用localhost连接
+	fmt.Println("正在连接到 WebSocket 服务器: ws://localhost:3653")
+	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:3653", nil)
 	if err != nil {
-		panic(err)
+		t.Fatalf("连接WebSocket服务器失败: %v", err)
 	}
-	for k := 0; k < 1000000; k++ {
+	fmt.Println("WebSocket连接成功")
+	for k := 0; k < 1000; k++ {
 		pbData := &message.C2S_Login{
-			LoginType: message.LoginType_DouYin,
+			LoginType: message.LoginType_WeChat,
 			Code:      "123456",
 		}
 
@@ -103,7 +103,7 @@ func TestServer_WebSocket(t *testing.T) {
 		}
 		fmt.Printf("收到S2C_Login: %+v\n", s2cLogin)
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -111,24 +111,6 @@ func TestServer_GetMessageId(t *testing.T) {
 	fmt.Println("S2C_Login", getId(&message.S2C_Login{}))
 	fmt.Println("C2S_Login", getId(&message.C2S_Login{}))
 
-}
-
-func TestServer_GetMessageType(t *testing.T) {
-	method := reflect.ValueOf(&managers.UserManager{}).MethodByName("DoLogin")
-	if !method.IsValid() {
-		t.Fatalf("未找到方法 DoLogin")
-	}
-	methodType := method.Type()
-	fmt.Println(methodType)
-}
-
-func TestServer_Func(t *testing.T) {
-	actor_manager.Init(2000)
-	msg := []interface{}{managers.GetUserManager().DoLogin, "123456", 1}
-	_, err := utils.CallMethodWithParams(msg[0], msg[1:]...)
-	if err != nil {
-		t.Fatalf("调用方法失败: %v", err)
-	}
 }
 
 func TestServer_SnowFlake(t *testing.T) {

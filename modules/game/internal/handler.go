@@ -6,7 +6,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func init() {
+func InitHandler() {
 	// 向当前模块（game 模块）注册 Person 消息的消息处理函数 handleTest
 }
 

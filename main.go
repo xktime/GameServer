@@ -10,6 +10,7 @@ import (
 
 	actor_manager "gameserver/core/actor"
 	lconf "gameserver/core/conf"
+	"gameserver/core/module"
 	"gameserver/core/server"
 )
 
@@ -17,11 +18,19 @@ func main() {
 
 	Init()
 
-	server.Run(
-		game.Module,
-		gate.Module,
-		login.Module,
-	)
+	Run(game.External, login.External)
+
+}
+
+func Run(external ...module.External) {
+	//gate放在最后，不用手动注册
+	external = append(external, gate.External)
+	modules := make([]module.Module, 0, len(external))
+	for _, e := range external {
+		e.InitExternal()
+		modules = append(modules, e.GetModule())
+	}
+	server.Run(modules...)
 }
 
 func Init() {

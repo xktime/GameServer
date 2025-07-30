@@ -22,6 +22,7 @@ type TestActor struct {
 	mu               sync.Mutex
 }
 
+
 func (a *TestActor) Receive(context actor.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -89,6 +90,7 @@ func (a *TestActorWithResponse) Receive(context actor.Context) {
 func TestActorFactory_Init(t *testing.T) {
 	actor_manager.Init(2000)
 }
+
 
 // TestActorFactory_Register 测试注册 Actor
 func TestActorFactory_Register(t *testing.T) {

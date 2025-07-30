@@ -30,6 +30,10 @@ func GetSnowflake() *Snowflake {
 	return snowflake
 }
 
+func FlakeId() int64 {
+	return GetSnowflake().GenerateID()
+}
+
 func NewSnowflake(machineID int64) *Snowflake {
 	if machineID < 0 || machineID > maxMachineID {
 		panic("Invalid machine ID")

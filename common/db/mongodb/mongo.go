@@ -57,6 +57,9 @@ func FindOne[T any](filter interface{}) (*T, error) {
 	var result T
 	err := mongoInstance.getCollection(collection).FindOne(ctx, filter).Decode(&result)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &result, nil
@@ -73,6 +76,9 @@ func FindAll[T any](filter bson.M) ([]T, error) {
 	defer cancel()
 	cur, err := mongoInstance.getCollection(collection).Find(ctx, filter)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer cur.Close(ctx)

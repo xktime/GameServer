@@ -105,13 +105,13 @@ func GetGroupPID(group ActorGroup) *actor.PID {
 
 // Get 获取 actor 的 PID
 func Get[T any](uniqueID string) *actor.PID {
-	actorFactory.mu.RLock()
-	defer actorFactory.mu.RUnlock()
-	id := getUniqueName[T](uniqueID)
-	if meta, ok := actorFactory.actors[id]; ok {
-		return meta.PID
-	}
-	return nil
+    id := getUniqueName[T](uniqueID)
+    actorFactory.mu.RLock()
+    defer actorFactory.mu.RUnlock()
+    if meta, ok := actorFactory.actors[id]; ok {
+        return meta.PID
+    }
+    return nil
 }
 
 func RequestFuture[T any](uniqueID string, method interface{}, args []interface{}) *actor.Future {
@@ -146,18 +146,25 @@ func RequestFuture[T any](uniqueID string, method interface{}, args []interface{
 	return future
 }
 
+
 // todollw map获取的时候加读锁，需要看一下有没有更好的方案
 // Send 发送消息，group下的actor通过group actor串行调度
 func Send[T any](uniqueID string, method interface{}, args []interface{}) {
-	actorFactory.mu.RLock()
-	id := getUniqueName[T](uniqueID)
-	meta, ok := actorFactory.actors[id]
-	actorFactory.mu.RUnlock()
-	if !ok {
-		return
-	}
+    actorFactory.mu.RLock()
+    id := getUniqueName[T](uniqueID)
+    meta, ok := actorFactory.actors[id]
+    actorFactory.mu.RUnlock()
+    if !ok {
+        log.Error("Send: Actor with ID %s not found", id)
+        return
+    }
 
-	meta.Send(method, args)
+    if !meta.checkMethod(method) {
+        log.Error("Send: Invalid method %v for Actor %s", method, id)
+        return
+    }
+
+    meta.Send(method, args)
 }
 
 // Stop 停止并移除指定 actor
