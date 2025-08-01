@@ -13,21 +13,20 @@ import (
 
 type LoginManager struct {
 	actor_manager.ActorMessageHandler
+	//	actorMeta actor_manager.ActorMeta[LoginManager]
 }
 
 var (
-	loginManager *LoginManager
-	loginOnce    sync.Once
+	meta      *actor_manager.ActorMeta[LoginManager]
+	loginOnce sync.Once
 )
 
 func GetLoginManager() *LoginManager {
 	loginOnce.Do(func() {
-		meta, _ := actor_manager.Register[LoginManager]("1", actor_manager.Login)
-		loginManager = &LoginManager{
-			ActorMessageHandler: *actor_manager.NewActorMessageHandler(meta),
-		}
+		meta, _ = actor_manager.Register[LoginManager]("1", actor_manager.Login)
+
 	})
-	return loginManager
+	return meta.Actor
 }
 
 func (m *LoginManager) HandleLogin(args []interface{}) {
@@ -57,7 +56,8 @@ func (m *LoginManager) DoHandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 }
 
 func (m *LoginManager) DoHandleLoginByActor(msg *message.C2S_Login, agent gate.Agent) {
-	m.AddToActor(m.DoHandleLogin, []interface{}{msg, agent})
+	meta.AddToActor("DoHandleLogin", []interface{}{msg, agent})
+	//	m.actorMeta.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

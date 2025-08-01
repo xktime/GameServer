@@ -8,4 +8,5 @@ const (
 	User     ActorGroup = "user"
 	Login    ActorGroup = "login"
 	Recharge ActorGroup = "recharge"
+	Player ActorGroup = "Player"
 )

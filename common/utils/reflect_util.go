@@ -5,16 +5,12 @@ import (
 	"reflect"
 )
 
-func CallMethodWithParams(method interface{}, params ...interface{}) ([]reflect.Value, error) {
-	// 获取方法的反射值
-	methodValue := reflect.ValueOf(method)
-	methodType := methodValue.Type()
-
-	// 检查是否为函数
-	if methodType.Kind() != reflect.Func {
-		return nil, fmt.Errorf("method 不是一个函数类型")
+func CallMethodWithParams(instance interface{}, methodName string, params ...interface{}) ([]reflect.Value, error) {
+	methodValue, err := GetMethod(instance, methodName)
+	if err != nil {
+		return nil, err
 	}
-
+	methodType := methodValue.Type()
 	// 检查参数数量
 	if len(params) != methodType.NumIn() {
 		return nil, fmt.Errorf("参数数量不匹配: 期望 %d, 实际 %d",
@@ -56,4 +52,22 @@ func CallMethodWithParams(method interface{}, params ...interface{}) ([]reflect.
 	results := methodValue.Call(in)
 
 	return results, nil
+}
+
+func GetMethod(instance interface{}, methodName string) (reflect.Value, error) {
+	// 查找方法
+	val := reflect.ValueOf(instance)
+	method := val.MethodByName(methodName)
+	if !method.IsValid() {
+		if val.Kind() != reflect.Ptr {
+			ptr := reflect.New(reflect.TypeOf(instance))
+			ptr.Elem().Set(val)
+			val = ptr
+		}
+		method = val.MethodByName(methodName)
+		if !method.IsValid() {
+			return reflect.Value{}, fmt.Errorf("method %s not found", methodName)
+		}
+	}
+	return method, nil
 }

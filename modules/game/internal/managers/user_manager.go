@@ -1,11 +1,14 @@
 package managers
 
 import (
+	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
+	"gameserver/common/utils"
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/game/internal/managers/player"
 
 	"sync"
 
@@ -15,55 +18,60 @@ import (
 
 type UserManager struct {
 	actor_manager.ActorMessageHandler
+	//	actorMeta actor_manager.ActorMeta[UserManager]
 }
 
 var (
-	userManager *UserManager
-	userOnce    sync.Once
+	meta     *actor_manager.ActorMeta[UserManager]
+	userOnce sync.Once
 )
 
 func GetUserManager() *UserManager {
 	userOnce.Do(func() {
-		meta, _ := actor_manager.Register[UserManager]("1", actor_manager.User)
-		userManager = &UserManager{
-			ActorMessageHandler: *actor_manager.NewActorMessageHandler(meta),
-		}
+		meta, _ = actor_manager.Register[UserManager]("1", actor_manager.User)
 	})
-	return userManager
+	return meta.Actor
 }
 
 func (m *UserManager) DoLoginByActor(agent gate.Agent, openId string, serverId int32) {
-	m.AddToActor(m.DoLogin, []interface{}{agent, openId, serverId})
+	//	m.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
+	meta.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
 }
 
-// todollw 根据openid和区服去取数据
-// todollw 登录成功之后，需要去对应区服取数据，返回数据并给登录信息存到userdata
 func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {
-	user, err := mongodb.FindOne[models.User](bson.M{"openid": openId, "serverid": serverId})
+	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openId, "ServerId": serverId})
 	if err != nil {
 		log.Error("DoLogin find user failed: %v", err)
 		return
 	}
-	// todo 初始化玩家actor
-	if user == nil {
+
+	// todo 玩家actor初始化，初始化完成之后各个actor自己拿着agent给客户端同步消息
+	isNew := user == nil
+	if isNew {
 		// 新注册流程
 		user = &models.User{
-			OpenId:   openId,
-			ServerId: serverId,
+			AccountId: fmt.Sprintf("%d_%s", serverId, openId),
+			OpenId:    openId,
+			ServerId:  serverId,
+			PlayerId:  utils.FlakeId(),
+			// todo platform需要传进来修改？
 			Platform: models.DouYin,
 		}
-		mongodb.Save(user)
+		if _, err := mongodb.Save(user); err != nil {
+			log.Error("Failed to save new user [openId: %s, serverId: %d]: %v", openId, serverId, err)
+			return
+		}
 		log.Debug("DoLogin new user: %v", user)
 	} else {
 		// 老用户流程
 		log.Debug("DoLogin old user: %v", user)
 	}
+	player.Login(*user, isNew)
 }
 
-// 缓存实现需要开发者自行覆盖
 var memCache = make(map[string]models.User)
 
-// todollw 设置缓存
+// todo 设置缓存
 func (m *UserManager) SetUserCache() {
 	// cacheData, exist := memCache[token]
 	// if !exist {

@@ -4,52 +4,59 @@ import (
 	"gameserver/common/utils"
 	"gameserver/core/log"
 	"reflect"
-	"runtime"
-	"strings"
 
 	"github.com/asynkron/protoactor-go/actor"
 )
 
 // ActorMeta 用于描述 actor 的元信息
 // 支持分组、标签
-type ActorMeta struct {
+type ActorMeta[T any] struct {
+	//	ActorMessageHandler
 	ID    string
 	PID   *actor.PID
 	Group ActorGroup
 	Tags  map[string]struct{}
-	Actor actor.Actor
+	Actor *T
 }
 
-func (m *ActorMeta) Send(method interface{}, args []interface{}) {
+func (m *ActorMeta[T]) AddToActor(methodName string, args []interface{}) {
+	m.Send(methodName, args)
+}
+
+func (m *ActorMeta[T]) Send(methodName string, args []interface{}) {
 	actorFactory.mu.RLock()
 	groupPID := actorFactory.groupPID[m.Group]
 	actorFactory.mu.RUnlock()
 	if groupPID == nil {
 		return
 	}
-	if !m.checkMethod(method) {
-		log.Error("Send: 传入的method: %v, 不是 %v 的方法", reflect.TypeOf(method), reflect.TypeOf(m.Actor))
+	if !m.checkMethod(methodName) {
+		log.Error("Send: 传入的method: %v, 不是 %v 的方法", methodName, reflect.TypeOf(m.Actor))
 		return
 	}
+	if args == nil {
+		args = make([]interface{}, 0)
+	}
+	args = append([]interface{}{m.Actor}, args...)
 	// 使用Send发送，确保消息按顺序到达GroupActor
-	context.Send(groupPID, &QueuedMsg{ID: m.ID, Params: args, Method: method, IsRequestFuture: false})
+	context.Send(groupPID, &QueuedMsg{ID: m.ID, Params: args, MethodName: methodName, IsRequestFuture: false})
 }
 
 // todollw 可以做缓存，避免每次都反射
-func (m *ActorMeta) checkMethod(method interface{}) bool {
-	if m.Actor != nil && method != nil {
-		actorType := reflect.TypeOf(m.Actor)
-		methodVal := reflect.ValueOf(method)
-		if methodVal.Kind() == reflect.Func {
-			methodName := runtime.FuncForPC(methodVal.Pointer()).Name()
-			methodName = strings.TrimSuffix(methodName, "-fm")
-			for i := 0; i < actorType.NumMethod(); i++ {
-				meth := actorType.Method(i)
-				funcName := runtime.FuncForPC(meth.Func.Pointer()).Name()
-				if funcName == methodName {
-					return true
-				}
-			}
+func (m *ActorMeta[T]) checkMethod(methodName string) bool {
+	val := reflect.ValueOf(m.Actor)
+
+	// 尝试在指针上查找
+	method := val.MethodByName(methodName)
+	if method.IsValid() {
+		return true
+	}
+
+	// 尝试在值上查找
+	if val.Kind() == reflect.Ptr {
+		elemMethod := val.Elem().MethodByName(methodName)
+		if elemMethod.IsValid() {
+			return true
 		}
 	}
 	return false
@@ -57,25 +64,10 @@ func (m *ActorMeta) checkMethod(method interface{}) bool {
 
 type ActorMessageHandler struct {
 	actor.Actor
-	ActorMeta *ActorMeta
-}
-
-func NewActorMessageHandler(actorMeta *ActorMeta) *ActorMessageHandler {
-	return &ActorMessageHandler{
-		ActorMeta: actorMeta,
-	}
 }
 
 func (h *ActorMessageHandler) Receive(ctx actor.Context) {
 	h.handleMessage(ctx)
-}
-
-func (h *ActorMessageHandler) AddToActor(method interface{}, args []interface{}) {
-	h.ActorMeta.Send(method, args)
-}
-
-func (h *ActorMessageHandler) GetActerMeta() *ActorMeta {
-	return h.ActorMeta
 }
 
 func (h *ActorMessageHandler) handleMessage(ctx actor.Context) {
@@ -86,11 +78,12 @@ func (h *ActorMessageHandler) handleMessage(ctx actor.Context) {
 	if !ok {
 		return
 	}
-	if len(msg) == 0 {
+	if len(msg) <= 1 {
+		log.Error("msg最少需要两个参数")
 		return
 	}
 
-	_, err := utils.CallMethodWithParams(msg[0], msg[1:]...)
+	_, err := utils.CallMethodWithParams(msg[1], msg[0].(string), msg[2:]...)
 	if err != nil {
 		log.Error("CallMethodWithParams error: %v", err)
 		return
@@ -103,7 +96,7 @@ func (h *ActorMessageHandler) handleMessage(ctx actor.Context) {
 type QueuedMsg struct {
 	ID              string        // 子actor id
 	Params          []interface{} // 消息内容
-	Method          interface{}   // 方法
+	MethodName      string        // 方法
 	IsRequestFuture bool          // 是否是RequestFuture消息
 }
 
@@ -143,11 +136,11 @@ func (g *GroupActor) tryDispatch(ctx actor.Context) {
 	}
 	next := g.msgQueue[0]
 	g.msgQueue = g.msgQueue[1:]
-	if next.Method == nil {
+	if next.MethodName == "" {
 		log.Error("actor method is nil")
 		return
 	}
-	msg := append([]interface{}{next.Method}, next.Params...)
+	msg := append([]interface{}{next.MethodName}, next.Params...)
 	if pid, ok := g.children[next.ID]; ok {
 		// Future消息使用RequestWithCustomSender发送消息给子actor
 		if next.IsRequestFuture {

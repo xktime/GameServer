@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
+	actor_manager "gameserver/core/actor"
+	"gameserver/modules/login"
 	"net"
 	"testing"
 	"time"
@@ -71,6 +73,7 @@ func TestServer_WebSocket(t *testing.T) {
 		pbData := &message.C2S_Login{
 			LoginType: message.LoginType_WeChat,
 			Code:      "123456",
+			ServerId: 1,
 		}
 
 		data, err := proto.Marshal(pbData)
@@ -103,7 +106,7 @@ func TestServer_WebSocket(t *testing.T) {
 		}
 		fmt.Printf("收到S2C_Login: %+v\n", s2cLogin)
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 	}
 }
 
@@ -111,6 +114,14 @@ func TestServer_GetMessageId(t *testing.T) {
 	fmt.Println("S2C_Login", getId(&message.S2C_Login{}))
 	fmt.Println("C2S_Login", getId(&message.C2S_Login{}))
 
+}
+
+func TestServer_Func(t *testing.T) {
+	actor_manager.Init(2000)
+	_, err := utils.CallMethodWithParams(&login.LoginExternal{}, "InitExternal")
+	if err != nil {
+		t.Fatalf("调用方法失败: %v", err)
+	}
 }
 
 func TestServer_SnowFlake(t *testing.T) {

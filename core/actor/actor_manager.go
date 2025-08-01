@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gameserver/core/log"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 // 支持分组、标签、批量操作
 type ActorManager struct {
 	mu       sync.RWMutex
-	actors   map[string]*ActorMeta              // name -> meta
+	actors   map[string]interface{}             // name -> meta
 	groups   map[ActorGroup]map[string]struct{} // group -> set of names
 	groupPID map[ActorGroup]*actor.PID          // group -> group actor PID
 }
@@ -22,7 +23,7 @@ type ActorManager struct {
 // NewActorFactory 创建一个新的 ActorFactory
 func NewActorManager() *ActorManager {
 	return &ActorManager{
-		actors:   make(map[string]*ActorMeta),
+		actors:   make(map[string]interface{}),
 		groups:   make(map[ActorGroup]map[string]struct{}),
 		groupPID: make(map[ActorGroup]*actor.PID),
 	}
@@ -42,37 +43,45 @@ func Init(milliseconds int) {
 	timeout = time.Duration(milliseconds) * time.Millisecond
 }
 
-type InitFunc func(actor.Actor)
-
 // Register 注册并启动一个 actor
-func Register[T any](uniqueID string, group ActorGroup, initFunc ...InitFunc) (*ActorMeta, error) {
+// todo group也得区分，不然取出来的全是一个group
+func Register[T any](uniqueID interface{}, group ActorGroup, initFunc ...func(*T)) (*ActorMeta[T], error) {
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
-	name := getUniqueName[T](uniqueID)
+	name := getUniqueId[T](uniqueID)
 	if _, exists := actorFactory.actors[name]; exists {
+		var groupInfo string
+		for group, names := range actorFactory.groups {
+			if _, ok := names[name]; ok {
+				groupInfo = fmt.Sprintf("%v", group)
+				break
+			}
+		}
+		log.Release("Actor 已存在: %v, 所属Group: %v", name, groupInfo)
 		return nil, nil // 已存在
 	}
 
 	// 1. group actor 不存在则创建
+	// 为每个uniqueId创建独立的group，确保同一个uniqueId下的actor在各自的group下执行
+	groupKey := getUniqueGroup(group, uniqueID)
 	var groupPID *actor.PID
-	if existingPID, ok := actorFactory.groupPID[group]; ok {
+	if existingPID, ok := actorFactory.groupPID[groupKey]; ok {
 		groupPID = existingPID
 	} else {
 		props := actor.PropsFromProducer(func() actor.Actor {
 			return &GroupActor{}
 		})
 		groupPID = context.Spawn(props)
-		actorFactory.groupPID[group] = groupPID
+		actorFactory.groupPID[groupKey] = groupPID
 	}
 
 	// 2. 创建子actor - 自动处理值类型和指针类型
-	actorImpl := any(new(T)).(actor.Actor)
-	if len(initFunc) > 0 {
-		initFunc[0](actorImpl)
-	}
+	instance := any(new(T))
+	actorImpl := instance.(actor.Actor)
 	props := actor.PropsFromProducer(func() actor.Actor {
 		return actorImpl
 	})
+
 	pid := context.Spawn(props)
 
 	// 3. 注册子actor到group actor
@@ -80,46 +89,51 @@ func Register[T any](uniqueID string, group ActorGroup, initFunc ...InitFunc) (*
 		context.Send(groupPID, &RegisterChild{ID: name, PID: pid})
 	}
 
-	meta := &ActorMeta{
+	meta := &ActorMeta[T]{
 		ID:    name,
 		PID:   pid,
-		Group: group,
-		Actor: actorImpl,
+		Group: groupKey,
+		Actor: instance.(*T),
 		Tags:  make(map[string]struct{}),
 	}
-	actorFactory.actors[name] = meta
-	if group != "" {
-		if _, ok := actorFactory.groups[group]; !ok {
-			actorFactory.groups[group] = make(map[string]struct{})
+
+	// 数据初始化
+	if len(initFunc) > 0 {
+		for _, f := range initFunc {
+			f(meta.Actor)
 		}
-		actorFactory.groups[group][name] = struct{}{}
+	}
+	actorFactory.actors[name] = meta
+	if groupKey != "" {
+		if _, ok := actorFactory.groups[groupKey]; !ok {
+			actorFactory.groups[groupKey] = make(map[string]struct{})
+		}
+		actorFactory.groups[groupKey][name] = struct{}{}
 	}
 	return meta, nil
 }
 
-func GetGroupPID(group ActorGroup) *actor.PID {
+func GetGroupPID(group ActorGroup, uniqueID interface{}) *actor.PID {
+	// 拼接完整的group key
+	groupKey := getUniqueGroup(group, uniqueID)
 	actorFactory.mu.RLock()
 	defer actorFactory.mu.RUnlock()
-	return actorFactory.groupPID[group]
+
+	// 直接查找完整的group key
+	return actorFactory.groupPID[groupKey]
 }
 
-// Get 获取 actor 的 PID
-func Get[T any](uniqueID string) *actor.PID {
-    id := getUniqueName[T](uniqueID)
-    actorFactory.mu.RLock()
-    defer actorFactory.mu.RUnlock()
-    if meta, ok := actorFactory.actors[id]; ok {
-        return meta.PID
-    }
-    return nil
+func Get[T any](uniqueID interface{}) *T {
+	meta := getMeta[T](uniqueID)
+	if meta == nil {
+		return nil
+	}
+	return meta.Actor
 }
 
-func RequestFuture[T any](uniqueID string, method interface{}, args []interface{}) *actor.Future {
-	actorFactory.mu.RLock()
-	id := getUniqueName[T](uniqueID)
-	meta, ok := actorFactory.actors[id]
-	actorFactory.mu.RUnlock()
-	if !ok {
+func RequestFuture[T any](uniqueID interface{}, methodName string, args []interface{}) *actor.Future {
+	meta := getMeta[T](uniqueID)
+	if meta == nil {
 		return nil
 	}
 
@@ -130,15 +144,19 @@ func RequestFuture[T any](uniqueID string, method interface{}, args []interface{
 	if groupPID == nil {
 		return nil
 	}
-	if !meta.checkMethod(method) {
-		log.Error("Send: 传入的method: %v, 不是 %v 的方法", reflect.TypeOf(method), reflect.TypeOf(meta.Actor))
+	if !meta.checkMethod(methodName) {
+		log.Error("Send: 传入的method: %v, 不是 %v 的方法", methodName, reflect.TypeOf(meta.Actor))
 		return nil
 	}
-
+	// todollw 整理用meta发送
+	if args == nil {
+		args = make([]interface{}, 0)
+	}
+	args = append([]interface{}{meta.Actor}, args...)
 	// 创建Future
 	future := context.RequestFuture(groupPID, &QueuedMsg{
-		ID:              id,
-		Method:          method,
+		ID:              meta.ID,
+		MethodName:      methodName,
 		Params:          args,
 		IsRequestFuture: true,
 	}, timeout)
@@ -146,36 +164,28 @@ func RequestFuture[T any](uniqueID string, method interface{}, args []interface{
 	return future
 }
 
-
 // todollw map获取的时候加读锁，需要看一下有没有更好的方案
 // Send 发送消息，group下的actor通过group actor串行调度
-func Send[T any](uniqueID string, method interface{}, args []interface{}) {
-    actorFactory.mu.RLock()
-    id := getUniqueName[T](uniqueID)
-    meta, ok := actorFactory.actors[id]
-    actorFactory.mu.RUnlock()
-    if !ok {
-        log.Error("Send: Actor with ID %s not found", id)
-        return
-    }
-
-    if !meta.checkMethod(method) {
-        log.Error("Send: Invalid method %v for Actor %s", method, id)
-        return
-    }
-
-    meta.Send(method, args)
-}
-
-// Stop 停止并移除指定 actor
-func Stop[T any](uniqueID string) {
-	actorFactory.mu.Lock()
-	defer actorFactory.mu.Unlock()
-	id := getUniqueName[T](uniqueID)
-	meta, ok := actorFactory.actors[id]
-	if !ok {
+func Send[T any](uniqueID interface{}, methodName string, args []interface{}) {
+	meta := getMeta[T](uniqueID)
+	if meta == nil {
+		log.Error("Send: Actor with ID %s not found", uniqueID)
 		return
 	}
+
+	meta.Send(methodName, args)
+}
+
+// todo 玩家下线时需结束所有actor
+// Stop 停止并移除指定 actor
+func Stop[T any](uniqueID interface{}) {
+	id := getUniqueId[T](uniqueID)
+	meta := getMeta[T](uniqueID)
+	if meta == nil {
+		return
+	}
+	actorFactory.mu.Lock()
+	defer actorFactory.mu.Unlock()
 	context.Stop(meta.PID)
 	delete(actorFactory.actors, id)
 	if meta.Group != "" {
@@ -192,25 +202,34 @@ func Stop[T any](uniqueID string) {
 }
 
 // StopGroup 停止并移除某个分组下的所有 actor
+// 现在会停止所有具有相同基础group名称的actor
 func StopGroup(group ActorGroup) {
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
-	ids, ok := actorFactory.groups[group]
-	if !ok {
-		return
-	}
-	for id := range ids {
-		if meta, ok := actorFactory.actors[id]; ok {
-			context.Stop(meta.PID)
-			delete(actorFactory.actors, id)
+
+	// 遍历所有group，找到匹配基础group名称的
+	for groupKey, ids := range actorFactory.groups {
+		if strings.HasPrefix(string(groupKey), string(group)+"_") {
+			for id := range ids {
+				if meta, ok := actorFactory.actors[id]; ok {
+					metaValue := reflect.ValueOf(meta)
+					if metaValue.Kind() == reflect.Ptr && !metaValue.IsNil() {
+						pidField := metaValue.Elem().FieldByName("PID")
+						if pidField.IsValid() {
+							pid := pidField.Interface().(*actor.PID)
+							context.Stop(pid)
+						}
+					}
+					delete(actorFactory.actors, id)
+				}
+			}
+			if groupPID, ok := actorFactory.groupPID[groupKey]; ok {
+				context.Stop(groupPID)
+				delete(actorFactory.groupPID, groupKey)
+			}
+			delete(actorFactory.groups, groupKey)
 		}
-		_ = id
 	}
-	if groupPID, ok := actorFactory.groupPID[group]; ok {
-		context.Stop(groupPID)
-		delete(actorFactory.groupPID, group)
-	}
-	delete(actorFactory.groups, group)
 }
 
 // StopAll 停止并移除所有 actor
@@ -218,21 +237,42 @@ func StopAll() {
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
 	for _, meta := range actorFactory.actors {
-		context.Stop(meta.PID)
+		metaValue := reflect.ValueOf(meta)
+		if metaValue.Kind() == reflect.Ptr && !metaValue.IsNil() {
+			pidField := metaValue.Elem().FieldByName("PID")
+			if pidField.IsValid() {
+				pid := pidField.Interface().(*actor.PID)
+				context.Stop(pid)
+			}
+		}
 	}
 	for _, groupPID := range actorFactory.groupPID {
 		context.Stop(groupPID)
 	}
-	actorFactory.actors = make(map[string]*ActorMeta)
+	actorFactory.actors = make(map[string]interface{})
 	actorFactory.groups = make(map[ActorGroup]map[string]struct{})
 	actorFactory.groupPID = make(map[ActorGroup]*actor.PID)
 }
 
-func getUniqueName[T any](uniqueID string) string {
-	return fmt.Sprintf("%s_%s", getName[T](), uniqueID)
+func getMeta[T any](uniqueID interface{}) *ActorMeta[T] {
+	id := getUniqueId[T](uniqueID)
+	actorFactory.mu.RLock()
+	defer actorFactory.mu.RUnlock()
+	if meta, ok := actorFactory.actors[id]; ok {
+		return meta.(*ActorMeta[T])
+	}
+	return nil
 }
 
-func getName[T any]() string {
+func getUniqueId[T any](uniqueID interface{}) string {
+	return fmt.Sprintf("%s_%s", getId[T](), uniqueID)
+}
+
+func getUniqueGroup(group ActorGroup, uniqueID interface{}) ActorGroup {
+	return ActorGroup(fmt.Sprintf("%s_%s", group, uniqueID))
+}
+
+func getId[T any]() string {
 	var t T
 	typ := reflect.TypeOf(t)
 	if typ.Kind() == reflect.Ptr {

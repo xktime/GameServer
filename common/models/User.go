@@ -8,10 +8,10 @@ const (
 )
 
 type User struct {
-	AccountId       string `bson:"_id"`
-	ServerId        int32
-	OpenId          string
-	PlayerId        int64
-	Platform        Platform
-	LastOfflineTime int64
+	AccountId       string   `bson:"_id"`
+	ServerId        int32    `bson:"ServerId" default:"0"`
+	OpenId          string   `bson:"OpenId" default:""`
+	PlayerId        int64    `bson:"PlayerId" default:"0"`
+	Platform        Platform `bson:"Platform" default:"0"`
+	LastOfflineTime int64    `bson:"LastOfflineTime" default:"0"`
 }
