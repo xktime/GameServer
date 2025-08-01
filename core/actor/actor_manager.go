@@ -44,7 +44,6 @@ func Init(milliseconds int) {
 }
 
 // Register 注册并启动一个 actor
-// todo group也得区分，不然取出来的全是一个group
 func Register[T any](uniqueID interface{}, group ActorGroup, initFunc ...func(*T)) (*ActorMeta[T], error) {
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
@@ -58,7 +57,7 @@ func Register[T any](uniqueID interface{}, group ActorGroup, initFunc ...func(*T
 			}
 		}
 		log.Release("Actor 已存在: %v, 所属Group: %v", name, groupInfo)
-		return nil, nil // 已存在
+		return nil, nil
 	}
 
 	// 1. group actor 不存在则创建
@@ -124,15 +123,26 @@ func GetGroupPID(group ActorGroup, uniqueID interface{}) *actor.PID {
 }
 
 func Get[T any](uniqueID interface{}) *T {
-	meta := getMeta[T](uniqueID)
+	meta := GetMeta[T](uniqueID)
 	if meta == nil {
 		return nil
 	}
 	return meta.Actor
 }
 
+func GetMeta[T any](uniqueID interface{}) *ActorMeta[T] {
+	id := getUniqueId[T](uniqueID)
+	actorFactory.mu.RLock()
+	defer actorFactory.mu.RUnlock()
+	if meta, ok := actorFactory.actors[id]; ok {
+		return meta.(*ActorMeta[T])
+	}
+	return nil
+}
+
+
 func RequestFuture[T any](uniqueID interface{}, methodName string, args []interface{}) *actor.Future {
-	meta := getMeta[T](uniqueID)
+	meta := GetMeta[T](uniqueID)
 	if meta == nil {
 		return nil
 	}
@@ -148,7 +158,6 @@ func RequestFuture[T any](uniqueID interface{}, methodName string, args []interf
 		log.Error("Send: 传入的method: %v, 不是 %v 的方法", methodName, reflect.TypeOf(meta.Actor))
 		return nil
 	}
-	// todollw 整理用meta发送
 	if args == nil {
 		args = make([]interface{}, 0)
 	}
@@ -167,7 +176,7 @@ func RequestFuture[T any](uniqueID interface{}, methodName string, args []interf
 // todollw map获取的时候加读锁，需要看一下有没有更好的方案
 // Send 发送消息，group下的actor通过group actor串行调度
 func Send[T any](uniqueID interface{}, methodName string, args []interface{}) {
-	meta := getMeta[T](uniqueID)
+	meta := GetMeta[T](uniqueID)
 	if meta == nil {
 		log.Error("Send: Actor with ID %s not found", uniqueID)
 		return
@@ -180,7 +189,7 @@ func Send[T any](uniqueID interface{}, methodName string, args []interface{}) {
 // Stop 停止并移除指定 actor
 func Stop[T any](uniqueID interface{}) {
 	id := getUniqueId[T](uniqueID)
-	meta := getMeta[T](uniqueID)
+	meta := GetMeta[T](uniqueID)
 	if meta == nil {
 		return
 	}
@@ -252,16 +261,6 @@ func StopAll() {
 	actorFactory.actors = make(map[string]interface{})
 	actorFactory.groups = make(map[ActorGroup]map[string]struct{})
 	actorFactory.groupPID = make(map[ActorGroup]*actor.PID)
-}
-
-func getMeta[T any](uniqueID interface{}) *ActorMeta[T] {
-	id := getUniqueId[T](uniqueID)
-	actorFactory.mu.RLock()
-	defer actorFactory.mu.RUnlock()
-	if meta, ok := actorFactory.actors[id]; ok {
-		return meta.(*ActorMeta[T])
-	}
-	return nil
 }
 
 func getUniqueId[T any](uniqueID interface{}) string {

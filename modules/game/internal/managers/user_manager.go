@@ -34,7 +34,6 @@ func GetUserManager() *UserManager {
 }
 
 func (m *UserManager) DoLoginByActor(agent gate.Agent, openId string, serverId int32) {
-	//	m.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
 	meta.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
 }
 
@@ -45,7 +44,6 @@ func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {
 		return
 	}
 
-	// todo 玩家actor初始化，初始化完成之后各个actor自己拿着agent给客户端同步消息
 	isNew := user == nil
 	if isNew {
 		// 新注册流程
@@ -66,7 +64,8 @@ func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {
 		// 老用户流程
 		log.Debug("DoLogin old user: %v", user)
 	}
-	player.Login(*user, isNew)
+	agent.SetUserData(*user)
+	player.Login(agent, isNew)
 }
 
 var memCache = make(map[string]models.User)

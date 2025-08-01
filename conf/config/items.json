@@ -1,0 +1,37 @@
+[
+  {
+    "id": "1001",
+    "name": "铁剑",
+    "type": "weapon",
+    "attack": 10,
+    "durability": 100,
+    "price": 50,
+    "description": "一把普通的铁剑"
+  },
+  {
+    "id": "1002",
+    "name": "魔法杖",
+    "type": "weapon",
+    "attack": 15,
+    "magic": 20,
+    "durability": 80,
+    "price": 100,
+    "description": "蕴含魔力的法杖"
+  },
+  {
+    "id": "2001",
+    "name": "生命药水",
+    "type": "consumable",
+    "heal": 50,
+    "price": 20,
+    "description": "恢复生命值的药水"
+  },
+  {
+    "id": "2002",
+    "name": "魔法药水",
+    "type": "consumable",
+    "mana": 30,
+    "price": 25,
+    "description": "恢复魔法值的药水"
+  }
+] 

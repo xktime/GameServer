@@ -1,0 +1,46 @@
+[
+  {
+    "id": "1001",
+    "name": "史莱姆",
+    "type": "normal",
+    "level": 1,
+    "hp": 50,
+    "attack": 5,
+    "defense": 2,
+    "exp": 10,
+    "drops": ["2001", "2002"]
+  },
+  {
+    "id": "1002",
+    "name": "哥布林",
+    "type": "normal",
+    "level": 3,
+    "hp": 80,
+    "attack": 8,
+    "defense": 3,
+    "exp": 20,
+    "drops": ["1001", "2001"]
+  },
+  {
+    "id": "2001",
+    "name": "骷髅战士",
+    "type": "elite",
+    "level": 5,
+    "hp": 150,
+    "attack": 15,
+    "defense": 8,
+    "exp": 50,
+    "drops": ["1002", "2002"]
+  },
+  {
+    "id": "3001",
+    "name": "龙",
+    "type": "boss",
+    "level": 10,
+    "hp": 500,
+    "attack": 30,
+    "defense": 15,
+    "exp": 200,
+    "drops": ["1002", "2001", "2002"]
+  }
+] 

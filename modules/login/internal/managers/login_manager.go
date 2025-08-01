@@ -57,7 +57,6 @@ func (m *LoginManager) DoHandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 
 func (m *LoginManager) DoHandleLoginByActor(msg *message.C2S_Login, agent gate.Agent) {
 	meta.AddToActor("DoHandleLogin", []interface{}{msg, agent})
-	//	m.actorMeta.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

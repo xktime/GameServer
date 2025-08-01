@@ -1,6 +1,7 @@
 package main
 
 import (
+	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/utils"
 	"gameserver/conf"
@@ -41,6 +42,8 @@ func Init() {
 	lconf.LogFlag = conf.LogFlag
 	lconf.ConsolePort = conf.Server.ConsolePort
 	lconf.ProfilePath = conf.Server.ProfilePath
+
+	config.InitGlobalConfig("./conf/config")
 
 	// 初始化雪花算法
 	utils.InitSnowflake(conf.Server.MachineID)
