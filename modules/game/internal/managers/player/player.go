@@ -9,7 +9,7 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/models/player"
-	"google.golang.org/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 )
 
 type Player struct {

@@ -70,7 +70,7 @@ func TestServer_WebSocket(t *testing.T) {
 		t.Fatalf("连接WebSocket服务器失败: %v", err)
 	}
 	fmt.Println("WebSocket连接成功")
-	for k := 0; k < 1000; k++ {
+	for k := 0; k < 10000; k++ {
 		pbData := &message.C2S_Login{
 			LoginType: message.LoginType_WeChat,
 			Code:      "123456",
@@ -107,7 +107,7 @@ func TestServer_WebSocket(t *testing.T) {
 		}
 		fmt.Printf("收到S2C_Login: %+v\n", s2cLogin)
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

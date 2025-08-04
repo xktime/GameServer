@@ -18,23 +18,22 @@ import (
 
 type UserManager struct {
 	actor_manager.ActorMessageHandler
-	//	actorMeta actor_manager.ActorMeta[UserManager]
 }
 
 var (
-	meta     *actor_manager.ActorMeta[UserManager]
+	useMeta     *actor_manager.ActorMeta[UserManager]
 	userOnce sync.Once
 )
 
 func GetUserManager() *UserManager {
 	userOnce.Do(func() {
-		meta, _ = actor_manager.Register[UserManager]("1", actor_manager.User)
+		useMeta, _ = actor_manager.Register[UserManager]("1", actor_manager.User)
 	})
-	return meta.Actor
+	return useMeta.Actor
 }
 
 func (m *UserManager) DoLoginByActor(agent gate.Agent, openId string, serverId int32) {
-	meta.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
+	useMeta.AddToActor("DoLogin", []interface{}{agent, openId, serverId})
 }
 
 func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {

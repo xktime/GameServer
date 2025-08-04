@@ -11,14 +11,11 @@ import (
 
 func main() {
 	var sourceDir string
-
 	flag.StringVar(&sourceDir, "source", "", "源目录路径 (包含结构体的目录)")
 	flag.Parse()
 
 	if sourceDir == "" {
-		fmt.Println("用法: go run main.go -source <源目录>")
-		fmt.Println("示例: go run main.go -source ../../modules/game/internal/managers/player")
-		fmt.Println("示例: go run main.go -source ../../modules/game/internal/managers/role")
+		fmt.Println("请使用 -source 参数指定源目录路径")
 		os.Exit(1)
 	}
 
@@ -28,7 +25,7 @@ func main() {
 	}
 
 	// 自动检测结构体和包名
-	structs, packageName, err := AutoDetectStructs(sourceDir)
+	structs, err := AutoDetectStructs(sourceDir)
 	if err != nil {
 		log.Fatalf("检测结构体失败: %v", err)
 	}
@@ -37,16 +34,31 @@ func main() {
 		log.Fatalf("在目录 %s 中未找到包含 ActorMessageHandler 的结构体", sourceDir)
 	}
 
-	fmt.Printf("检测到 %d 个结构体: %v\n", len(structs), structs)
-	fmt.Printf("包名: %s\n", packageName)
+	fmt.Printf("检测到 %d 个结构体\n", len(structs))
 
 	// 为每个结构体生成代码
-	for _, structName := range structs {
-		// 自动生成输出文件路径
-		outputFile := filepath.Join(sourceDir, fmt.Sprintf("%s_actor.go", strings.ToLower(structName)))
+	for _, structInfo := range structs {
+		structName := structInfo.Name
+		packageName := structInfo.Package
+		filePath := structInfo.FilePath
+
+		// 检查结构体是否有方法
+		hasMethods, err := CheckStructHasMethods(sourceDir, structName)
+		if err != nil {
+			log.Printf("检查结构体 %s 方法失败: %v", structName, err)
+			continue
+		}
+
+		if !hasMethods {
+			fmt.Printf("跳过结构体 %s: 没有找到方法\n", structName)
+			continue
+		}
+
+		// 根据结构体所在文件路径确定输出目录
+		outputDir := filepath.Dir(filePath)
+		outputFile := filepath.Join(outputDir, fmt.Sprintf("%s_actor.go", strings.ToLower(structName)))
 
 		// 确保输出目录存在
-		outputDir := filepath.Dir(outputFile)
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			log.Fatalf("创建输出目录失败: %v", err)
 		}

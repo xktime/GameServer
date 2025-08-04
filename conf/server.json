@@ -5,6 +5,10 @@
     "WSAddr": ":3653",
     "MaxConnNum": 20000,
     "MachineID": 1,
+    "Debug": {
+        "Enabled": true,
+        "Port": 6060
+    },
     "Actor": {
         "TimeoutMillisecond": 2000
     },

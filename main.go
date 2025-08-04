@@ -1,26 +1,48 @@
 package main
 
 import (
+	"fmt"
 	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/utils"
 	"gameserver/conf"
-	"gameserver/gate"
-	"gameserver/modules/game"
-	"gameserver/modules/login"
-
 	actor_manager "gameserver/core/actor"
 	lconf "gameserver/core/conf"
 	"gameserver/core/module"
 	"gameserver/core/server"
+	"gameserver/gate"
+	"gameserver/modules/game"
+	"gameserver/modules/login"
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
 )
 
 func main() {
+	// 初始化配置
+	conf.Instance().Init("./conf")
+
+	// 根据debug配置启用性能分析
+	if conf.Server.Debug.Enabled {
+		runtime.GOMAXPROCS(1)
+		// 启用 mutex 性能分析
+		runtime.SetMutexProfileFraction(1)
+		// 启用 block 性能分析
+		runtime.SetBlockProfileRate(1)
+		runtime.SetMutexProfileFraction(1)
+
+		go func() {
+			// 启动 http server. 对应 pprof 的一系列 handler 也会挂载在该端口下
+			debugAddr := fmt.Sprintf(":%d", conf.Server.Debug.Port)
+			if err := http.ListenAndServe(debugAddr, nil); err != nil {
+				fmt.Printf("启动debug服务器失败: %v\n", err)
+			}
+		}()
+	}
 
 	Init()
 
 	Run(game.External, login.External)
-
 }
 
 func Run(external ...module.External) {
@@ -36,7 +58,6 @@ func Run(external ...module.External) {
 
 func Init() {
 	// 初始化配置
-	conf.Instance().Init()
 	lconf.LogLevel = conf.Server.LogLevel
 	lconf.LogPath = conf.Server.LogPath
 	lconf.LogFlag = conf.LogFlag

@@ -33,7 +33,11 @@ var Server struct {
 	ConsolePort int
 	ProfilePath string
 	MachineID   int64
-	Actor       struct {
+	Debug       struct {
+		Enabled bool
+		Port    int
+	}
+	Actor struct {
 		TimeoutMillisecond int
 	}
 	DouYinInfo struct {
@@ -64,19 +68,21 @@ type IndexCreateConfig struct {
 	Unique bool           `json:"unique"`
 }
 
-func (j *JsonConf) Init() {
+func (j *JsonConf) Init(baseDir string) {
 	// 从server.json加载Server配置
-	data, err := os.ReadFile("conf/server.json")
+	serverPath := baseDir + "/server.json"
+	data, err := os.ReadFile(serverPath)
 	if err != nil {
-		log.Fatal("%v", err)
+		log.Fatal("读取server.json失败: %v", err)
 	}
 	err = json.Unmarshal(data, &Server)
 	if err != nil {
-		log.Fatal("%v", err)
+		log.Fatal("解析server.json失败: %v", err)
 	}
 
 	// 从mongo_index.json加载Index配置
-	indexData, err := os.ReadFile("conf/mongo_index.json")
+	indexPath := baseDir + "/mongo_index.json"
+	indexData, err := os.ReadFile(indexPath)
 	if err != nil {
 		log.Fatal("读取mongo_index.json失败: %v", err)
 	}

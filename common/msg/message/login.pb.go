@@ -70,7 +70,7 @@ func (LoginType) EnumDescriptor() ([]byte, []int) {
 	return file_login_proto_rawDescGZIP(), []int{0}
 }
 
-// todo llw 返回其他角色信息
+// todo llw 返回角色其他信息
 type S2C_Login struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LoginResult   int32                  `protobuf:"varint,1,opt,name=login_result,json=loginResult,proto3" json:"login_result,omitempty"` // 为0登录成功，其他都登录失败

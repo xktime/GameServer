@@ -1,1 +1,2 @@
-../../modules/game/internal/managers/player
+../../modules/game/internal/managers
+../../modules/login/internal/managers

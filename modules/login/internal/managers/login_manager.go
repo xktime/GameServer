@@ -29,13 +29,7 @@ func GetLoginManager() *LoginManager {
 	return meta.Actor
 }
 
-func (m *LoginManager) HandleLogin(args []interface{}) {
-	msg := args[0].(*message.C2S_Login)
-	agent := args[1].(gate.Agent)
-	m.DoHandleLogin(msg, agent)
-}
-
-func (m *LoginManager) DoHandleLogin(msg *message.C2S_Login, agent gate.Agent) {
+func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 	loginProcessor := getLoginProcessor(msg.LoginType)
 	if loginProcessor == nil {
 		log.Error("loginProcessor is nil")
