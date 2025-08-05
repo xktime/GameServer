@@ -33,7 +33,6 @@ func C2S_LoginHandler(args []interface{}) {
 	// 打印agent信息以避免not used警告
 	log.Debug("Agent信息: %v", agent)
 	managers.GetLoginManager().HandleLogin(msg, agent)
-
 	// 示例：发送响应
 	// response := &message.S2C_C2S_LoginResponse{}
 	// agent.WriteMsg(response)

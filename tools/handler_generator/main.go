@@ -9,9 +9,11 @@ import (
 func main() {
 	var protoDir string
 	var outputDir string
+	var modulesDir string
 
 	flag.StringVar(&protoDir, "proto", "", "proto文件目录")
 	flag.StringVar(&outputDir, "output", "", "输出目录")
+	flag.StringVar(&modulesDir, "modules", "", "modules目录")
 	flag.Parse()
 
 	if protoDir == "" {
@@ -23,10 +25,15 @@ func main() {
 		outputDir = "../../common/msg/message/handlers"
 	}
 
+	if modulesDir == "" {
+		modulesDir = "../../modules"
+	}
+
 	fmt.Printf("扫描proto目录: %s\n", protoDir)
 	fmt.Printf("输出目录: %s\n", outputDir)
+	fmt.Printf("Modules目录: %s\n", modulesDir)
 
-	generator := NewHandlerGenerator(protoDir, outputDir)
+	generator := NewHandlerGenerator(protoDir, outputDir, modulesDir)
 	if err := generator.Generate(); err != nil {
 		fmt.Printf("生成失败: %v\n", err)
 		os.Exit(1)
