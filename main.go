@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
+	"gameserver/common/schedule"
 	"gameserver/common/utils"
 	"gameserver/conf"
 	actor_manager "gameserver/core/actor"
@@ -75,4 +76,7 @@ func Init() {
 
 	// 初始化actor
 	actor_manager.Init(conf.Server.Actor.TimeoutMillisecond)
+
+	// 初始化定时任务
+	schedule.Init()
 }

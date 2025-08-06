@@ -21,7 +21,7 @@ type UserManager struct {
 }
 
 var (
-	useMeta     *actor_manager.ActorMeta[UserManager]
+	useMeta  *actor_manager.ActorMeta[UserManager]
 	userOnce sync.Once
 )
 
@@ -65,6 +65,11 @@ func (m *UserManager) DoLogin(agent gate.Agent, openId string, serverId int32) {
 	}
 	agent.SetUserData(*user)
 	player.Login(agent, isNew)
+}
+
+// todo 玩家离线处理
+func (m *UserManager) UserOffline(user models.User) {
+	actor_manager.StopGroup(actor_manager.Player, user.PlayerId)
 }
 
 var memCache = make(map[string]models.User)

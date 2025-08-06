@@ -63,14 +63,14 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	// 如果服务器在Docker中运行，使用localhost连接
-	fmt.Println("正在连接到 WebSocket 服务器: ws://localhost:3653")
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:3653", nil)
-	if err != nil {
-		t.Fatalf("连接WebSocket服务器失败: %v", err)
-	}
-	fmt.Println("WebSocket连接成功")
 	for k := 0; k < 10000; k++ {
+		// 如果服务器在Docker中运行，使用localhost连接
+		fmt.Println("正在连接到 WebSocket 服务器: ws://localhost:3653")
+		conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:3653", nil)
+		if err != nil {
+			t.Fatalf("连接WebSocket服务器失败: %v", err)
+		}
+		fmt.Println("WebSocket连接成功")
 		pbData := &message.C2S_Login{
 			LoginType: message.LoginType_WeChat,
 			Code:      "123456",
@@ -106,8 +106,8 @@ func TestServer_WebSocket(t *testing.T) {
 			t.Fatalf("解析S2C_Login失败: %v", err)
 		}
 		fmt.Printf("收到S2C_Login: %+v\n", s2cLogin)
-
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
+		conn.Close()
 	}
 }
 

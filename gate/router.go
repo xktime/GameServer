@@ -11,6 +11,4 @@ func InitRouter() {
 	msg.Processor.SetRouter(&message.C2S_Login{}, login.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Heart{}, login.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Reconnect{}, login.External.ChanRPC)
-
-	// todollw 生成路由表
 }

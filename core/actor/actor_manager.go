@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"gameserver/core/log"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -140,7 +139,6 @@ func GetMeta[T any](uniqueID interface{}) *ActorMeta[T] {
 	return nil
 }
 
-
 func RequestFuture[T any](uniqueID interface{}, methodName string, args []interface{}) *actor.Future {
 	meta := GetMeta[T](uniqueID)
 	if meta == nil {
@@ -173,7 +171,6 @@ func RequestFuture[T any](uniqueID interface{}, methodName string, args []interf
 	return future
 }
 
-// todollw map获取的时候加读锁，需要看一下有没有更好的方案
 // Send 发送消息，group下的actor通过group actor串行调度
 func Send[T any](uniqueID interface{}, methodName string, args []interface{}) {
 	meta := GetMeta[T](uniqueID)
@@ -210,39 +207,56 @@ func Stop[T any](uniqueID interface{}) {
 	}
 }
 
+// todo 整理缓存结构，快速获取group下的所有actor
 // StopGroup 停止并移除某个分组下的所有 actor
-// 现在会停止所有具有相同基础group名称的actor
-func StopGroup(group ActorGroup) {
+// 停止指定group下的所有actor并移除group
+func StopGroup(group ActorGroup, uniqueID interface{}) {
+	groupKey := getUniqueGroup(group, uniqueID)
+	log.Debug("Stop group actor %s", groupKey)
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
-
-	// 遍历所有group，找到匹配基础group名称的
-	for groupKey, ids := range actorFactory.groups {
-		if strings.HasPrefix(string(groupKey), string(group)+"_") {
-			for id := range ids {
-				if meta, ok := actorFactory.actors[id]; ok {
-					metaValue := reflect.ValueOf(meta)
-					if metaValue.Kind() == reflect.Ptr && !metaValue.IsNil() {
-						pidField := metaValue.Elem().FieldByName("PID")
-						if pidField.IsValid() {
-							pid := pidField.Interface().(*actor.PID)
-							context.Stop(pid)
+	// 停止该group下的所有actor
+	for id, meta := range actorFactory.actors {
+		metaValue := reflect.ValueOf(meta)
+		if metaValue.Kind() == reflect.Ptr && !metaValue.IsNil() {
+			groupField := metaValue.Elem().FieldByName("Group")
+			if groupField.IsValid() && groupField.Interface() == groupKey {
+				// 检查是否实现了ActorData接口，如果是则调用Save方法
+				actorField := metaValue.Elem().FieldByName("Actor")
+				if actorField.IsValid() {
+					actorValue := actorField.Interface()
+					if data, ok := actorValue.(ActorData); ok {
+						if err := data.Save(); err != nil {
+							log.Error("Save actor data error: %v", err)
 						}
 					}
-					delete(actorFactory.actors, id)
 				}
+
+				pidField := metaValue.Elem().FieldByName("PID")
+				if pidField.IsValid() {
+					pid := pidField.Interface().(*actor.PID)
+					context.Stop(pid)
+				}
+				// 从actors映射中删除
+				log.Debug("Stop actor %s", id)
+				delete(actorFactory.actors, id)
 			}
-			if groupPID, ok := actorFactory.groupPID[groupKey]; ok {
-				context.Stop(groupPID)
-				delete(actorFactory.groupPID, groupKey)
-			}
-			delete(actorFactory.groups, groupKey)
 		}
 	}
+
+	// 停止group actor
+	if groupPID, ok := actorFactory.groupPID[groupKey]; ok {
+		context.Stop(groupPID)
+		delete(actorFactory.groupPID, groupKey)
+	}
+
+	// 从groups映射中删除
+	delete(actorFactory.groups, groupKey)
 }
 
 // StopAll 停止并移除所有 actor
 func StopAll() {
+	SaveAllActorData()
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
 	for _, meta := range actorFactory.actors {
@@ -264,11 +278,11 @@ func StopAll() {
 }
 
 func getUniqueId[T any](uniqueID interface{}) string {
-	return fmt.Sprintf("%s_%s", getId[T](), uniqueID)
+	return fmt.Sprintf("%s_%v", getId[T](), uniqueID)
 }
 
 func getUniqueGroup(group ActorGroup, uniqueID interface{}) ActorGroup {
-	return ActorGroup(fmt.Sprintf("%s_%s", group, uniqueID))
+	return ActorGroup(fmt.Sprintf("%s_%v", group, uniqueID))
 }
 
 func getId[T any]() string {

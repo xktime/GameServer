@@ -11,6 +11,8 @@ func ActorRegister[T any](playerId int64, initFunc ...func(*T)) (*actor_manager.
 }
 
 // todo 需要初始化所有的玩家模块
+// todo Actor直接存actor还是每个结构自己另存？直接存可能会导致读写性能问题；
+// 另存会很麻烦，actor save的时候需要操作多次数据库
 func Login(agent gate.Agent, isNew bool) {
 	initModules(agent, isNew)
 }

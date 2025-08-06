@@ -9,13 +9,20 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/models/player"
-	"github.com/golang/protobuf/proto"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type Player struct {
 	actor_manager.ActorMessageHandler
 	PlayerInfo *player.PlayerInfo
-	agent gate.Agent
+	agent      gate.Agent
+}
+
+func (p *Player) Save() error {
+	p.PlayerInfo.ServerId = 2
+	_, err := mongodb.Save(p.PlayerInfo)
+	return err
 }
 
 // 玩家模块
@@ -61,7 +68,7 @@ func (p *Player) Print() {
 		return
 	}
 	log.Release("Print Player: %s", string(data))
-	p.SendToClient(&message.S2C_Login{LoginResult : -1})
+	p.SendToClient(&message.S2C_Login{LoginResult: -1})
 }
 
 func (p *Player) SendToClient(message proto.Message) {

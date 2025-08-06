@@ -4,6 +4,7 @@ import (
 	"gameserver/common/utils"
 	"gameserver/core/log"
 	"reflect"
+	"sync"
 
 	"github.com/asynkron/protoactor-go/actor"
 )
@@ -12,11 +13,16 @@ import (
 // 支持分组、标签
 type ActorMeta[T any] struct {
 	//	ActorMessageHandler
-	ID    string
-	PID   *actor.PID
-	Group ActorGroup
-	Tags  map[string]struct{}
-	Actor *T
+	ID          string
+	PID         *actor.PID
+	Group       ActorGroup
+	Tags        map[string]struct{}
+	Actor       *T
+	methodCache sync.Map // 缓存方法存在性检查结果，使用sync.Map确保线程安全
+}
+
+type ActorData interface {
+	Save() error
 }
 
 func (m *ActorMeta[T]) AddToActor(methodName string, args []interface{}) {
@@ -42,13 +48,21 @@ func (m *ActorMeta[T]) Send(methodName string, args []interface{}) {
 	context.Send(groupPID, &QueuedMsg{ID: m.ID, Params: args, MethodName: methodName, IsRequestFuture: false})
 }
 
-// todollw 可以做缓存，避免每次都反射
+// checkMethod 检查Actor是否拥有指定名称的方法
+// 使用sync.Map缓存避免重复反射操作，确保线程安全
 func (m *ActorMeta[T]) checkMethod(methodName string) bool {
+	// 检查缓存
+	if exists, ok := m.methodCache.Load(methodName); ok {
+		return exists.(bool)
+	}
+
+	// 缓存未命中，执行反射查找
 	val := reflect.ValueOf(m.Actor)
 
 	// 尝试在指针上查找
 	method := val.MethodByName(methodName)
 	if method.IsValid() {
+		m.methodCache.Store(methodName, true)
 		return true
 	}
 
@@ -56,9 +70,13 @@ func (m *ActorMeta[T]) checkMethod(methodName string) bool {
 	if val.Kind() == reflect.Ptr {
 		elemMethod := val.Elem().MethodByName(methodName)
 		if elemMethod.IsValid() {
+			m.methodCache.Store(methodName, true)
 			return true
 		}
 	}
+
+	// 方法不存在，缓存结果
+	m.methodCache.Store(methodName, false)
 	return false
 }
 
