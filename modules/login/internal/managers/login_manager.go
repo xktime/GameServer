@@ -12,8 +12,7 @@ import (
 )
 
 type LoginManager struct {
-	actor_manager.ActorMessageHandler
-	//	actorMeta actor_manager.ActorMeta[LoginManager]
+	actor_manager.ActorMessageHandler `bson:"-"`
 }
 
 var (

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
 	actor_manager "gameserver/core/actor"
 
@@ -76,15 +77,10 @@ func (a *TestActorWithResponse) Receive(context actor.Context) {
 // TestActorWithSave 用于测试移除group时save操作的Actor
 type TestActorWithSave struct {
 	TestActor
-	SaveCalled bool
-	saveMu     sync.Mutex
 }
 
-func (a *TestActorWithSave) Save() error {
-	a.saveMu.Lock()
-	defer a.saveMu.Unlock()
-	a.SaveCalled = true
-	return nil
+func (p TestActorWithSave) GetPersistId() interface{} {
+	return 1
 }
 
 // TestActorFactory_Init 测试初始化
@@ -199,7 +195,7 @@ func TestActorFactory_StopGroup(t *testing.T) {
 // TestActorFactory_StopGroupWithSave 测试停止分组时子actor的移除和save操作
 func TestActorFactory_StopGroupWithSave(t *testing.T) {
 	actor_manager.Init(2000)
-
+	mongodb.Init("mongodb://localhost:27017", "testMongo", 50, 50)
 	uniqueID2 := "test_group_0"
 	meta1, _ := actor_manager.Register[TestActor](uniqueID2, actor_manager.Test1)
 	meta2, err := actor_manager.Register[TestActorWithSave](uniqueID2, actor_manager.Test1)
@@ -208,8 +204,8 @@ func TestActorFactory_StopGroupWithSave(t *testing.T) {
 	assert.NotNil(t, meta2)
 
 	// 验证Actor实现了ActorData接口
-	_, ok := interface{}(meta2.Actor).(actor_manager.ActorData)
-	assert.True(t, ok, "TestActorWithSave should implement ActorData interface")
+	_, ok := interface{}(meta2.Actor).(mongodb.PersistData)
+	assert.True(t, ok, "TestActorWithSave should implement PersistData interface")
 
 	actor := actor_manager.Get[TestActorWithSave](uniqueID2)
 	assert.NotNil(t, actor, "Actor should be exist")
@@ -224,8 +220,6 @@ func TestActorFactory_StopGroupWithSave(t *testing.T) {
 	assert.Nil(t, actor, "Actor should be removed when group is stopped")
 	actor2 = actor_manager.Get[TestActor](uniqueID2)
 	assert.Nil(t, actor2, "Actor should be removed when group is stopped")
-	// 验证Save方法被调用
-	assert.True(t, meta2.Actor.SaveCalled, "Save should be called when group is stopped")
 }
 
 // TestActorFactory_StopAll 测试停止所有 Actor

@@ -106,7 +106,7 @@ func TestServer_WebSocket(t *testing.T) {
 			t.Fatalf("解析S2C_Login失败: %v", err)
 		}
 		fmt.Printf("收到S2C_Login: %+v\n", s2cLogin)
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		conn.Close()
 	}
 }

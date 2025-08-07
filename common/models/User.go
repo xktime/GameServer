@@ -15,3 +15,7 @@ type User struct {
 	Platform        Platform `bson:"Platform" default:"0"`
 	LastOfflineTime int64    `bson:"LastOfflineTime" default:"0"`
 }
+
+func (u User) GetPersistId() interface{} {
+	return u.AccountId
+}

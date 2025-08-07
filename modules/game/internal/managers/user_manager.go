@@ -17,7 +17,7 @@ import (
 )
 
 type UserManager struct {
-	actor_manager.ActorMessageHandler
+	actor_manager.ActorMessageHandler `bson:"-"`
 }
 
 var (

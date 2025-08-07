@@ -19,7 +19,10 @@ func rpcNewAgent(args []interface{}) {
 
 func rpcCloseAgent(args []interface{}) {
 	a := args[0].(gate.Agent)
-	log.Debug("断开链接 %v", a.UserData())
-	managers.GetUserManager().UserOffline(a.UserData().(models.User))
+	user := a.UserData()
+	if user != nil {
+		log.Debug("断开链接 %v", user)
+		managers.GetUserManager().UserOffline(user.(models.User))
+	}
 	_ = a
 }

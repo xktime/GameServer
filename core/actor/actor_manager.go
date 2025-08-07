@@ -44,9 +44,9 @@ func Init(milliseconds int) {
 
 // Register 注册并启动一个 actor
 func Register[T any](uniqueID interface{}, group ActorGroup, initFunc ...func(*T)) (*ActorMeta[T], error) {
+	name := getUniqueId[T](uniqueID)
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
-	name := getUniqueId[T](uniqueID)
 	if _, exists := actorFactory.actors[name]; exists {
 		var groupInfo string
 		for group, names := range actorFactory.groups {
@@ -182,7 +182,6 @@ func Send[T any](uniqueID interface{}, methodName string, args []interface{}) {
 	meta.Send(methodName, args)
 }
 
-// todo 玩家下线时需结束所有actor
 // Stop 停止并移除指定 actor
 func Stop[T any](uniqueID interface{}) {
 	id := getUniqueId[T](uniqueID)
@@ -190,6 +189,7 @@ func Stop[T any](uniqueID interface{}) {
 	if meta == nil {
 		return
 	}
+	saveMeta(meta)
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
 	context.Stop(meta.PID)
@@ -207,7 +207,6 @@ func Stop[T any](uniqueID interface{}) {
 	}
 }
 
-// todo 整理缓存结构，快速获取group下的所有actor
 // StopGroup 停止并移除某个分组下的所有 actor
 // 停止指定group下的所有actor并移除group
 func StopGroup(group ActorGroup, uniqueID interface{}) {
@@ -215,32 +214,31 @@ func StopGroup(group ActorGroup, uniqueID interface{}) {
 	log.Debug("Stop group actor %s", groupKey)
 	actorFactory.mu.Lock()
 	defer actorFactory.mu.Unlock()
+
+	// 直接获取group下的所有actor名称
+	actorNames, exists := actorFactory.groups[groupKey]
+	if !exists {
+		return // 该group不存在
+	}
+
 	// 停止该group下的所有actor
-	for id, meta := range actorFactory.actors {
+	for id := range actorNames {
+		meta, ok := actorFactory.actors[id]
+		if !ok {
+			continue
+		}
+		saveMeta(meta)
 		metaValue := reflect.ValueOf(meta)
 		if metaValue.Kind() == reflect.Ptr && !metaValue.IsNil() {
-			groupField := metaValue.Elem().FieldByName("Group")
-			if groupField.IsValid() && groupField.Interface() == groupKey {
-				// 检查是否实现了ActorData接口，如果是则调用Save方法
-				actorField := metaValue.Elem().FieldByName("Actor")
-				if actorField.IsValid() {
-					actorValue := actorField.Interface()
-					if data, ok := actorValue.(ActorData); ok {
-						if err := data.Save(); err != nil {
-							log.Error("Save actor data error: %v", err)
-						}
-					}
-				}
-
-				pidField := metaValue.Elem().FieldByName("PID")
-				if pidField.IsValid() {
-					pid := pidField.Interface().(*actor.PID)
-					context.Stop(pid)
-				}
-				// 从actors映射中删除
-				log.Debug("Stop actor %s", id)
-				delete(actorFactory.actors, id)
+			pidField := metaValue.Elem().FieldByName("PID")
+			if pidField.IsValid() {
+				pid := pidField.Interface().(*actor.PID)
+				context.Stop(pid)
 			}
+
+			// 从actors映射中删除
+			log.Debug("Stop actor %s", id)
+			delete(actorFactory.actors, id)
 		}
 	}
 

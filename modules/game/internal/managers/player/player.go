@@ -14,15 +14,14 @@ import (
 )
 
 type Player struct {
-	actor_manager.ActorMessageHandler
-	PlayerInfo *player.PlayerInfo
-	agent      gate.Agent
+	actor_manager.ActorMessageHandler `bson:"-"`
+	PlayerId                          int64              `bson:"_id"`
+	PlayerInfo                        *player.PlayerInfo `bson:"player_info"`
+	agent                             gate.Agent         `bson:"-"`
 }
 
-func (p *Player) Save() error {
-	p.PlayerInfo.ServerId = 2
-	_, err := mongodb.Save(p.PlayerInfo)
-	return err
+func (p Player) GetPersistId() interface{} {
+	return p.PlayerId
 }
 
 // 玩家模块
@@ -32,27 +31,29 @@ func PlayerInit(agent gate.Agent, isNew bool) *Player {
 	playerId := user.PlayerId
 	if isNew {
 		p = &player.PlayerInfo{
-			PlayerId: playerId,
 			ServerId: user.ServerId,
 		}
-		mongodb.Save(p)
 	} else {
-		var err error
-		p, err = mongodb.FindOneById[player.PlayerInfo](playerId)
-		if err != nil {
-			log.Error("PlayerInit find user failed: %v", err)
-			return nil
-		}
-		if p == nil {
-			log.Error("老玩家登录，player为空: %v", playerId)
-			return nil
-		}
+		// var err error
+		mongodb.FindOneById[Player](playerId)
+		// if err != nil {
+		// 	log.Error("PlayerInit find user failed: %v", err)
+		// 	return nil
+		// }
+		// if p == nil {
+		// 	log.Error("老玩家登录，player为空: %v", playerId)
+		// 	return nil
+		// }
 	}
 
 	meta, _ := ActorRegister[Player](playerId, func(a *Player) {
+		a.PlayerId = playerId
 		a.PlayerInfo = p
 		a.agent = agent
 	})
+	if isNew {
+		mongodb.Save(meta.Actor)
+	}
 	// meta离线没有正常删除，还存在
 	if meta == nil {
 		meta = actor_manager.GetMeta[Player](playerId)

@@ -21,10 +21,6 @@ type ActorMeta[T any] struct {
 	methodCache sync.Map // 缓存方法存在性检查结果，使用sync.Map确保线程安全
 }
 
-type ActorData interface {
-	Save() error
-}
-
 func (m *ActorMeta[T]) AddToActor(methodName string, args []interface{}) {
 	m.Send(methodName, args)
 }
@@ -81,7 +77,7 @@ func (m *ActorMeta[T]) checkMethod(methodName string) bool {
 }
 
 type ActorMessageHandler struct {
-	actor.Actor
+	actor.Actor `bson:"-"`
 }
 
 func (h *ActorMessageHandler) Receive(ctx actor.Context) {

@@ -6,12 +6,12 @@ import (
 )
 
 type RechargeManager struct {
-	actor_manager.ActorMessageHandler
+	actor_manager.ActorMessageHandler `bson:"-"`
 }
 
 var (
-	rechargeMeta     *actor_manager.ActorMeta[RechargeManager]
-	rechargeOnce    sync.Once
+	rechargeMeta *actor_manager.ActorMeta[RechargeManager]
+	rechargeOnce sync.Once
 )
 
 func GetRechargeManager() *RechargeManager {
