@@ -2,12 +2,14 @@ package player
 
 import (
 	"encoding/json"
+	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/game/internal/managers/team"
 	"gameserver/modules/game/internal/models/player"
 
 	"google.golang.org/protobuf/proto"
@@ -17,6 +19,7 @@ type Player struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
 	PlayerId                          int64              `bson:"_id"`
 	PlayerInfo                        *player.PlayerInfo `bson:"player_info"`
+	TeamId                            int64              `bson:"team_id"`
 	agent                             gate.Agent         `bson:"-"`
 }
 
@@ -25,41 +28,68 @@ func (p Player) GetPersistId() interface{} {
 }
 
 // 玩家模块
-func PlayerInit(agent gate.Agent, isNew bool) *Player {
-	var p *player.PlayerInfo
+func InitPlayer(agent gate.Agent, isNew bool) *Player {
 	user := agent.UserData().(models.User)
 	playerId := user.PlayerId
-	if isNew {
-		p = &player.PlayerInfo{
-			ServerId: user.ServerId,
-		}
-	} else {
-		// var err error
-		mongodb.FindOneById[Player](playerId)
-		// if err != nil {
-		// 	log.Error("PlayerInit find user failed: %v", err)
-		// 	return nil
-		// }
-		// if p == nil {
-		// 	log.Error("老玩家登录，player为空: %v", playerId)
-		// 	return nil
-		// }
+
+	// 检查是否已存在Actor
+	if existingMeta := actor_manager.GetMeta[Player](playerId); existingMeta != nil {
+		log.Error("玩家Actor已存在，可能是离线未正常清理: %v", playerId)
+		// 可以选择清理旧的Actor或直接返回
+		actor_manager.StopGroup(actor_manager.Player, playerId)
 	}
 
-	meta, _ := ActorRegister[Player](playerId, func(a *Player) {
+	// 初始化玩家数据
+	playerInfo, err := initPlayerData(playerId, user, isNew)
+	if err != nil {
+		log.Error("初始化玩家数据失败: %v", err)
+		return nil
+	}
+
+	// 注册Actor
+	meta, err := PlayerActorRegister(playerId, func(a *Player) {
 		a.PlayerId = playerId
-		a.PlayerInfo = p
+		a.PlayerInfo = playerInfo
 		a.agent = agent
 	})
-	if isNew {
-		mongodb.Save(meta.Actor)
+	if err != nil {
+		log.Error("注册玩家Actor失败: %v", err)
+		return nil
 	}
-	// meta离线没有正常删除，还存在
-	if meta == nil {
-		meta = actor_manager.GetMeta[Player](playerId)
-		log.Error("玩家离线没有正常移除Actor缓存:%v", playerId)
-	}
+
 	return meta.Actor
+}
+
+// initPlayerData 初始化玩家数据
+func initPlayerData(playerId int64, user models.User, isNew bool) (*player.PlayerInfo, error) {
+	if isNew {
+		// 新玩家：创建初始数据
+		playerInfo := &player.PlayerInfo{
+			ServerId: user.ServerId,
+		}
+
+		// 保存新玩家数据
+		player := &Player{
+			PlayerId:   playerId,
+			PlayerInfo: playerInfo,
+		}
+		if _, err := mongodb.Save(player); err != nil {
+			return nil, err
+		}
+
+		return playerInfo, nil
+	} else {
+		// 老玩家：从数据库加载数据
+		existingPlayer, err := mongodb.FindOneById[Player](playerId)
+		if err != nil {
+			return nil, err
+		}
+		if existingPlayer == nil {
+			return nil, fmt.Errorf("老玩家数据不存在: %v", playerId)
+		}
+
+		return existingPlayer.PlayerInfo, nil
+	}
 }
 
 func (p *Player) Print() {
@@ -72,10 +102,16 @@ func (p *Player) Print() {
 	p.SendToClient(&message.S2C_Login{LoginResult: -1})
 }
 
-func (p *Player) SendToClient(message proto.Message) {
-	p.agent.WriteMsg(message)
+func (p *Player) InitTeam() {
+	if p.TeamId != 0 {
+		team.LeaveTeam(p.TeamId, p.PlayerId)
+	}
+	teamInfo := team.InitTeam(p.agent)
+	p.TeamId = teamInfo.TeamId
+	team.JoinTeam(p.TeamId, p.PlayerId)
+
 }
 
-func (p *Player) PrintJson(json string) {
-	log.Release("Print Player: %s", json)
+func (p *Player) SendToClient(message proto.Message) {
+	p.agent.WriteMsg(message)
 }

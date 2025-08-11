@@ -25,6 +25,7 @@ func main() {
 	}
 
 	// 自动检测结构体和包名
+	fmt.Printf("正在扫描目录: %s\n", sourceDir)
 	structs, err := AutoDetectStructs(sourceDir)
 	if err != nil {
 		log.Fatalf("检测结构体失败: %v", err)
@@ -35,6 +36,9 @@ func main() {
 	}
 
 	fmt.Printf("检测到 %d 个结构体\n", len(structs))
+	for _, s := range structs {
+		fmt.Printf("  - %s (包: %s, 文件: %s)\n", s.Name, s.Package, s.FilePath)
+	}
 
 	// 为每个结构体生成代码
 	for _, structInfo := range structs {

@@ -8,24 +8,10 @@ import (
 	"gameserver/core/log"
 	"gameserver/modules/game"
 	"gameserver/modules/login/internal/processor"
-	"sync"
 )
 
 type LoginManager struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
-}
-
-var (
-	meta      *actor_manager.ActorMeta[LoginManager]
-	loginOnce sync.Once
-)
-
-func GetLoginManager() *LoginManager {
-	loginOnce.Do(func() {
-		meta, _ = actor_manager.Register[LoginManager]("1", actor_manager.Login)
-
-	})
-	return meta.Actor
 }
 
 func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
@@ -38,18 +24,14 @@ func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 	log.Debug("loginResp %v", loginResp)
 	result := &message.S2C_Login{}
 	defer agent.WriteMsg(result)
+	// todo 登录失败需要关闭agent
 	if loginResp.ErrCode != 0 {
 		log.Error("login failed %v", loginResp)
 		result.LoginResult = -1
 		return
 	}
 	result.LoginResult = 0
-
-	game.External.UserManager.DoLoginByActor(agent, loginResp.Openid, msg.ServerId)
-}
-
-func (m *LoginManager) DoHandleLoginByActor(msg *message.C2S_Login, agent gate.Agent) {
-	meta.AddToActor("DoHandleLogin", []interface{}{msg, agent})
+	game.External.UserManager.DirectCaller.UserLogin(agent, loginResp.Openid, msg.ServerId)
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

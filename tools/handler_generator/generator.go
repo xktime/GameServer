@@ -161,6 +161,11 @@ func (g *HandlerGenerator) detectModuleFromPath(protoFile string) string {
 		return "game"
 	}
 
+	// 检查路径中是否包含match
+	if strings.Contains(relPath, "match") {
+		return "match"
+	}
+
 	// 默认返回game
 	return "game"
 }
@@ -218,15 +223,8 @@ func {{.Name}}Handler(args []interface{}) {
 		return
 	}
 
+	log.Debug("收到{{.Name}}消息: %v, agent: %v", msg, agent)
 	// TODO: 实现具体的业务逻辑
-	log.Debug("收到{{.Name}}消息: %v", msg)
-
-	// 打印agent信息以避免not used警告
-	log.Debug("Agent信息: %v", agent)
-
-	// 示例：发送响应
-	// response := &message.S2C_{{.Name}}Response{}
-	// agent.WriteMsg(response)
 }
 `))
 

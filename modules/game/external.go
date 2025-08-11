@@ -8,7 +8,7 @@ import (
 )
 
 type GameExternal struct {
-	UserManager *managers.UserManager
+	UserManager *managers.UserManagerActorProxy
 	Module      *internal.Module
 	ChanRPC     *chanrpc.Server
 }

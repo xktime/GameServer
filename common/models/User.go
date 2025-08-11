@@ -14,6 +14,7 @@ type User struct {
 	PlayerId        int64    `bson:"PlayerId" default:"0"`
 	Platform        Platform `bson:"Platform" default:"0"`
 	LastOfflineTime int64    `bson:"LastOfflineTime" default:"0"`
+	LoginTime       int64    `bson:"LoginTime" default:"0"`
 }
 
 func (u User) GetPersistId() interface{} {

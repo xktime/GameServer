@@ -254,15 +254,15 @@ const file_login_proto_rawDesc = "" +
 	"\n" +
 	"\vlogin.proto\x1a\x10message_id.proto\"4\n" +
 	"\tS2C_Login\x12!\n" +
-	"\flogin_result\x18\x01 \x01(\x05R\vloginResult:\x04\x80\xb5\x18\x01\"m\n" +
+	"\flogin_result\x18\x01 \x01(\x05R\vloginResult:\x04\x80\xb5\x18e\"m\n" +
 	"\tC2S_Login\x12)\n" +
 	"\n" +
 	"login_type\x18\x01 \x01(\x0e2\n" +
 	".LoginTypeR\tloginType\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\x05R\bserverId\x12\x12\n" +
-	"\x04code\x18\x03 \x01(\tR\x04code:\x04\x80\xb5\x18\x01\"\x15\n" +
-	"\rC2S_Reconnect:\x04\x80\xb5\x18\x02\"\x11\n" +
-	"\tC2S_Heart:\x04\x80\xb5\x18\x00*-\n" +
+	"\x04code\x18\x03 \x01(\tR\x04code:\x04\x80\xb5\x18e\"\x15\n" +
+	"\rC2S_Reconnect:\x04\x80\xb5\x18f\"\x11\n" +
+	"\tC2S_Heart:\x04\x80\xb5\x18g*-\n" +
 	"\tLoginType\x12\b\n" +
 	"\x04None\x10\x00\x12\n" +
 	"\n" +

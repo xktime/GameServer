@@ -11,22 +11,22 @@ enum LoginType {
 
 // todo llw 返回角色其他信息
 message S2C_Login {
-    option (message_id) = 1;
+    option (message_id) = 101;
     int32 login_result = 1; // 为0登录成功，其他都登录失败
 }
 
 // client -> server -> toDouyinCheck
 message C2S_Login {
-    option (message_id) = 1;
+    option (message_id) = 101;
     LoginType login_type = 1;
     int32 server_id = 2;
     string code = 3;
 }
 
 message C2S_Reconnect {
-    option (message_id) = 2;
+    option (message_id) = 102;
 }
 
 message C2S_Heart {
-    option (message_id) = 0;
+    option (message_id) = 103;
 }

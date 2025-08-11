@@ -1,35 +1,46 @@
-
 package managers
 
 import (
+	
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
-
 	"gameserver/common/msg/message"
-
+	"sync"
 )
+
+type LoginManagerActorProxy struct {
+	// 给manager暴露出来调用不走actor队列
+	DirectCaller *LoginManager
+}
+
+var (
+	actorProxy *LoginManagerActorProxy
+	loginManagerOnce sync.Once
+)
+
+func GetLoginManagerActorId() int64 {
+	return 1
+}
+
+func GetLoginManager() *LoginManagerActorProxy {
+	loginManagerOnce.Do(func() {
+		loginManagerMeta, _ := actor_manager.Register[LoginManager](GetLoginManagerActorId(), actor_manager.User)
+		actorProxy = &LoginManagerActorProxy{
+			DirectCaller: loginManagerMeta.Actor,
+		}
+	})
+	return actorProxy
+}
 
 
 // HandleLogin 调用LoginManager的HandleLogin方法
-func HandleLogin(LoginManagerId int64, args []interface{}) {
-	actor_manager.Send[LoginManager](LoginManagerId, "HandleLogin", args)
-}
-
-// DoHandleLogin 调用LoginManager的DoHandleLogin方法
-func DoHandleLogin(LoginManagerId int64, msg *message.C2S_Login, agent gate.Agent) {
+func (*LoginManagerActorProxy) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 	sendArgs := []interface{}{}
 	sendArgs = append(sendArgs, msg)
 	sendArgs = append(sendArgs, agent)
+	
 
-	actor_manager.Send[LoginManager](LoginManagerId, "DoHandleLogin", sendArgs)
+	actor_manager.Send[LoginManager](GetLoginManagerActorId(), "HandleLogin", sendArgs)
 }
 
-// DoHandleLoginByActor 调用LoginManager的DoHandleLoginByActor方法
-func DoHandleLoginByActor(LoginManagerId int64, msg *message.C2S_Login, agent gate.Agent) {
-	sendArgs := []interface{}{}
-	sendArgs = append(sendArgs, msg)
-	sendArgs = append(sendArgs, agent)
-
-	actor_manager.Send[LoginManager](LoginManagerId, "DoHandleLoginByActor", sendArgs)
-}
 

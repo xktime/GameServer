@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+message MatchPlayerInfo {
+    int64 playerId = 1;
+    bool isRobot = 2;
+}
+
+message C2S_StartMatch {
+    option (message_id) = 201;
+    int32 type = 1;
+}
+
+message S2C_StartMatch {
+    option (message_id) = 201;
+    bool result = 1;
+}
+
+message S2C_MatchResult {
+    option (message_id) = 202;
+    string roomId = 1;
+    repeated MatchPlayerInfo playerInfos = 2;
+}
+
+message C2S_CancelMatch {
+    option (message_id) = 203;
+}
+
+message S2C_CancelMatch {
+    option (message_id) = 201;
+    bool result = 1;
+}

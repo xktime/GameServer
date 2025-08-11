@@ -116,8 +116,11 @@ func DeleteByID[T PersistData](id interface{}) (*mongo.DeleteResult, error) {
 	return result, nil
 }
 
-// todo 数据库操作可以做成通道?
 func Save(doc PersistData) (*mongo.UpdateResult, error) {
+	if mongoInstance == nil {
+		log.Debug("Save: MongoDB未初始化，跳过保存")
+		return nil, nil
+	}
 	id := doc.GetPersistId()
 	collection := getCollectionName(doc)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

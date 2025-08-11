@@ -133,8 +133,14 @@ func (g *MethodGenerator) extractMethods(node *ast.File) []MethodInfo {
 				recvType := funcDecl.Recv.List[0].Type
 				if starExpr, ok := recvType.(*ast.StarExpr); ok {
 					if ident, ok := starExpr.X.(*ast.Ident); ok && ident.Name == g.StructName {
+						// 只处理首字母大写的公共方法
+						methodName := funcDecl.Name.Name
+						if len(methodName) == 0 || methodName[0] < 'A' || methodName[0] > 'Z' {
+							return true // 跳过首字母小写的内部方法
+						}
+
 						method := MethodInfo{
-							Name:     funcDecl.Name.Name,
+							Name:     methodName,
 							Receiver: g.StructName,
 						}
 
@@ -165,9 +171,21 @@ func (g *MethodGenerator) extractMethods(node *ast.File) []MethodInfo {
 
 						// 设置默认返回值
 						for _, ret := range method.Returns {
-							if ret == "bool" {
+							switch ret {
+							case "bool":
 								method.DefaultReturns = append(method.DefaultReturns, "false")
-							} else {
+							case "int", "int8", "int16", "int32", "int64":
+								method.DefaultReturns = append(method.DefaultReturns, "0")
+							case "uint", "uint8", "uint16", "uint32", "uint64":
+								method.DefaultReturns = append(method.DefaultReturns, "0")
+							case "float32", "float64":
+								method.DefaultReturns = append(method.DefaultReturns, "0")
+							case "string":
+								method.DefaultReturns = append(method.DefaultReturns, `""`)
+							case "complex64", "complex128":
+								method.DefaultReturns = append(method.DefaultReturns, "0")
+							default:
+								// 对于其他类型（如结构体、切片、map等），使用{}语法
 								method.DefaultReturns = append(method.DefaultReturns, ret+"{}")
 							}
 						}
@@ -203,7 +221,25 @@ func (g *MethodGenerator) formatType(expr ast.Expr) string {
 		return "[]" + g.formatType(t.Elt)
 	case *ast.InterfaceType:
 		return "interface{}"
+	case *ast.MapType:
+		keyType := g.formatType(t.Key)
+		valueType := g.formatType(t.Value)
+		return fmt.Sprintf("map[%s]%s", keyType, valueType)
+	case *ast.ChanType:
+		if t.Dir == ast.RECV {
+			return "<-chan " + g.formatType(t.Value)
+		} else if t.Dir == ast.SEND {
+			return "chan<- " + g.formatType(t.Value)
+		}
+		return "chan " + g.formatType(t.Value)
+	case *ast.FuncType:
+		// 对于函数类型，返回一个简化的表示
+		return "func"
 	default:
+		// 对于其他复杂类型，尝试更智能的格式化
+		if fmt.Sprintf("%v", expr) == "map[string]interface{}" {
+			return "map[string]interface{}"
+		}
 		return fmt.Sprintf("%v", expr)
 	}
 }
@@ -220,7 +256,77 @@ func (g *MethodGenerator) generateCode(methods []MethodInfo) error {
 	}
 	defer file.Close()
 
-	tmpl := template.Must(template.New("methods").Parse(`
+	// 检查是否是Manager后缀的结构体
+	isManager := strings.HasSuffix(g.StructName, "Manager")
+
+	// 创建模板函数映射
+	funcMap := template.FuncMap{
+		"lowerFirst": func(s string) string {
+			if len(s) == 0 {
+				return s
+			}
+			return strings.ToLower(s[:1]) + s[1:]
+		},
+	}
+
+	var tmpl *template.Template
+	if isManager {
+		// Manager结构体使用代理类模板
+		tmpl = template.Must(template.New("manager").Funcs(funcMap).Parse(`package {{.PackageName}}
+
+import (
+	{{if .HasModels}}"gameserver/common/models"{{end}}
+	actor_manager "gameserver/core/actor"
+	{{if .HasGate}}"gameserver/core/gate"{{end}}
+	{{if .HasMessage}}"gameserver/common/msg/message"{{end}}
+	"sync"
+)
+
+type {{.StructName}}ActorProxy struct {
+	// 给manager暴露出来调用不走actor队列
+	DirectCaller *{{.StructName}}
+}
+
+var (
+	actorProxy *{{.StructName}}ActorProxy
+	{{.StructName | lowerFirst}}Once sync.Once
+)
+
+func Get{{.StructName}}ActorId() int64 {
+	return 1
+}
+
+func Get{{.StructName}}() *{{.StructName}}ActorProxy {
+	{{.StructName | lowerFirst}}Once.Do(func() {
+		{{.StructName | lowerFirst}}Meta, _ := actor_manager.Register[{{.StructName}}](Get{{.StructName}}ActorId(), actor_manager.User)
+		actorProxy = &{{.StructName}}ActorProxy{
+			DirectCaller: {{.StructName | lowerFirst}}Meta.Actor,
+		}
+	})
+	return actorProxy
+}
+
+{{range .Methods}}
+// {{.Name}} 调用{{$.StructName}}的{{.Name}}方法
+func (*{{$.StructName}}ActorProxy) {{.Name}}({{range $index, $param := .Params}}{{if $index}}, {{end}}{{$param.Name}} {{$param.Type}}{{end}}){{if .Returns}} ({{range $index, $return := .Returns}}{{if $index}}, {{end}}{{$return}}{{end}}){{end}} {
+	sendArgs := []interface{}{}
+	{{range .Params}}sendArgs = append(sendArgs, {{.Name}})
+	{{end}}
+
+	{{if .Returns}}future := actor_manager.RequestFuture[{{$.StructName}}](Get{{$.StructName}}ActorId(), "{{.Name}}", sendArgs)
+	result, _ := future.Result()
+	{{if .SingleReturn}}return result.({{.Returns0}}){{else}}if resultSlice, ok := result.([]interface{}); ok && len(resultSlice) == {{len .Returns}} {
+		{{range $index, $return := .Returns}}ret{{$index}} := resultSlice[{{$index}}].({{$return}})
+		{{end}}return {{range $index, $return := .Returns}}{{if $index}}, {{end}}ret{{$index}}{{end}}
+	}
+	return {{range $index, $default := .DefaultReturns}}{{if $index}}, {{end}}{{$default}}{{end}}{{end}}{{else}}actor_manager.Send[{{$.StructName}}](Get{{$.StructName}}ActorId(), "{{.Name}}", sendArgs){{end}}
+}
+
+{{end}}
+`))
+	} else {
+		// 其他结构体使用原有模板
+		tmpl = template.Must(template.New("methods").Funcs(funcMap).Parse(`
 package {{.PackageName}}
 
 import (
@@ -253,6 +359,7 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 }
 {{end}}
 `))
+	}
 
 	hasGate := false
 	hasModels := false
@@ -270,9 +377,12 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 			if strings.Contains(param.Type, "message.") {
 				hasMessage = true
 			}
+			if strings.Contains(param.Type, "models.") {
+				hasModels = true
+			}
 		}
 		for _, ret := range method.Returns {
-			if strings.Contains(ret, "models.User") {
+			if strings.Contains(ret, "models.") {
 				hasModels = true
 			}
 		}

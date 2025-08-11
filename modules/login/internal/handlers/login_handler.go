@@ -26,13 +26,6 @@ func C2S_LoginHandler(args []interface{}) {
 		return
 	}
 
-	// TODO: 实现具体的业务逻辑
-	log.Debug("收到C2S_Login消息: %v", msg)
-
-	// 打印agent信息以避免not used警告
-	log.Debug("Agent信息: %v", agent)
-	managers.GetLoginManager().HandleLogin(msg, agent)
-	// 示例：发送响应
-	// response := &message.S2C_C2S_LoginResponse{}
-	// agent.WriteMsg(response)
+	log.Debug("收到C2S_Login消息: %v, agent: %v", msg, agent)
+	managers.GetLoginManager().DirectCaller.HandleLogin(msg, agent)
 }
