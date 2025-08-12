@@ -1,11 +1,11 @@
 package internal
 
 import (
-	"gameserver/common/models"
+	"gameserver/core/chanrpc"
 	"gameserver/core/gate"
-	"gameserver/core/log"
-	"gameserver/modules/game/internal/managers"
 )
+
+var Dispatchers []*chanrpc.Server
 
 func init() {
 	skeleton.RegisterChanRPC("NewAgent", rpcNewAgent)
@@ -19,11 +19,8 @@ func rpcNewAgent(args []interface{}) {
 
 func rpcCloseAgent(args []interface{}) {
 	a := args[0].(gate.Agent)
-	log.Release("game 断开链接")
-	user := a.UserData()
-	if user != nil {
-		log.Debug("断开链接 %v", user)
-		managers.GetUserManager().UserOffline(user.(models.User))
+	for _, dispatcher := range Dispatchers {
+		dispatcher.Go("CloseAgent", a)
 	}
 	_ = a
 }

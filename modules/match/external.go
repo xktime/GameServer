@@ -1,6 +1,7 @@
 package match
 
 import (
+	"gameserver/common/event_dispatcher"
 	"gameserver/common/schedule"
 	"gameserver/core/chanrpc"
 	"gameserver/core/module"
@@ -19,6 +20,7 @@ func (m *MatchExternal) InitExternal() {
 	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
 	schedule.RegisterIntervalSchedul(10, managers.Matching)
+	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 }
 
 func (m *MatchExternal) GetModule() module.Module {

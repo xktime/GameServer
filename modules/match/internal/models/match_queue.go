@@ -12,6 +12,7 @@ type MatchRequest struct {
 	TeamId    int64     `json:"team_id"`
 	MatchType int32     `json:"match_type"`
 	JoinTime  time.Time `json:"join_time"`
+	IsRobot   bool      `json:"is_robot"`
 }
 
 // 匹配队列结构
@@ -89,8 +90,9 @@ func (q *MatchQueue) CopyRequests() []*MatchRequest {
 	return requests
 }
 
-// 清理过期的匹配请求（超过5分钟的请求）
-func (q *MatchQueue) CleanupExpiredRequests() {
+// todo 暂时应该不会有超时
+// todo 匹配超时也要返回消息处理
+func (q *MatchQueue) ProcessTimeoutRequests() {
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
 

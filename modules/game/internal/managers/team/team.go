@@ -1,6 +1,7 @@
 package team
 
 import (
+	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/utils"
 	actor_manager "gameserver/core/actor"
@@ -9,12 +10,13 @@ import (
 	"slices"
 )
 
-// todo Team数据库清理
+// todo team上应该要挂一个roomId
 type Team struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
 	TeamId                            int64   `bson:"_id"`
 	LeaderId                          int64   `bson:"leader_id"`
 	TeamMembers                       []int64 `bson:"team_members"`
+	RoomId                            int64   `bson:"room_id"`
 }
 
 func (t Team) GetPersistId() interface{} {
@@ -51,6 +53,19 @@ func (t *Team) JoinTeam(playerId int64) {
 	log.Debug("玩家 %d 成功加入队伍 %d，当前成员数量: %d", playerId, t.TeamId, len(t.TeamMembers))
 }
 
+func (t *Team) JoinRoom(roomId int64) {
+	t.RoomId = roomId
+	log.Debug("队伍 %d 成功加入房间 %d", t.TeamId, roomId)
+}
+
+// todo 确认是否要离开队伍
+func (t *Team) PlayerOffline(playerId int64) {
+	if t.RoomId > 0 {
+		// room.PlayerOffline(t.RoomId, playerId)
+	}
+	t.LeaveTeam(playerId)
+}
+
 func (t *Team) LeaveTeam(playerId int64) {
 	log.Debug("玩家 %d 请求离开队伍 %d", playerId, t.TeamId)
 
@@ -73,6 +88,7 @@ func (t *Team) LeaveTeam(playerId int64) {
 	if len(t.TeamMembers) == 0 {
 		log.Debug("队伍 %d 已无成员，停止队伍Actor", t.TeamId)
 		actor_manager.StopGroup(actor_manager.Team, t.TeamId)
+		mongodb.DeleteByID[Team](t.TeamId)
 		return
 	}
 

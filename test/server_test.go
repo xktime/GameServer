@@ -216,7 +216,7 @@ func TestServer_WebSocket(t *testing.T) {
 						matchResult := &message.S2C_MatchResult{}
 						if err := parseMessage(resp, matchResult); err == nil {
 							fmt.Printf("收到匹配结果: %+v\n", matchResult)
-							fmt.Printf("房间ID: %s, 玩家数量: %d\n", matchResult.RoomId, len(matchResult.PlayerInfos))
+							fmt.Printf("房间ID: %d, 玩家数量: %d\n", matchResult.RoomId, len(matchResult.PlayerInfos))
 
 							// 打印玩家信息
 							for i, player := range matchResult.PlayerInfos {
@@ -387,7 +387,7 @@ func TestServer_MatchFlow(t *testing.T) {
 			matchResult := &message.S2C_MatchResult{}
 			if err := parseMessage(resp, matchResult); err == nil {
 				fmt.Printf("\n收到匹配结果: %+v\n", matchResult)
-				fmt.Printf("房间ID: %s, 玩家数量: %d\n", matchResult.RoomId, len(matchResult.PlayerInfos))
+				fmt.Printf("房间ID: %d, 玩家数量: %d\n", matchResult.RoomId, len(matchResult.PlayerInfos))
 
 				// 打印玩家信息
 				for i, player := range matchResult.PlayerInfos {

@@ -5,6 +5,7 @@ import (
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	
+	"gameserver/modules/game/internal/managers/player"
 	"sync"
 )
 
@@ -101,17 +102,6 @@ func (*UserManagerActorProxy) GetUsers() ([]models.User) {
 }
 
 
-// GetCacheStats 调用UserManager的GetCacheStats方法
-func (*UserManagerActorProxy) GetCacheStats() (map[string]interface{}) {
-	sendArgs := []interface{}{}
-	
-
-	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetCacheStats", sendArgs)
-	result, _ := future.Result()
-	return result.(map[string]interface{})
-}
-
-
 // ClearAllCache 调用UserManager的ClearAllCache方法
 func (*UserManagerActorProxy) ClearAllCache() {
 	sendArgs := []interface{}{}
@@ -147,6 +137,51 @@ func (*UserManagerActorProxy) GetUserLoginTime(accountId string) (int64, bool) {
 		return ret0, ret1
 	}
 	return 0, false
+}
+
+
+// GetPlayers 调用UserManager的GetPlayers方法
+func (*UserManagerActorProxy) GetPlayers() ([]*player.Player) {
+	sendArgs := []interface{}{}
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetPlayers", sendArgs)
+	result, _ := future.Result()
+	return result.([]*player.Player)
+}
+
+
+// GetPlayer 调用UserManager的GetPlayer方法
+func (*UserManagerActorProxy) GetPlayer(playerId int64) (*player.Player) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, playerId)
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetPlayer", sendArgs)
+	result, _ := future.Result()
+	return result.(*player.Player)
+}
+
+
+// GetPlayerCacheStats 调用UserManager的GetPlayerCacheStats方法
+func (*UserManagerActorProxy) GetPlayerCacheStats() (map[string]interface{}) {
+	sendArgs := []interface{}{}
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetPlayerCacheStats", sendArgs)
+	result, _ := future.Result()
+	return result.(map[string]interface{})
+}
+
+
+// GetCacheStats 调用UserManager的GetCacheStats方法
+func (*UserManagerActorProxy) GetCacheStats() (map[string]interface{}) {
+	sendArgs := []interface{}{}
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetCacheStats", sendArgs)
+	result, _ := future.Result()
+	return result.(map[string]interface{})
 }
 
 

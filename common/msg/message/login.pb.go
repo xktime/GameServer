@@ -21,6 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// C2S 100--200
+// S2C 200--300
 type LoginType int32
 
 const (
@@ -252,9 +254,9 @@ var File_login_proto protoreflect.FileDescriptor
 
 const file_login_proto_rawDesc = "" +
 	"\n" +
-	"\vlogin.proto\x1a\x10message_id.proto\"4\n" +
+	"\vlogin.proto\x1a\x10message_id.proto\"5\n" +
 	"\tS2C_Login\x12!\n" +
-	"\flogin_result\x18\x01 \x01(\x05R\vloginResult:\x04\x80\xb5\x18e\"m\n" +
+	"\flogin_result\x18\x01 \x01(\x05R\vloginResult:\x05\x80\xb5\x18\xc9\x01\"m\n" +
 	"\tC2S_Login\x12)\n" +
 	"\n" +
 	"login_type\x18\x01 \x01(\x0e2\n" +

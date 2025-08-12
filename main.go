@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
+	"gameserver/common/event_dispatcher"
 	"gameserver/common/schedule"
 	"gameserver/common/utils"
 	"gameserver/conf"
@@ -50,7 +51,8 @@ func main() {
 func Run(external ...module.External) {
 	//gate放在最后，不用手动注册
 	external = append(external, gate.External)
-	modules := make([]module.Module, 0, len(external))
+	modules := make([]module.Module, 0, len(external)+1)
+	modules = append(modules, event_dispatcher.Module)
 	for _, e := range external {
 		e.InitExternal()
 		modules = append(modules, e.GetModule())

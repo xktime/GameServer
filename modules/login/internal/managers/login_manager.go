@@ -30,7 +30,7 @@ func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 		result.LoginResult = -1
 		return
 	}
-	result.LoginResult = 0
+	result.LoginResult = 1
 	game.External.UserManager.DirectCaller.UserLogin(agent, loginResp.Openid, msg.ServerId)
 }
 

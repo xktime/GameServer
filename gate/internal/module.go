@@ -1,10 +1,10 @@
 package internal
 
 import (
+	"gameserver/common/event_dispatcher"
 	"gameserver/common/msg"
 	"gameserver/conf"
 	"gameserver/core/gate"
-	"gameserver/modules/game"
 )
 
 type Module struct {
@@ -24,6 +24,6 @@ func (m *Module) OnInit() {
 		LenMsgLen:       conf.LenMsgLen,
 		LittleEndian:    conf.LittleEndian,
 		Processor:       msg.Processor,
-		AgentChanRPC:    game.External.ChanRPC,
+		AgentChanRPC:    event_dispatcher.ChanRPC,
 	}
 }

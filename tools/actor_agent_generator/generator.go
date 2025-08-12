@@ -279,6 +279,7 @@ import (
 	actor_manager "gameserver/core/actor"
 	{{if .HasGate}}"gameserver/core/gate"{{end}}
 	{{if .HasMessage}}"gameserver/common/msg/message"{{end}}
+	{{if .HasPlayer}}"gameserver/modules/game/internal/managers/player"{{end}}
 	"sync"
 )
 
@@ -366,6 +367,7 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 	hasFuture := false
 	hasProto := false
 	hasMessage := false
+	hasPlayer := false
 	for _, method := range methods {
 		for _, param := range method.Params {
 			if strings.Contains(param.Type, "gate.Agent") {
@@ -380,10 +382,16 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 			if strings.Contains(param.Type, "models.") {
 				hasModels = true
 			}
+			if strings.Contains(param.Type, "player.") {
+				hasPlayer = true
+			}
 		}
 		for _, ret := range method.Returns {
 			if strings.Contains(ret, "models.") {
 				hasModels = true
+			}
+			if strings.Contains(ret, "player.") {
+				hasPlayer = true
 			}
 		}
 		if len(method.Returns) > 0 {
@@ -400,6 +408,7 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 		HasFuture   bool
 		HasProto    bool
 		HasMessage  bool
+		HasPlayer   bool
 	}{
 		StructName:  g.StructName,
 		PackageName: g.PackageName,
@@ -409,6 +418,7 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 		HasFuture:   hasFuture,
 		HasProto:    hasProto,
 		HasMessage:  hasMessage,
+		HasPlayer:   hasPlayer,
 	}
 	return tmpl.Execute(file, data)
 }

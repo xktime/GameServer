@@ -2,6 +2,7 @@ package internal
 
 import (
 	"gameserver/core/gate"
+	"gameserver/core/log"
 )
 
 func init() {
@@ -15,5 +16,7 @@ func rpcNewAgent(args []interface{}) {
 }
 
 func rpcCloseAgent(args []interface{}) {
-
+	a := args[0].(gate.Agent)
+	log.Release("match 断开链接")
+	_ = a
 }

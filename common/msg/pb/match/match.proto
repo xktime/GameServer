@@ -3,32 +3,47 @@ syntax = "proto3";
 option go_package = "./../message";
 import "message_id.proto";
 
+// C2S 300--400
+// S2C 400--500
 message MatchPlayerInfo {
     int64 playerId = 1;
     bool isRobot = 2;
 }
 
 message C2S_StartMatch {
-    option (message_id) = 201;
+    option (message_id) = 301;
     int32 type = 1;
 }
 
 message S2C_StartMatch {
-    option (message_id) = 201;
+    option (message_id) = 401;
     bool result = 1;
 }
 
 message S2C_MatchResult {
-    option (message_id) = 202;
-    string roomId = 1;
+    option (message_id) = 402;
+    int64 roomId = 1;
     repeated MatchPlayerInfo playerInfos = 2;
 }
 
 message C2S_CancelMatch {
-    option (message_id) = 203;
+    option (message_id) = 303;
 }
 
 message S2C_CancelMatch {
-    option (message_id) = 201;
+    option (message_id) = 403;
     bool result = 1;
 }
+
+message S2C_PlayerOffline {
+    option (message_id) = 403;
+    int64 playerId = 1;
+}
+// ---------------room-----------
+message C2S_RecordGameOperate {
+    option (message_id) = 304;
+    int64 roomId = 1;
+    string operateInfo = 2;
+}
+
+

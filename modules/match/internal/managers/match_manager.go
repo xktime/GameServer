@@ -7,8 +7,8 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game"
+	"gameserver/modules/match/internal/managers/room"
 	match_models "gameserver/modules/match/internal/models"
-	"gameserver/modules/match/internal/room"
 	"time"
 )
 
@@ -19,7 +19,6 @@ var (
 	}
 )
 
-// todo 匹配超时也要返回消息处理、没有足够的匹配数据填充
 // todo type需要用map隔离一下，通过type去获取groupSize
 type MatchManager struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
@@ -47,11 +46,11 @@ func Matching() {
 
 	log.Debug("匹配任务完成，处理了 %d 个匹配组", len(matchedGroups))
 
-	matchQueue.CleanupExpiredRequests()
+	matchQueue.ProcessTimeoutRequests()
 }
 
 // HandleMatch 处理玩家开始匹配请求
-func (m *MatchManager) HandleMatch(agent gate.Agent) {
+func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
 	user := agent.UserData().(models.User)
 	player := game.External.UserManager.DirectCaller.GetPlayer(user.PlayerId)
 	if player == nil {
@@ -74,7 +73,7 @@ func (m *MatchManager) HandleMatch(agent gate.Agent) {
 	matchReq := &match_models.MatchRequest{
 		PlayerId:  user.PlayerId,
 		TeamId:    player.TeamId,
-		MatchType: 1, // 默认匹配类型，可以从消息中获取
+		MatchType: msg.Type, // 默认匹配类型，可以从消息中获取
 		JoinTime:  time.Now(),
 	}
 
@@ -105,6 +104,7 @@ var groupSize = 8 // 可以根据实际需求调整每组玩家数量
 func executeMatching(requests []*match_models.MatchRequest) [][]*match_models.MatchRequest {
 	var matchedGroups [][]*match_models.MatchRequest
 
+	// 先处理能凑满一组的玩家
 	for i := 0; i+groupSize <= len(requests); i += groupSize {
 		group := make([]*match_models.MatchRequest, 0, groupSize)
 		for j := 0; j < groupSize; j++ {
@@ -113,16 +113,46 @@ func executeMatching(requests []*match_models.MatchRequest) [][]*match_models.Ma
 		matchedGroups = append(matchedGroups, group)
 	}
 
-	// todo 剩余玩家随机机器人进去
-	// 如果剩余玩家不足一组，可以单独处理或等待
+	// 处理剩余不足一组的玩家，补充机器人
 	remain := len(requests) % groupSize
 	if remain > 0 {
-		for i := len(requests) - remain; i < len(requests); i++ {
-			log.Debug("剩余玩家等待匹配: %d", requests[i].PlayerId)
+		start := len(requests) - remain
+		group := make([]*match_models.MatchRequest, 0, groupSize)
+		// 先加入剩余玩家
+		for i := start; i < len(requests); i++ {
+			group = append(group, requests[i])
 		}
+		// 需要补充的机器人数量
+		needRobots := groupSize - remain
+		for i := 0; i < needRobots; i++ {
+			robotId := RandomRobotPlayerId()
+			robotReq := &match_models.MatchRequest{
+				PlayerId:  robotId,
+				TeamId:    0,
+				MatchType: 0,
+				JoinTime:  time.Now(),
+				IsRobot:   true,
+			}
+			group = append(group, robotReq)
+			log.Debug("补充机器人进组: %d", robotId)
+		}
+		matchedGroups = append(matchedGroups, group)
 	}
 
 	return matchedGroups
+}
+
+// todo 获取机器人id实现
+func RandomRobotPlayerId() int64 {
+	return 0
+}
+
+func RandomRobotPlayerIds(size int) []int64 {
+	result := make([]int64, size)
+	for i := 0; i < size; i++ {
+		result[i] = RandomRobotPlayerId()
+	}
+	return result
 }
 
 // processMatchResults 处理匹配结果
@@ -137,7 +167,7 @@ func processMatchResults(matchedGroups [][]*match_models.MatchRequest) {
 			for _, req := range group {
 				playerInfos = append(playerInfos, &message.MatchPlayerInfo{
 					PlayerId: req.PlayerId,
-					IsRobot:  false, // 暂时都设为false
+					IsRobot:  req.IsRobot,
 				})
 			}
 			// 发送匹配结果给所有玩家
@@ -151,6 +181,7 @@ func processMatchResults(matchedGroups [][]*match_models.MatchRequest) {
 			playerIds := make([]int64, len(group))
 			for i, req := range group {
 				playerIds[i] = req.PlayerId
+
 			}
 			matchQueue.RemoveRequests(playerIds)
 

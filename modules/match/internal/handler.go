@@ -15,4 +15,5 @@ func handleMsg(m proto.Message, h interface{}) {
 func InitHandler() {
 	handleMsg(&message.C2S_StartMatch{}, handlers.C2S_StartMatchHandler)
 	handleMsg(&message.C2S_CancelMatch{}, handlers.C2S_CancelMatchHandler)
+	handleMsg(&message.C2S_RecordGameOperate{}, handlers.C2S_RecordGameOperateHandler)
 }

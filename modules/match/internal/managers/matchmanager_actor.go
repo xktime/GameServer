@@ -4,6 +4,7 @@ import (
 	
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
+	"gameserver/common/msg/message"
 	
 	"sync"
 )
@@ -34,9 +35,10 @@ func GetMatchManager() *MatchManagerActorProxy {
 
 
 // HandleMatch 调用MatchManager的HandleMatch方法
-func (*MatchManagerActorProxy) HandleMatch(agent gate.Agent) {
+func (*MatchManagerActorProxy) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
 	sendArgs := []interface{}{}
 	sendArgs = append(sendArgs, agent)
+	sendArgs = append(sendArgs, msg)
 	
 
 	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "HandleMatch", sendArgs)

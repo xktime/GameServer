@@ -27,5 +27,5 @@ func C2S_StartMatchHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_StartMatch消息: %v, agent: %v", msg, agent)
-	managers.GetMatchManager().HandleMatch(agent)
+	managers.GetMatchManager().HandleMatch(agent, msg)
 }

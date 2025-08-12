@@ -83,7 +83,7 @@ func (m *UserManager) UserOffline(user models.User) {
 	p := m.getPlayerFromCache(user.PlayerId)
 	if p != nil {
 		if p.TeamId > 0 {
-			team.LeaveTeam(p.TeamId, p.PlayerId)
+			team.PlayerOffline(p.TeamId, p.PlayerId)
 		}
 		// 停止玩家Actor
 		actor_manager.StopGroup(actor_manager.Player, p.PlayerId)

@@ -1,6 +1,7 @@
 package login
 
 import (
+	"gameserver/common/event_dispatcher"
 	"gameserver/core/chanrpc"
 	"gameserver/core/module"
 	"gameserver/modules/login/internal"
@@ -19,6 +20,7 @@ func (m *LoginExternal) InitExternal() {
 	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
 	m.LoginManager = managers.GetLoginManager()
+	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 }
 
 func (m *LoginExternal) GetModule() module.Module {

@@ -21,6 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// C2S 300--400
+// S2C 400--500
 type MatchPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
@@ -163,7 +165,7 @@ func (x *S2C_StartMatch) GetResult() bool {
 
 type S2C_MatchResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        string                 `protobuf:"bytes,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
+	RoomId        int64                  `protobuf:"varint,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
 	PlayerInfos   []*MatchPlayerInfo     `protobuf:"bytes,2,rep,name=playerInfos,proto3" json:"playerInfos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -199,11 +201,11 @@ func (*S2C_MatchResult) Descriptor() ([]byte, []int) {
 	return file_match_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *S2C_MatchResult) GetRoomId() string {
+func (x *S2C_MatchResult) GetRoomId() int64 {
 	if x != nil {
 		return x.RoomId
 	}
-	return ""
+	return 0
 }
 
 func (x *S2C_MatchResult) GetPlayerInfos() []*MatchPlayerInfo {
@@ -293,6 +295,103 @@ func (x *S2C_CancelMatch) GetResult() bool {
 	return false
 }
 
+type S2C_PlayerOffline struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_PlayerOffline) Reset() {
+	*x = S2C_PlayerOffline{}
+	mi := &file_match_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_PlayerOffline) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_PlayerOffline) ProtoMessage() {}
+
+func (x *S2C_PlayerOffline) ProtoReflect() protoreflect.Message {
+	mi := &file_match_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_PlayerOffline.ProtoReflect.Descriptor instead.
+func (*S2C_PlayerOffline) Descriptor() ([]byte, []int) {
+	return file_match_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *S2C_PlayerOffline) GetPlayerId() int64 {
+	if x != nil {
+		return x.PlayerId
+	}
+	return 0
+}
+
+// ---------------room-----------
+type C2S_RecordGameOperate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        int64                  `protobuf:"varint,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
+	OperateInfo   string                 `protobuf:"bytes,2,opt,name=operateInfo,proto3" json:"operateInfo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_RecordGameOperate) Reset() {
+	*x = C2S_RecordGameOperate{}
+	mi := &file_match_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_RecordGameOperate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_RecordGameOperate) ProtoMessage() {}
+
+func (x *C2S_RecordGameOperate) ProtoReflect() protoreflect.Message {
+	mi := &file_match_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_RecordGameOperate.ProtoReflect.Descriptor instead.
+func (*C2S_RecordGameOperate) Descriptor() ([]byte, []int) {
+	return file_match_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *C2S_RecordGameOperate) GetRoomId() int64 {
+	if x != nil {
+		return x.RoomId
+	}
+	return 0
+}
+
+func (x *C2S_RecordGameOperate) GetOperateInfo() string {
+	if x != nil {
+		return x.OperateInfo
+	}
+	return ""
+}
+
 var File_match_proto protoreflect.FileDescriptor
 
 const file_match_proto_rawDesc = "" +
@@ -302,15 +401,20 @@ const file_match_proto_rawDesc = "" +
 	"\bplayerId\x18\x01 \x01(\x03R\bplayerId\x12\x18\n" +
 	"\aisRobot\x18\x02 \x01(\bR\aisRobot\"+\n" +
 	"\x0eC2S_StartMatch\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\x05R\x04type:\x05\x80\xb5\x18\xc9\x01\"/\n" +
+	"\x04type\x18\x01 \x01(\x05R\x04type:\x05\x80\xb5\x18\xad\x02\"/\n" +
 	"\x0eS2C_StartMatch\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\bR\x06result:\x05\x80\xb5\x18\xc9\x01\"d\n" +
+	"\x06result\x18\x01 \x01(\bR\x06result:\x05\x80\xb5\x18\x91\x03\"d\n" +
 	"\x0fS2C_MatchResult\x12\x16\n" +
-	"\x06roomId\x18\x01 \x01(\tR\x06roomId\x122\n" +
-	"\vplayerInfos\x18\x02 \x03(\v2\x10.MatchPlayerInfoR\vplayerInfos:\x05\x80\xb5\x18\xca\x01\"\x18\n" +
-	"\x0fC2S_CancelMatch:\x05\x80\xb5\x18\xcb\x01\"0\n" +
+	"\x06roomId\x18\x01 \x01(\x03R\x06roomId\x122\n" +
+	"\vplayerInfos\x18\x02 \x03(\v2\x10.MatchPlayerInfoR\vplayerInfos:\x05\x80\xb5\x18\x92\x03\"\x18\n" +
+	"\x0fC2S_CancelMatch:\x05\x80\xb5\x18\xaf\x02\"0\n" +
 	"\x0fS2C_CancelMatch\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\bR\x06result:\x05\x80\xb5\x18\xc9\x01B\x0eZ\f./../messageb\x06proto3"
+	"\x06result\x18\x01 \x01(\bR\x06result:\x05\x80\xb5\x18\x93\x03\"6\n" +
+	"\x11S2C_PlayerOffline\x12\x1a\n" +
+	"\bplayerId\x18\x01 \x01(\x03R\bplayerId:\x05\x80\xb5\x18\x93\x03\"X\n" +
+	"\x15C2S_RecordGameOperate\x12\x16\n" +
+	"\x06roomId\x18\x01 \x01(\x03R\x06roomId\x12 \n" +
+	"\voperateInfo\x18\x02 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\xb0\x02B\x0eZ\f./../messageb\x06proto3"
 
 var (
 	file_match_proto_rawDescOnce sync.Once
@@ -324,14 +428,16 @@ func file_match_proto_rawDescGZIP() []byte {
 	return file_match_proto_rawDescData
 }
 
-var file_match_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_match_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_match_proto_goTypes = []any{
-	(*MatchPlayerInfo)(nil), // 0: MatchPlayerInfo
-	(*C2S_StartMatch)(nil),  // 1: C2S_StartMatch
-	(*S2C_StartMatch)(nil),  // 2: S2C_StartMatch
-	(*S2C_MatchResult)(nil), // 3: S2C_MatchResult
-	(*C2S_CancelMatch)(nil), // 4: C2S_CancelMatch
-	(*S2C_CancelMatch)(nil), // 5: S2C_CancelMatch
+	(*MatchPlayerInfo)(nil),       // 0: MatchPlayerInfo
+	(*C2S_StartMatch)(nil),        // 1: C2S_StartMatch
+	(*S2C_StartMatch)(nil),        // 2: S2C_StartMatch
+	(*S2C_MatchResult)(nil),       // 3: S2C_MatchResult
+	(*C2S_CancelMatch)(nil),       // 4: C2S_CancelMatch
+	(*S2C_CancelMatch)(nil),       // 5: S2C_CancelMatch
+	(*S2C_PlayerOffline)(nil),     // 6: S2C_PlayerOffline
+	(*C2S_RecordGameOperate)(nil), // 7: C2S_RecordGameOperate
 }
 var file_match_proto_depIdxs = []int32{
 	0, // 0: S2C_MatchResult.playerInfos:type_name -> MatchPlayerInfo
@@ -354,7 +460,7 @@ func file_match_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_match_proto_rawDesc), len(file_match_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

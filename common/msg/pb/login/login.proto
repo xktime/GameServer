@@ -3,6 +3,8 @@ syntax = "proto3";
 option go_package = "./../message";
 import "message_id.proto";
 
+// C2S 100--200
+// S2C 200--300
 enum LoginType {
     None = 0;
     DouYin = 1;
@@ -11,7 +13,7 @@ enum LoginType {
 
 // todo llw 返回角色其他信息
 message S2C_Login {
-    option (message_id) = 101;
+    option (message_id) = 201;
     int32 login_result = 1; // 为0登录成功，其他都登录失败
 }
 
