@@ -1,10 +1,10 @@
-
 package handlers
 
 import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/match/internal/managers"
 )
 
 // C2S_CancelMatchHandler 处理C2S_CancelMatch消息
@@ -27,5 +27,5 @@ func C2S_CancelMatchHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_CancelMatch消息: %v, agent: %v", msg, agent)
-	// TODO: 实现具体的业务逻辑
+	managers.GetMatchManager().HandleCancelMatch(agent)
 }

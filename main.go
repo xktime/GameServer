@@ -16,6 +16,7 @@ import (
 	"gameserver/modules/game"
 	"gameserver/modules/login"
 	"gameserver/modules/match"
+	"gameserver/modules/rank"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
@@ -45,7 +46,7 @@ func main() {
 
 	Init()
 
-	Run(game.External, login.External, match.External)
+	Run(game.External, login.External, match.External, rank.External)
 }
 
 func Run(external ...module.External) {

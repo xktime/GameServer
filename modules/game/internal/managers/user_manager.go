@@ -9,7 +9,6 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
-	"gameserver/modules/game/internal/managers/team"
 	"sync"
 	"time"
 
@@ -82,9 +81,6 @@ func (m *UserManager) UserOffline(user models.User) {
 	// 先从缓存获取玩家信息
 	p := m.getPlayerFromCache(user.PlayerId)
 	if p != nil {
-		if p.TeamId > 0 {
-			team.PlayerOffline(p.TeamId, p.PlayerId)
-		}
 		// 停止玩家Actor
 		actor_manager.StopGroup(actor_manager.Player, p.PlayerId)
 
@@ -166,7 +162,6 @@ func (m *UserManager) ClearAllCache() {
 	// 清理所有缓存
 	memCache = sync.Map{}
 	playerCache = sync.Map{}
-
 	log.Debug("Cleared all caches - users: %d, players: %d", userCount, playerCount)
 }
 
@@ -174,16 +169,6 @@ func (m *UserManager) ClearAllCache() {
 func (m *UserManager) IsUserOnline(accountId string) bool {
 	_, exists := memCache.Load(accountId)
 	return exists
-}
-
-// 获取用户登录时间
-func (m *UserManager) GetUserLoginTime(accountId string) (int64, bool) {
-	if value, exists := memCache.Load(accountId); exists {
-		if user, ok := value.(*models.User); ok {
-			return user.LoginTime, true
-		}
-	}
-	return 0, false
 }
 
 // 更新用户缓存

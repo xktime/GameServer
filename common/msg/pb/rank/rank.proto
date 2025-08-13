@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+// C2S 500--600
+// S2C 600--700
+
+// 获取排行榜
+message C2S_GetRankList {
+    option (message_id) = 501;
+    int32 rankType = 1;  // 排行榜类型：1-等级榜，2-战力榜，3-财富榜
+    int32 page = 2;      // 页码，从1开始
+    int32 pageSize = 3;  // 每页大小
+}
+
+message S2C_GetRankList {
+    option (message_id) = 601;
+    int32 rankType = 1;
+    repeated RankItem rankItems = 2;
+    int32 totalCount = 3;
+    int32 currentPage = 4;
+}
+
+// 排行榜项目
+message RankItem {
+    int64 playerId = 1;
+    string playerName = 2;
+    int32 rank = 3;
+    int64 score = 4;     // 分数/等级/战力/财富等
+    string avatar = 5;    // 头像
+    int32 level = 6;      // 等级
+}
+
+// 获取我的排名
+message C2S_GetMyRank {
+    option (message_id) = 502;
+    int32 rankType = 1;
+}
+
+message S2C_GetMyRank {
+    option (message_id) = 602;
+    int32 rankType = 1;
+    int32 myRank = 2;
+    int64 myScore = 3;
+    int32 totalCount = 4;
+}
+
+// 更新排行榜数据
+message C2S_UpdateRankData {
+    option (message_id) = 503;
+    int32 rankType = 1;
+    int64 score = 2;
+}
+
+message S2C_UpdateRankData {
+    option (message_id) = 603;
+    bool success = 1;
+    int32 newRank = 2;
+}
+
+

@@ -1,3 +1,4 @@
 ../../modules/game/internal/managers
 ../../modules/login/internal/managers
 ../../modules/match/internal/managers
+../../modules/rank/internal/managers

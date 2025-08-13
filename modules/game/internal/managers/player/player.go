@@ -104,7 +104,13 @@ func (p *Player) Print() {
 
 func (p *Player) InitTeam() {
 	if p.TeamId != 0 {
-		team.LeaveTeam(p.TeamId, p.PlayerId)
+		teamActor := actor_manager.Get[team.Team](p.TeamId)
+		if teamActor != nil {
+			// todo 重连房间
+			if teamActor.RoomId > 0 {
+				return
+			}
+		}
 	}
 	teamInfo := team.InitTeam(p.agent)
 	p.TeamId = teamInfo.TeamId

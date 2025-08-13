@@ -46,4 +46,9 @@ message C2S_RecordGameOperate {
     string operateInfo = 2;
 }
 
+message S2C_RecordGameOperate {
+    option (message_id) = 404;
+    string operateInfo = 1;
+}
+
 

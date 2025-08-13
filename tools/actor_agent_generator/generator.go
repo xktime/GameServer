@@ -276,10 +276,13 @@ func (g *MethodGenerator) generateCode(methods []MethodInfo) error {
 
 import (
 	{{if .HasModels}}"gameserver/common/models"{{end}}
+	{{if .HasRankModels}}"gameserver/modules/rank/internal/models"{{end}}
 	actor_manager "gameserver/core/actor"
 	{{if .HasGate}}"gameserver/core/gate"{{end}}
 	{{if .HasMessage}}"gameserver/common/msg/message"{{end}}
 	{{if .HasPlayer}}"gameserver/modules/game/internal/managers/player"{{end}}
+	{{if .HasTeam}}"gameserver/modules/game/internal/managers/team"{{end}}
+	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -289,7 +292,7 @@ type {{.StructName}}ActorProxy struct {
 }
 
 var (
-	actorProxy *{{.StructName}}ActorProxy
+	{{.StructName | lowerFirst}}actorProxy *{{.StructName}}ActorProxy
 	{{.StructName | lowerFirst}}Once sync.Once
 )
 
@@ -299,12 +302,16 @@ func Get{{.StructName}}ActorId() int64 {
 
 func Get{{.StructName}}() *{{.StructName}}ActorProxy {
 	{{.StructName | lowerFirst}}Once.Do(func() {
-		{{.StructName | lowerFirst}}Meta, _ := actor_manager.Register[{{.StructName}}](Get{{.StructName}}ActorId(), actor_manager.User)
-		actorProxy = &{{.StructName}}ActorProxy{
-			DirectCaller: {{.StructName | lowerFirst}}Meta.Actor,
+		{{.StructName | lowerFirst}}Meta, _ := actor_manager.Register[{{.StructName}}](Get{{.StructName}}ActorId(), actor_manager.ActorGroup("{{.StructName | lowerFirst}}"))
+		managerActor := {{.StructName | lowerFirst}}Meta.Actor
+		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
+			persistManager.OnInitData()
+		}
+		{{.StructName | lowerFirst}}actorProxy = &{{.StructName}}ActorProxy{
+			DirectCaller: managerActor,
 		}
 	})
-	return actorProxy
+	return {{.StructName | lowerFirst}}actorProxy
 }
 
 {{range .Methods}}
@@ -334,6 +341,7 @@ import (
 	actor_manager "gameserver/core/actor"
 	{{if .HasGate}}"gameserver/core/gate"{{end}}
 	{{if .HasModels}}"gameserver/common/models"{{end}}
+	{{if .HasRankModels}}"gameserver/modules/rank/internal/models"{{end}}
 	{{if .HasMessage}}"gameserver/common/msg/message"{{end}}
 	{{if .HasProto}}"google.golang.org/protobuf/proto"{{end}}
 )
@@ -368,6 +376,8 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 	hasProto := false
 	hasMessage := false
 	hasPlayer := false
+	hasTeam := false
+	hasRankModels := false
 	for _, method := range methods {
 		for _, param := range method.Params {
 			if strings.Contains(param.Type, "gate.Agent") {
@@ -379,19 +389,41 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 			if strings.Contains(param.Type, "message.") {
 				hasMessage = true
 			}
-			if strings.Contains(param.Type, "models.") {
+			// 检查是否包含rank模块的models类型
+			if strings.Contains(param.Type, "RankUpdateRequest") ||
+				strings.Contains(param.Type, "GetRankListRequest") ||
+				strings.Contains(param.Type, "GetRankListResponse") ||
+				strings.Contains(param.Type, "GetMyRankRequest") ||
+				strings.Contains(param.Type, "GetMyRankResponse") {
+				hasRankModels = true
+			} else if strings.Contains(param.Type, "models.") {
+				// 只有在不包含rank模块类型时才导入common/models
 				hasModels = true
 			}
 			if strings.Contains(param.Type, "player.") {
 				hasPlayer = true
 			}
+			if strings.Contains(param.Type, "team.") {
+				hasTeam = true
+			}
 		}
 		for _, ret := range method.Returns {
-			if strings.Contains(ret, "models.") {
+			// 检查返回值是否包含rank模块的models类型
+			if strings.Contains(ret, "RankUpdateRequest") ||
+				strings.Contains(ret, "GetRankListRequest") ||
+				strings.Contains(ret, "GetRankListResponse") ||
+				strings.Contains(ret, "GetMyRankRequest") ||
+				strings.Contains(ret, "GetMyRankResponse") {
+				hasRankModels = true
+			} else if strings.Contains(ret, "models.") {
+				// 只有在不包含rank模块类型时才导入common/models
 				hasModels = true
 			}
 			if strings.Contains(ret, "player.") {
 				hasPlayer = true
+			}
+			if strings.Contains(ret, "team.") {
+				hasTeam = true
 			}
 		}
 		if len(method.Returns) > 0 {
@@ -400,25 +432,29 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 	}
 
 	data := struct {
-		StructName  string
-		PackageName string
-		Methods     []MethodInfo
-		HasGate     bool
-		HasModels   bool
-		HasFuture   bool
-		HasProto    bool
-		HasMessage  bool
-		HasPlayer   bool
+		StructName    string
+		PackageName   string
+		Methods       []MethodInfo
+		HasGate       bool
+		HasModels     bool
+		HasRankModels bool
+		HasFuture     bool
+		HasProto      bool
+		HasMessage    bool
+		HasPlayer     bool
+		HasTeam       bool
 	}{
-		StructName:  g.StructName,
-		PackageName: g.PackageName,
-		Methods:     methods,
-		HasGate:     hasGate,
-		HasModels:   hasModels,
-		HasFuture:   hasFuture,
-		HasProto:    hasProto,
-		HasMessage:  hasMessage,
-		HasPlayer:   hasPlayer,
+		StructName:    g.StructName,
+		PackageName:   g.PackageName,
+		Methods:       methods,
+		HasGate:       hasGate,
+		HasModels:     hasModels,
+		HasRankModels: hasRankModels,
+		HasFuture:     hasFuture,
+		HasProto:      hasProto,
+		HasMessage:    hasMessage,
+		HasPlayer:     hasPlayer,
+		HasTeam:       hasTeam,
 	}
 	return tmpl.Execute(file, data)
 }

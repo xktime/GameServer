@@ -166,6 +166,11 @@ func (g *HandlerGenerator) detectModuleFromPath(protoFile string) string {
 		return "match"
 	}
 
+	// 检查路径中是否包含rank
+	if strings.Contains(relPath, "rank") {
+		return "rank"
+	}
+
 	// 默认返回game
 	return "game"
 }

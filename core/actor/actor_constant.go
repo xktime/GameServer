@@ -11,4 +11,5 @@ const (
 	Player   ActorGroup = "Player"
 	Team     ActorGroup = "Team"
 	Room     ActorGroup = "Room"
+	Rank     ActorGroup = "Rank"
 )

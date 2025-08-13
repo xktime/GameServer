@@ -392,6 +392,50 @@ func (x *C2S_RecordGameOperate) GetOperateInfo() string {
 	return ""
 }
 
+type S2C_RecordGameOperate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OperateInfo   string                 `protobuf:"bytes,1,opt,name=operateInfo,proto3" json:"operateInfo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_RecordGameOperate) Reset() {
+	*x = S2C_RecordGameOperate{}
+	mi := &file_match_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_RecordGameOperate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_RecordGameOperate) ProtoMessage() {}
+
+func (x *S2C_RecordGameOperate) ProtoReflect() protoreflect.Message {
+	mi := &file_match_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_RecordGameOperate.ProtoReflect.Descriptor instead.
+func (*S2C_RecordGameOperate) Descriptor() ([]byte, []int) {
+	return file_match_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *S2C_RecordGameOperate) GetOperateInfo() string {
+	if x != nil {
+		return x.OperateInfo
+	}
+	return ""
+}
+
 var File_match_proto protoreflect.FileDescriptor
 
 const file_match_proto_rawDesc = "" +
@@ -414,7 +458,9 @@ const file_match_proto_rawDesc = "" +
 	"\bplayerId\x18\x01 \x01(\x03R\bplayerId:\x05\x80\xb5\x18\x93\x03\"X\n" +
 	"\x15C2S_RecordGameOperate\x12\x16\n" +
 	"\x06roomId\x18\x01 \x01(\x03R\x06roomId\x12 \n" +
-	"\voperateInfo\x18\x02 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\xb0\x02B\x0eZ\f./../messageb\x06proto3"
+	"\voperateInfo\x18\x02 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\xb0\x02\"@\n" +
+	"\x15S2C_RecordGameOperate\x12 \n" +
+	"\voperateInfo\x18\x01 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\x94\x03B\x0eZ\f./../messageb\x06proto3"
 
 var (
 	file_match_proto_rawDescOnce sync.Once
@@ -428,7 +474,7 @@ func file_match_proto_rawDescGZIP() []byte {
 	return file_match_proto_rawDescData
 }
 
-var file_match_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_match_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_match_proto_goTypes = []any{
 	(*MatchPlayerInfo)(nil),       // 0: MatchPlayerInfo
 	(*C2S_StartMatch)(nil),        // 1: C2S_StartMatch
@@ -438,6 +484,7 @@ var file_match_proto_goTypes = []any{
 	(*S2C_CancelMatch)(nil),       // 5: S2C_CancelMatch
 	(*S2C_PlayerOffline)(nil),     // 6: S2C_PlayerOffline
 	(*C2S_RecordGameOperate)(nil), // 7: C2S_RecordGameOperate
+	(*S2C_RecordGameOperate)(nil), // 8: S2C_RecordGameOperate
 }
 var file_match_proto_depIdxs = []int32{
 	0, // 0: S2C_MatchResult.playerInfos:type_name -> MatchPlayerInfo
@@ -460,7 +507,7 @@ func file_match_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_match_proto_rawDesc), len(file_match_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

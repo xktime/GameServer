@@ -14,6 +14,9 @@ func init() {
 
 func rpcNewAgent(args []interface{}) {
 	a := args[0].(gate.Agent)
+	for _, dispatcher := range Dispatchers {
+		dispatcher.Go("NewAgent", a)
+	}
 	_ = a
 }
 

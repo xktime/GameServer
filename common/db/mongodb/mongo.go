@@ -20,6 +20,13 @@ type PersistData interface {
 	GetPersistId() interface{}
 }
 
+// 需要持久化的manager实现这个类
+// 因为manager的init是用模板生成的，需要加载的数据和初始化需要实现OnInitData
+type PersistManager interface {
+	PersistData
+	OnInitData()
+}
+
 type Mongo struct {
 	client   *mongo.Client
 	database *mongo.Database

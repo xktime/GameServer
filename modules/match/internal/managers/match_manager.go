@@ -3,6 +3,7 @@ package managers
 import (
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/utils"
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
@@ -14,12 +15,10 @@ import (
 
 // 全局匹配队列
 var (
-	matchQueue = &match_models.MatchQueue{
-		Requests: make(map[int64]*match_models.MatchRequest),
-	}
+	matchQueue = match_models.NewMatchQueue()
 )
 
-// todo type需要用map隔离一下，通过type去获取groupSize
+// MatchManager 匹配管理器
 type MatchManager struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
 }
@@ -29,27 +28,28 @@ func Matching() {
 	log.Debug("开始执行匹配任务")
 
 	// 快速复制队列数据，避免长时间持有锁
-	requests := matchQueue.CopyRequests()
+	teamRequests := matchQueue.CopyTeamRequests()
 
-	if len(requests) == 0 {
+	if len(teamRequests) == 0 {
 		log.Debug("匹配队列为空，跳过本次匹配")
-		return
+	} else {
+		log.Debug("当前匹配队列中有 %d 个队伍，总共 %d 个玩家",
+			len(teamRequests), matchQueue.GetTotalPlayers())
+
+		// 执行匹配逻辑
+		matchedGroups := executeTeamMatching(teamRequests)
+
+		// 处理匹配结果
+		processTeamMatchResults(matchedGroups)
+
+		log.Debug("匹配任务完成，处理了 %d 个匹配组", len(matchedGroups))
 	}
 
-	log.Debug("当前匹配队列中有 %d 个请求", len(requests))
-
-	// 执行匹配逻辑
-	matchedGroups := executeMatching(requests)
-
-	// 处理匹配结果
-	processMatchResults(matchedGroups)
-
-	log.Debug("匹配任务完成，处理了 %d 个匹配组", len(matchedGroups))
-
+	// 处理超时请求
 	matchQueue.ProcessTimeoutRequests()
 }
 
-// HandleMatch 处理玩家开始匹配请求
+// HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
 	user := agent.UserData().(models.User)
 	player := game.External.UserManager.DirectCaller.GetPlayer(user.PlayerId)
@@ -57,118 +57,215 @@ func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch
 		log.Error("玩家不存在: %d", user.PlayerId)
 		return
 	}
-	result := false
-	defer func() {
+
+	// 检查玩家是否有队伍
+	if player.TeamId == 0 {
+		log.Error("玩家 %d 没有队伍，无法开始匹配", user.PlayerId)
 		player.SendToClient(&message.S2C_StartMatch{
-			Result: result,
+			Result: false,
 		})
-	}()
-	// 检查玩家是否已经在匹配队列中
-	if matchQueue.IsPlayerInQueue(user.PlayerId) {
-		log.Debug("玩家 %d 已经在匹配队列中", user.PlayerId)
 		return
 	}
 
-	// 创建匹配请求
-	matchReq := &match_models.MatchRequest{
-		PlayerId:  user.PlayerId,
+	// 检查队伍是否已经在匹配队列中
+	if matchQueue.IsTeamInQueue(player.TeamId) {
+		log.Debug("队伍 %d 已经在匹配队列中", player.TeamId)
+		player.SendToClient(&message.S2C_StartMatch{
+			Result: false,
+		})
+		return
+	}
+
+	// 获取队伍信息
+	team := game.External.TeamManager.DirectCaller.GetTeamByPlayerId(user.PlayerId)
+	if team == nil {
+		log.Error("无法获取玩家 %d 的队伍信息", user.PlayerId)
+		player.SendToClient(&message.S2C_StartMatch{
+			Result: false,
+		})
+		return
+	}
+
+	// 创建队伍匹配请求
+	teamMatchReq := &match_models.TeamMatchRequest{
 		TeamId:    player.TeamId,
-		MatchType: msg.Type, // 默认匹配类型，可以从消息中获取
+		PlayerIds: team.TeamMembers,
+		MatchType: msg.Type,
 		JoinTime:  time.Now(),
+		IsRobot:   false,
+		TeamSize:  len(team.TeamMembers),
 	}
 
 	// 加入匹配队列
-	matchQueue.AddRequest(matchReq)
+	matchQueue.AddTeamRequest(teamMatchReq)
 
-	log.Debug("玩家 %d 已加入匹配队列，当前队列大小: %d", user.PlayerId, matchQueue.GetQueueSize())
+	log.Debug("队伍 %d 已加入匹配队列，包含 %d 个玩家，当前队列大小: %d",
+		player.TeamId, len(team.TeamMembers), matchQueue.GetQueueSize())
 
-	// 返回成功结果
-	result = true
+	// 通知队伍中的所有玩家匹配已开始
+	for _, memberId := range team.TeamMembers {
+		if memberPlayer := game.External.UserManager.DirectCaller.GetPlayer(memberId); memberPlayer != nil {
+			memberPlayer.SendToClient(&message.S2C_StartMatch{
+				Result: true,
+			})
+		}
+	}
 }
 
+// HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) {
 	user := agent.UserData().(models.User)
+	player := game.External.UserManager.DirectCaller.GetPlayer(user.PlayerId)
+	if player == nil {
+		log.Error("玩家不存在: %d", user.PlayerId)
+		return
+	}
 
-	// 从匹配队列中移除玩家
-	if matchQueue.RemoveRequest(user.PlayerId) {
-		log.Debug("玩家 %d 已从匹配队列中移除", user.PlayerId)
-		// 可以发送取消匹配成功的消息
+	// 检查玩家是否有队伍
+	if player.TeamId == 0 {
+		log.Error("玩家 %d 没有队伍，无法取消匹配", user.PlayerId)
+		return
+	}
+
+	// 从匹配队列中移除队伍
+	if matchQueue.RemoveTeamRequest(player.TeamId) {
+		log.Debug("队伍 %d 已从匹配队列中移除", player.TeamId)
+
+		// 通知队伍中的所有玩家匹配已取消
+		team := game.External.TeamManager.DirectCaller.GetTeamByPlayerId(user.PlayerId)
+		if team != nil {
+			for _, memberId := range team.TeamMembers {
+				if memberPlayer := game.External.UserManager.DirectCaller.GetPlayer(memberId); memberPlayer != nil {
+					memberPlayer.SendToClient(&message.S2C_CancelMatch{
+						Result: true,
+					})
+				}
+			}
+		}
 	} else {
-		log.Debug("玩家 %d 不在匹配队列中", user.PlayerId)
+		log.Debug("队伍 %d 不在匹配队列中", player.TeamId)
 	}
 }
 
-// 匹配算法实现
-var groupSize = 8 // 可以根据实际需求调整每组玩家数量
-// executeMatching 执行匹配逻辑
-func executeMatching(requests []*match_models.MatchRequest) [][]*match_models.MatchRequest {
-	var matchedGroups [][]*match_models.MatchRequest
+// 匹配算法实现 - 以队伍为单位的匹配
+var targetRoomSize = 8 // 目标房间大小
 
-	// 先处理能凑满一组的玩家
-	for i := 0; i+groupSize <= len(requests); i += groupSize {
-		group := make([]*match_models.MatchRequest, 0, groupSize)
-		for j := 0; j < groupSize; j++ {
-			group = append(group, requests[i+j])
+// executeTeamMatching 执行队伍匹配逻辑
+func executeTeamMatching(teamRequests []*match_models.TeamMatchRequest) [][]*match_models.TeamMatchRequest {
+	var matchedGroups [][]*match_models.TeamMatchRequest
+
+	// 按队伍大小排序，优先匹配大队伍
+	sortedRequests := sortTeamsBySize(teamRequests)
+
+	// 尝试组合队伍以达到目标房间大小
+	currentGroup := make([]*match_models.TeamMatchRequest, 0)
+	currentSize := 0
+
+	for _, teamReq := range sortedRequests {
+		// 如果当前队伍加入后会超过目标大小，且当前组不为空，则完成当前组
+		if currentSize+teamReq.TeamSize > targetRoomSize && len(currentGroup) > 0 {
+			// 尝试用机器人填充当前组
+			currentGroup = fillGroupWithRobots(currentGroup, currentSize, targetRoomSize)
+			matchedGroups = append(matchedGroups, currentGroup)
+			currentGroup = make([]*match_models.TeamMatchRequest, 0)
+			currentSize = 0
 		}
-		matchedGroups = append(matchedGroups, group)
+
+		// 添加队伍到当前组
+		currentGroup = append(currentGroup, teamReq)
+		currentSize += teamReq.TeamSize
+
+		// 如果达到目标大小，完成当前组
+		if currentSize >= targetRoomSize {
+			matchedGroups = append(matchedGroups, currentGroup)
+			currentGroup = make([]*match_models.TeamMatchRequest, 0)
+			currentSize = 0
+		}
 	}
 
-	// 处理剩余不足一组的玩家，补充机器人
-	remain := len(requests) % groupSize
-	if remain > 0 {
-		start := len(requests) - remain
-		group := make([]*match_models.MatchRequest, 0, groupSize)
-		// 先加入剩余玩家
-		for i := start; i < len(requests); i++ {
-			group = append(group, requests[i])
+	// 处理剩余的队伍
+	if len(currentGroup) > 0 {
+		// 如果剩余队伍数量足够，尝试补充机器人
+		if currentSize >= targetRoomSize/2 { // 至少达到一半大小
+			// 用机器人填充到目标大小
+			currentGroup = fillGroupWithRobots(currentGroup, currentSize, targetRoomSize)
+			matchedGroups = append(matchedGroups, currentGroup)
 		}
-		// 需要补充的机器人数量
-		needRobots := groupSize - remain
-		for i := 0; i < needRobots; i++ {
-			robotId := RandomRobotPlayerId()
-			robotReq := &match_models.MatchRequest{
-				PlayerId:  robotId,
-				TeamId:    0,
-				MatchType: 0,
-				JoinTime:  time.Now(),
-				IsRobot:   true,
-			}
-			group = append(group, robotReq)
-			log.Debug("补充机器人进组: %d", robotId)
-		}
-		matchedGroups = append(matchedGroups, group)
 	}
 
 	return matchedGroups
 }
 
-// todo 获取机器人id实现
-func RandomRobotPlayerId() int64 {
-	return 0
-}
-
-func RandomRobotPlayerIds(size int) []int64 {
-	result := make([]int64, size)
-	for i := 0; i < size; i++ {
-		result[i] = RandomRobotPlayerId()
+// fillGroupWithRobots 用机器人填充队伍组到目标大小
+func fillGroupWithRobots(group []*match_models.TeamMatchRequest, currentSize, targetSize int) []*match_models.TeamMatchRequest {
+	if currentSize >= targetSize {
+		return group
 	}
-	return result
+
+	// 计算需要补充的机器人数量
+	needRobots := targetSize - currentSize
+
+	// 获取匹配类型（从第一个队伍获取，如果存在的话）
+	matchType := int32(0)
+	if len(group) > 0 {
+		matchType = group[0].MatchType
+	}
+
+	// 生成机器人队伍来填充
+	for i := 0; i < needRobots; i++ {
+		robotTeam := RandomRobotPlayerId(matchType)
+		group = append(group, robotTeam)
+		log.Debug("生成机器人队伍填充，队伍ID: %d，当前组大小: %d", robotTeam.TeamId, currentSize+i+1)
+	}
+
+	return group
 }
 
-// processMatchResults 处理匹配结果
-func processMatchResults(matchedGroups [][]*match_models.MatchRequest) {
+// sortTeamsBySize 按队伍大小排序，大队伍优先
+func sortTeamsBySize(teams []*match_models.TeamMatchRequest) []*match_models.TeamMatchRequest {
+	// 简单的冒泡排序，按队伍大小降序排列
+	sorted := make([]*match_models.TeamMatchRequest, len(teams))
+	copy(sorted, teams)
+
+	for i := 0; i < len(sorted)-1; i++ {
+		for j := 0; j < len(sorted)-i-1; j++ {
+			if sorted[j].TeamSize < sorted[j+1].TeamSize {
+				sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
+			}
+		}
+	}
+
+	return sorted
+}
+
+// processTeamMatchResults 处理队伍匹配结果
+func processTeamMatchResults(matchedGroups [][]*match_models.TeamMatchRequest) {
 	for _, group := range matchedGroups {
-		if len(group) >= groupSize {
+		if len(group) > 0 {
+			// 收集所有玩家ID
+			var allPlayerIds []int64
+			var teamIds []int64
+
+			for _, teamReq := range group {
+				allPlayerIds = append(allPlayerIds, teamReq.PlayerIds...)
+				teamIds = append(teamIds, teamReq.TeamId)
+			}
+
 			// 生成房间ID
-			r := room.CreateRoom(group)
+			r := room.CreateRoom(allPlayerIds, teamIds)
 
 			// 构建匹配结果消息
 			var playerInfos []*message.MatchPlayerInfo
-			for _, req := range group {
-				playerInfos = append(playerInfos, &message.MatchPlayerInfo{
-					PlayerId: req.PlayerId,
-					IsRobot:  req.IsRobot,
-				})
+			for _, teamReq := range group {
+				for _, playerId := range teamReq.PlayerIds {
+					playerInfos = append(playerInfos, &message.MatchPlayerInfo{
+						PlayerId: playerId,
+						IsRobot:  teamReq.IsRobot,
+					})
+				}
+			}
+			for _, p := range allPlayerIds {
+				game.External.TeamManager.DirectCaller.JoinRoom(p, r.RoomId)
 			}
 			// 发送匹配结果给所有玩家
 			r.SendRoomMessage(&message.S2C_MatchResult{
@@ -176,16 +273,23 @@ func processMatchResults(matchedGroups [][]*match_models.MatchRequest) {
 				PlayerInfos: playerInfos,
 			})
 
-			// 从匹配队列中移除已匹配的玩家
-			// 使用批量移除，减少锁的获取次数
-			playerIds := make([]int64, len(group))
-			for i, req := range group {
-				playerIds[i] = req.PlayerId
+			// 从匹配队列中移除已匹配的队伍
+			matchQueue.RemoveTeamRequests(teamIds)
 
-			}
-			matchQueue.RemoveRequests(playerIds)
-
-			log.Debug("成功匹配 %d 个玩家，房间ID: %s", len(group), r.RoomId)
+			log.Debug("成功匹配 %d 个队伍，包含 %d 个玩家，房间ID: %s",
+				len(group), len(allPlayerIds), r.RoomId)
 		}
+	}
+}
+
+// todo 随机playerId
+func RandomRobotPlayerId(matchType int32) *match_models.TeamMatchRequest {
+	return &match_models.TeamMatchRequest{
+		PlayerIds: []int64{0},
+		IsRobot:   true,
+		TeamSize:  1,
+		TeamId:    utils.FlakeId(),
+		MatchType: matchType,
+		JoinTime:  time.Now(),
 	}
 }

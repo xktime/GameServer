@@ -64,8 +64,8 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	const total = 1000
-	const batchSize = 10
+	const total = 10000
+	const batchSize = 100
 
 	for batchStart := 0; batchStart < total; batchStart += batchSize {
 		var wg sync.WaitGroup

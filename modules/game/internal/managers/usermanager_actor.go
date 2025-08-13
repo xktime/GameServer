@@ -2,10 +2,13 @@ package managers
 
 import (
 	"gameserver/common/models"
+	
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	
 	"gameserver/modules/game/internal/managers/player"
+	
+	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -15,7 +18,7 @@ type UserManagerActorProxy struct {
 }
 
 var (
-	actorProxy *UserManagerActorProxy
+	userManageractorProxy *UserManagerActorProxy
 	userManagerOnce sync.Once
 )
 
@@ -25,12 +28,16 @@ func GetUserManagerActorId() int64 {
 
 func GetUserManager() *UserManagerActorProxy {
 	userManagerOnce.Do(func() {
-		userManagerMeta, _ := actor_manager.Register[UserManager](GetUserManagerActorId(), actor_manager.User)
-		actorProxy = &UserManagerActorProxy{
-			DirectCaller: userManagerMeta.Actor,
+		userManagerMeta, _ := actor_manager.Register[UserManager](GetUserManagerActorId(), actor_manager.ActorGroup("userManager"))
+		managerActor := userManagerMeta.Actor
+		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
+			persistManager.OnInitData()
+		}
+		userManageractorProxy = &UserManagerActorProxy{
+			DirectCaller: managerActor,
 		}
 	})
-	return actorProxy
+	return userManageractorProxy
 }
 
 
@@ -120,23 +127,6 @@ func (*UserManagerActorProxy) IsUserOnline(accountId string) (bool) {
 	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "IsUserOnline", sendArgs)
 	result, _ := future.Result()
 	return result.(bool)
-}
-
-
-// GetUserLoginTime 调用UserManager的GetUserLoginTime方法
-func (*UserManagerActorProxy) GetUserLoginTime(accountId string) (int64, bool) {
-	sendArgs := []interface{}{}
-	sendArgs = append(sendArgs, accountId)
-	
-
-	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetUserLoginTime", sendArgs)
-	result, _ := future.Result()
-	if resultSlice, ok := result.([]interface{}); ok && len(resultSlice) == 2 {
-		ret0 := resultSlice[0].(int64)
-		ret1 := resultSlice[1].(bool)
-		return ret0, ret1
-	}
-	return 0, false
 }
 
 

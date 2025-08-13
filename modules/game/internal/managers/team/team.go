@@ -10,7 +10,6 @@ import (
 	"slices"
 )
 
-// todo team上应该要挂一个roomId
 type Team struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
 	TeamId                            int64   `bson:"_id"`
@@ -58,12 +57,9 @@ func (t *Team) JoinRoom(roomId int64) {
 	log.Debug("队伍 %d 成功加入房间 %d", t.TeamId, roomId)
 }
 
-// todo 确认是否要离开队伍
-func (t *Team) PlayerOffline(playerId int64) {
-	if t.RoomId > 0 {
-		// room.PlayerOffline(t.RoomId, playerId)
-	}
-	t.LeaveTeam(playerId)
+func (t *Team) LeaveRoom() {
+	t.RoomId = 0
+	log.Debug("队伍 %d 成功离开房间", t.TeamId)
 }
 
 func (t *Team) LeaveTeam(playerId int64) {

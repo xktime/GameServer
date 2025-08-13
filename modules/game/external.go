@@ -10,6 +10,7 @@ import (
 
 type GameExternal struct {
 	UserManager *managers.UserManagerActorProxy
+	TeamManager *managers.TeamManagerActorProxy
 	Module      *internal.Module
 	ChanRPC     *chanrpc.Server
 }
@@ -18,6 +19,7 @@ var External = &GameExternal{}
 
 func (m *GameExternal) InitExternal() {
 	m.UserManager = managers.GetUserManager()
+	m.TeamManager = managers.GetTeamManager()
 	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)

@@ -2,10 +2,13 @@ package managers
 
 import (
 	
+	
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/common/msg/message"
 	
+	
+	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -15,7 +18,7 @@ type LoginManagerActorProxy struct {
 }
 
 var (
-	actorProxy *LoginManagerActorProxy
+	loginManageractorProxy *LoginManagerActorProxy
 	loginManagerOnce sync.Once
 )
 
@@ -25,12 +28,16 @@ func GetLoginManagerActorId() int64 {
 
 func GetLoginManager() *LoginManagerActorProxy {
 	loginManagerOnce.Do(func() {
-		loginManagerMeta, _ := actor_manager.Register[LoginManager](GetLoginManagerActorId(), actor_manager.User)
-		actorProxy = &LoginManagerActorProxy{
-			DirectCaller: loginManagerMeta.Actor,
+		loginManagerMeta, _ := actor_manager.Register[LoginManager](GetLoginManagerActorId(), actor_manager.ActorGroup("loginManager"))
+		managerActor := loginManagerMeta.Actor
+		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
+			persistManager.OnInitData()
+		}
+		loginManageractorProxy = &LoginManagerActorProxy{
+			DirectCaller: managerActor,
 		}
 	})
-	return actorProxy
+	return loginManageractorProxy
 }
 
 
