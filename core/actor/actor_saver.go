@@ -121,7 +121,7 @@ func getActorByReflect(meta interface{}) interface{} {
 }
 
 // batchSaveActorData 批量保存同类型的ActorData
-func batchSaveActorData(actorType reflect.Type, dataList []mongodb.PersistData) (int, int) {
+func batchSaveActorData(actorType reflect.Type, dataList []mongodb.PersistData) {
 	// 创建一个空的接口切片用于存储数据
 
 	// 使用接口切片并依赖MongoDB驱动的处理
@@ -129,13 +129,7 @@ func batchSaveActorData(actorType reflect.Type, dataList []mongodb.PersistData) 
 
 	// 处理结果
 	if err != nil {
-		return 0, len(dataList)
+		return
 	}
-
-	// 保存成功
-	savedCount := int(result.UpsertedCount + result.ModifiedCount)
-	failedCount := len(dataList) - savedCount
-
-	log.Debug("批量保存%s类型Actor完成: 成功%d个, 失败%d个", actorType.Name(), savedCount, failedCount)
-	return savedCount, failedCount
+	log.Debug("批量保存%s类型Actor完成: UpsertedCount%d个, ModifiedCount%d个", actorType.Name(), result.UpsertedCount, result.ModifiedCount)
 }

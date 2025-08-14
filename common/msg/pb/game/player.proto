@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+// C2S 800--900
+// S2C 900--1000
+
+
+message PlayerInfo {
+    int32 server_id = 1;
+    string player_name = 2;
+    string avatar = 3;
+    int64 level = 4;
+}
+
+message C2S_GetPlayerInfo {
+    option (message_id) = 801;
+    int32 type = 1;
+}
+
+message S2C_GetPlayerInfo {
+    option (message_id) = 901;
+    PlayerInfo playerInfo = 1;
+}

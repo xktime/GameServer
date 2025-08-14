@@ -26,9 +26,6 @@ func (r RankManager) GetPersistId() interface{} {
 	return r.PersistId
 }
 
-// todo handler需要整理
-// NewRankManager 创建新的排行榜管理器
-
 // OnInit 初始化排行榜管理器
 func (r *RankManager) OnInitData() {
 	// 从数据库加载排行榜数据
@@ -64,14 +61,13 @@ func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_Upda
 		}
 	}
 
-	// todo 玩家信息实现之后需要实现这里
 	// 创建新的排行榜项目
 	newItem := models.RankItem{
-		PlayerId: playerId,
-		// PlayerName: player.PlayerInfo.PlayerName,
-		Score: req.Score,
-		// Avatar:     player.PlayerInfo.Avatar,
-		// Level:      player.PlayerInfo.Level,
+		PlayerId:   playerId,
+		PlayerName: player.PlayerInfo.PlayerName,
+		Score:      req.Score,
+		Avatar:     player.PlayerInfo.Avatar,
+		Level:      player.PlayerInfo.Level,
 		UpdateTime: time.Now(),
 	}
 

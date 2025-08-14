@@ -5,6 +5,8 @@ import "message_id.proto";
 
 // C2S 300--400
 // S2C 400--500
+
+// todo 根据playerId获取playerinfo接口
 message MatchPlayerInfo {
     int64 playerId = 1;
     bool isRobot = 2;

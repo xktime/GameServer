@@ -8,7 +8,6 @@ import (
 	
 	
 	"gameserver/modules/game/internal/managers/team"
-	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -29,12 +28,11 @@ func GetTeamManagerActorId() int64 {
 func GetTeamManager() *TeamManagerActorProxy {
 	teamManagerOnce.Do(func() {
 		teamManagerMeta, _ := actor_manager.Register[TeamManager](GetTeamManagerActorId(), actor_manager.ActorGroup("teamManager"))
-		managerActor := teamManagerMeta.Actor
-		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
-			persistManager.OnInitData()
-		}
 		teamManageractorProxy = &TeamManagerActorProxy{
-			DirectCaller: managerActor,
+			DirectCaller: teamManagerMeta.Actor,
+		}
+		if actorInit, ok := interface{}(teamManageractorProxy).(actor_manager.ActorInit); ok {
+			actorInit.OnInitData()
 		}
 	})
 	return teamManageractorProxy

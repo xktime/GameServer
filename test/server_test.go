@@ -7,6 +7,7 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
 	actor_manager "gameserver/core/actor"
+	"gameserver/core/log"
 	"gameserver/modules/login"
 	"net"
 	"sync"
@@ -64,8 +65,8 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	const total = 10000
-	const batchSize = 100
+	const total = 1000000
+	const batchSize = 500
 
 	for batchStart := 0; batchStart < total; batchStart += batchSize {
 		var wg sync.WaitGroup
@@ -86,13 +87,14 @@ func TestServer_WebSocket(t *testing.T) {
 				fmt.Println("WebSocket连接成功")
 
 				// 使用defer确保连接被正确关闭
-				defer func() {
+				defer func(j int) {
 					if conn != nil {
 						// 发送关闭消息
 						conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
 						conn.Close()
 					}
-				}()
+					fmt.Printf("WebSocket第 %d 次连接关闭\n", j)
+				}(k + 1)
 
 				// 1. 发送登录请求
 				fmt.Println("发送登录请求...")
@@ -167,14 +169,14 @@ func TestServer_WebSocket(t *testing.T) {
 					default:
 						// 检查连接健康状态
 						if !isConnectionHealthy(conn) {
-							t.Logf("连接不健康，停止等待")
+							log.Debug("连接不健康，停止等待")
 							matchResultReceived = true
 							break
 						}
 
 						// 尝试接收匹配结果消息
-						if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-							t.Logf("设置读取超时失败: %v", err)
+						if err := conn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+							log.Debug("设置读取超时失败: %v", err)
 						}
 
 						resp, err := receiveMessage(conn)
@@ -183,7 +185,7 @@ func TestServer_WebSocket(t *testing.T) {
 
 							// 检查是否是连接关闭错误
 							if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-								t.Logf("连接已关闭: %v", err)
+								log.Debug("连接已关闭: %v", err)
 								matchResultReceived = true
 								break
 							}
@@ -195,11 +197,11 @@ func TestServer_WebSocket(t *testing.T) {
 							}
 
 							// 其他错误，记录日志并继续
-							t.Logf("接收消息时出错: %v (连续错误次数: %d)", err, consecutiveErrors)
+							log.Debug("接收消息时出错: %v (连续错误次数: %d)", err, consecutiveErrors)
 
 							// 如果连续错误次数过多，停止尝试
 							if consecutiveErrors >= maxConsecutiveErrors {
-								t.Logf("连续错误次数过多，停止等待")
+								fmt.Println("连续错误次数过多，停止等待")
 								matchResultReceived = true
 								break
 							}

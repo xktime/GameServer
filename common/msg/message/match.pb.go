@@ -21,8 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// C2S 300--400
-// S2C 400--500
+// todo 根据playerId获取playerinfo接口
 type MatchPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`

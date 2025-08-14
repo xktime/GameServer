@@ -27,6 +27,15 @@ func (p Player) GetPersistId() interface{} {
 	return p.PlayerId
 }
 
+func (p *Player) ToPlayerInfo() *message.PlayerInfo {
+	return &message.PlayerInfo{
+		ServerId:   int32(p.PlayerInfo.ServerId),
+		PlayerName: p.PlayerInfo.PlayerName,
+		Avatar:     p.PlayerInfo.Avatar,
+		Level:      int64(p.PlayerInfo.Level),
+	}
+}
+
 // 玩家模块
 func InitPlayer(agent gate.Agent, isNew bool) *Player {
 	user := agent.UserData().(models.User)

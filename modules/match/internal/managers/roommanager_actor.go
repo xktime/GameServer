@@ -8,7 +8,6 @@ import (
 	"gameserver/common/msg/message"
 	
 	
-	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -29,12 +28,11 @@ func GetRoomManagerActorId() int64 {
 func GetRoomManager() *RoomManagerActorProxy {
 	roomManagerOnce.Do(func() {
 		roomManagerMeta, _ := actor_manager.Register[RoomManager](GetRoomManagerActorId(), actor_manager.ActorGroup("roomManager"))
-		managerActor := roomManagerMeta.Actor
-		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
-			persistManager.OnInitData()
-		}
 		roomManageractorProxy = &RoomManagerActorProxy{
-			DirectCaller: managerActor,
+			DirectCaller: roomManagerMeta.Actor,
+		}
+		if actorInit, ok := interface{}(roomManageractorProxy).(actor_manager.ActorInit); ok {
+			actorInit.OnInitData()
 		}
 	})
 	return roomManageractorProxy

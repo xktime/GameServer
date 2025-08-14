@@ -8,7 +8,6 @@ import (
 	"gameserver/common/msg/message"
 	
 	
-	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -29,12 +28,11 @@ func GetRankManagerActorId() int64 {
 func GetRankManager() *RankManagerActorProxy {
 	rankManagerOnce.Do(func() {
 		rankManagerMeta, _ := actor_manager.Register[RankManager](GetRankManagerActorId(), actor_manager.ActorGroup("rankManager"))
-		managerActor := rankManagerMeta.Actor
-		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
-			persistManager.OnInitData()
-		}
 		rankManageractorProxy = &RankManagerActorProxy{
-			DirectCaller: managerActor,
+			DirectCaller: rankManagerMeta.Actor,
+		}
+		if actorInit, ok := interface{}(rankManageractorProxy).(actor_manager.ActorInit); ok {
+			actorInit.OnInitData()
 		}
 	})
 	return rankManageractorProxy

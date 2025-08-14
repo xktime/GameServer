@@ -8,7 +8,6 @@ import (
 	"gameserver/common/msg/message"
 	
 	
-	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -29,12 +28,11 @@ func GetLoginManagerActorId() int64 {
 func GetLoginManager() *LoginManagerActorProxy {
 	loginManagerOnce.Do(func() {
 		loginManagerMeta, _ := actor_manager.Register[LoginManager](GetLoginManagerActorId(), actor_manager.ActorGroup("loginManager"))
-		managerActor := loginManagerMeta.Actor
-		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
-			persistManager.OnInitData()
-		}
 		loginManageractorProxy = &LoginManagerActorProxy{
-			DirectCaller: managerActor,
+			DirectCaller: loginManagerMeta.Actor,
+		}
+		if actorInit, ok := interface{}(loginManageractorProxy).(actor_manager.ActorInit); ok {
+			actorInit.OnInitData()
 		}
 	})
 	return loginManageractorProxy

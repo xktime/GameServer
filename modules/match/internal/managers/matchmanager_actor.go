@@ -8,7 +8,6 @@ import (
 	"gameserver/common/msg/message"
 	
 	
-	"gameserver/common/db/mongodb"
 	"sync"
 )
 
@@ -29,15 +28,32 @@ func GetMatchManagerActorId() int64 {
 func GetMatchManager() *MatchManagerActorProxy {
 	matchManagerOnce.Do(func() {
 		matchManagerMeta, _ := actor_manager.Register[MatchManager](GetMatchManagerActorId(), actor_manager.ActorGroup("matchManager"))
-		managerActor := matchManagerMeta.Actor
-		if persistManager, ok := interface{}(managerActor).(mongodb.PersistManager); ok {
-			persistManager.OnInitData()
-		}
 		matchManageractorProxy = &MatchManagerActorProxy{
-			DirectCaller: managerActor,
+			DirectCaller: matchManagerMeta.Actor,
+		}
+		if actorInit, ok := interface{}(matchManageractorProxy).(actor_manager.ActorInit); ok {
+			actorInit.OnInitData()
 		}
 	})
 	return matchManageractorProxy
+}
+
+
+// OnInitData 调用MatchManager的OnInitData方法
+func (*MatchManagerActorProxy) OnInitData() {
+	sendArgs := []interface{}{}
+	
+
+	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "OnInitData", sendArgs)
+}
+
+
+// Matching 调用MatchManager的Matching方法
+func (*MatchManagerActorProxy) Matching() {
+	sendArgs := []interface{}{}
+	
+
+	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "Matching", sendArgs)
 }
 
 
@@ -59,6 +75,15 @@ func (*MatchManagerActorProxy) HandleCancelMatch(agent gate.Agent) {
 	
 
 	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "HandleCancelMatch", sendArgs)
+}
+
+
+// ProcessTimeoutRequests 调用MatchManager的ProcessTimeoutRequests方法
+func (*MatchManagerActorProxy) ProcessTimeoutRequests() {
+	sendArgs := []interface{}{}
+	
+
+	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "ProcessTimeoutRequests", sendArgs)
 }
 
 

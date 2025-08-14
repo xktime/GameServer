@@ -9,6 +9,11 @@ import (
 	"github.com/asynkron/protoactor-go/actor"
 )
 
+// 因为manager的init是用模板生成的，需要加载的数据和初始化需要实现OnInitData
+type ActorInit interface {
+	OnInitData()
+}
+
 // ActorMeta 用于描述 actor 的元信息
 // 支持分组、标签
 type ActorMeta[T any] struct {
