@@ -20,5 +20,4 @@ func InitRouter() {
 	msg.Processor.SetRouter(&message.C2S_CancelMatch{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_StartMatch{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Heart{}, login.External.ChanRPC)
-	msg.Processor.SetRouter(&message.C2S_Reconnect{}, login.External.ChanRPC)
 }

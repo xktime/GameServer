@@ -18,5 +18,4 @@ func init() {
 	Processor.Register(&message.C2S_CancelMatch{})
 	Processor.Register(&message.C2S_StartMatch{})
 	Processor.Register(&message.C2S_Heart{})
-	Processor.Register(&message.C2S_Reconnect{})
 }

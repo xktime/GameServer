@@ -213,14 +213,13 @@ func fillGroupWithRobots(group []*match_models.TeamMatchRequest, currentSize, ta
 	if len(group) > 0 {
 		matchType = group[0].MatchType
 	}
-
-	// 生成机器人队伍来填充
-	for i := 0; i < needRobots; i++ {
-		robotTeam := RandomRobotPlayerId(matchType)
-		group = append(group, robotTeam)
-		log.Debug("生成机器人队伍填充，队伍ID: %d，当前组大小: %d", robotTeam.TeamId, currentSize+i+1)
+	allPlayerIds := make([]int64, 0)
+	for _, team := range group {
+		allPlayerIds = append(allPlayerIds, team.PlayerIds...)
 	}
-
+	// 生成机器人队伍来填充
+	robotTeam := RandomRobotPlayerIds(matchType, needRobots, allPlayerIds)
+	group = append(group, robotTeam...)
 	return group
 }
 
@@ -285,16 +284,28 @@ func (m *MatchManager) processTeamMatchResults(matchedGroups [][]*match_models.T
 	}
 }
 
-// todo 随机playerId
-func RandomRobotPlayerId(matchType int32) *match_models.TeamMatchRequest {
-	return &match_models.TeamMatchRequest{
-		PlayerIds: []int64{0},
-		IsRobot:   true,
-		TeamSize:  1,
-		TeamId:    utils.FlakeId(),
-		MatchType: matchType,
-		JoinTime:  time.Now(),
+func RandomRobotPlayerIds(matchType int32, needRobots int, exceptPlayerId []int64) []*match_models.TeamMatchRequest {
+	var robotTeams []*match_models.TeamMatchRequest
+	for i := 0; i < needRobots; i++ {
+		player := game.External.UserManager.DirectCaller.GetRandomPlayer(exceptPlayerId)
+		if player == nil {
+			log.Error("没有找到机器人玩家，当前填充数量: %d", i)
+			continue
+		}
+		playerId := player.PlayerId
+		exceptPlayerId = append(exceptPlayerId, playerId)
+		robotTeam := &match_models.TeamMatchRequest{
+			PlayerIds: []int64{playerId},
+			IsRobot:   true,
+			TeamSize:  1,
+			TeamId:    utils.FlakeId(),
+			MatchType: matchType,
+			JoinTime:  time.Now(),
+		}
+		robotTeams = append(robotTeams, robotTeam)
+		log.Debug("生成机器人队伍填充，队伍ID: %d，当前填充数量: %d", robotTeam.TeamId, i)
 	}
+	return robotTeams
 }
 
 // ProcessTimeoutRequests 处理超时的匹配请求

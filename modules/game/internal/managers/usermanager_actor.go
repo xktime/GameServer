@@ -5,7 +5,7 @@ import (
 	
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
-	
+	"gameserver/common/msg/message"
 	"gameserver/modules/game/internal/managers/player"
 	
 	"sync"
@@ -40,11 +40,12 @@ func GetUserManager() *UserManagerActorProxy {
 
 
 // UserLogin 调用UserManager的UserLogin方法
-func (*UserManagerActorProxy) UserLogin(agent gate.Agent, openId string, serverId int32) {
+func (*UserManagerActorProxy) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
 	sendArgs := []interface{}{}
 	sendArgs = append(sendArgs, agent)
 	sendArgs = append(sendArgs, openId)
 	sendArgs = append(sendArgs, serverId)
+	sendArgs = append(sendArgs, loginType)
 	
 
 	actor_manager.Send[UserManager](GetUserManagerActorId(), "UserLogin", sendArgs)
@@ -136,6 +137,18 @@ func (*UserManagerActorProxy) GetPlayers() ([]*player.Player) {
 	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetPlayers", sendArgs)
 	result, _ := future.Result()
 	return result.([]*player.Player)
+}
+
+
+// GetRandomPlayer 调用UserManager的GetRandomPlayer方法
+func (*UserManagerActorProxy) GetRandomPlayer(exceptPlayerId []int64) (*player.Player) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, exceptPlayerId)
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetRandomPlayer", sendArgs)
+	result, _ := future.Result()
+	return result.(*player.Player)
 }
 
 

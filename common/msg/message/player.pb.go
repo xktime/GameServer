@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v6.32.0--rc1
-// source: player.proto
+// source: game/player.proto
 
 package message
 
@@ -33,7 +33,7 @@ type PlayerInfo struct {
 
 func (x *PlayerInfo) Reset() {
 	*x = PlayerInfo{}
-	mi := &file_player_proto_msgTypes[0]
+	mi := &file_game_player_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -45,7 +45,7 @@ func (x *PlayerInfo) String() string {
 func (*PlayerInfo) ProtoMessage() {}
 
 func (x *PlayerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_player_proto_msgTypes[0]
+	mi := &file_game_player_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -58,7 +58,7 @@ func (x *PlayerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayerInfo.ProtoReflect.Descriptor instead.
 func (*PlayerInfo) Descriptor() ([]byte, []int) {
-	return file_player_proto_rawDescGZIP(), []int{0}
+	return file_game_player_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *PlayerInfo) GetServerId() int32 {
@@ -98,7 +98,7 @@ type C2S_GetPlayerInfo struct {
 
 func (x *C2S_GetPlayerInfo) Reset() {
 	*x = C2S_GetPlayerInfo{}
-	mi := &file_player_proto_msgTypes[1]
+	mi := &file_game_player_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -110,7 +110,7 @@ func (x *C2S_GetPlayerInfo) String() string {
 func (*C2S_GetPlayerInfo) ProtoMessage() {}
 
 func (x *C2S_GetPlayerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_player_proto_msgTypes[1]
+	mi := &file_game_player_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -123,7 +123,7 @@ func (x *C2S_GetPlayerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_GetPlayerInfo.ProtoReflect.Descriptor instead.
 func (*C2S_GetPlayerInfo) Descriptor() ([]byte, []int) {
-	return file_player_proto_rawDescGZIP(), []int{1}
+	return file_game_player_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *C2S_GetPlayerInfo) GetType() int32 {
@@ -142,7 +142,7 @@ type S2C_GetPlayerInfo struct {
 
 func (x *S2C_GetPlayerInfo) Reset() {
 	*x = S2C_GetPlayerInfo{}
-	mi := &file_player_proto_msgTypes[2]
+	mi := &file_game_player_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -154,7 +154,7 @@ func (x *S2C_GetPlayerInfo) String() string {
 func (*S2C_GetPlayerInfo) ProtoMessage() {}
 
 func (x *S2C_GetPlayerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_player_proto_msgTypes[2]
+	mi := &file_game_player_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -167,7 +167,7 @@ func (x *S2C_GetPlayerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_GetPlayerInfo.ProtoReflect.Descriptor instead.
 func (*S2C_GetPlayerInfo) Descriptor() ([]byte, []int) {
-	return file_player_proto_rawDescGZIP(), []int{2}
+	return file_game_player_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *S2C_GetPlayerInfo) GetPlayerInfo() *PlayerInfo {
@@ -177,11 +177,11 @@ func (x *S2C_GetPlayerInfo) GetPlayerInfo() *PlayerInfo {
 	return nil
 }
 
-var File_player_proto protoreflect.FileDescriptor
+var File_game_player_proto protoreflect.FileDescriptor
 
-const file_player_proto_rawDesc = "" +
+const file_game_player_proto_rawDesc = "" +
 	"\n" +
-	"\fplayer.proto\x1a\x10message_id.proto\"x\n" +
+	"\x11game/player.proto\x1a\x10message_id.proto\"x\n" +
 	"\n" +
 	"PlayerInfo\x12\x1b\n" +
 	"\tserver_id\x18\x01 \x01(\x05R\bserverId\x12\x1f\n" +
@@ -197,24 +197,24 @@ const file_player_proto_rawDesc = "" +
 	"playerInfo:\x05\x80\xb5\x18\x85\aB\x0eZ\f./../messageb\x06proto3"
 
 var (
-	file_player_proto_rawDescOnce sync.Once
-	file_player_proto_rawDescData []byte
+	file_game_player_proto_rawDescOnce sync.Once
+	file_game_player_proto_rawDescData []byte
 )
 
-func file_player_proto_rawDescGZIP() []byte {
-	file_player_proto_rawDescOnce.Do(func() {
-		file_player_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_player_proto_rawDesc), len(file_player_proto_rawDesc)))
+func file_game_player_proto_rawDescGZIP() []byte {
+	file_game_player_proto_rawDescOnce.Do(func() {
+		file_game_player_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_game_player_proto_rawDesc), len(file_game_player_proto_rawDesc)))
 	})
-	return file_player_proto_rawDescData
+	return file_game_player_proto_rawDescData
 }
 
-var file_player_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_player_proto_goTypes = []any{
+var file_game_player_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_game_player_proto_goTypes = []any{
 	(*PlayerInfo)(nil),        // 0: PlayerInfo
 	(*C2S_GetPlayerInfo)(nil), // 1: C2S_GetPlayerInfo
 	(*S2C_GetPlayerInfo)(nil), // 2: S2C_GetPlayerInfo
 }
-var file_player_proto_depIdxs = []int32{
+var file_game_player_proto_depIdxs = []int32{
 	0, // 0: S2C_GetPlayerInfo.playerInfo:type_name -> PlayerInfo
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
@@ -223,9 +223,9 @@ var file_player_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_player_proto_init() }
-func file_player_proto_init() {
-	if File_player_proto != nil {
+func init() { file_game_player_proto_init() }
+func file_game_player_proto_init() {
+	if File_game_player_proto != nil {
 		return
 	}
 	file_message_id_proto_init()
@@ -233,17 +233,17 @@ func file_player_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_player_proto_rawDesc), len(file_player_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_game_player_proto_rawDesc), len(file_game_player_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_player_proto_goTypes,
-		DependencyIndexes: file_player_proto_depIdxs,
-		MessageInfos:      file_player_proto_msgTypes,
+		GoTypes:           file_game_player_proto_goTypes,
+		DependencyIndexes: file_game_player_proto_depIdxs,
+		MessageInfos:      file_game_player_proto_msgTypes,
 	}.Build()
-	File_player_proto = out.File
-	file_player_proto_goTypes = nil
-	file_player_proto_depIdxs = nil
+	File_game_player_proto = out.File
+	file_game_player_proto_goTypes = nil
+	file_game_player_proto_depIdxs = nil
 }

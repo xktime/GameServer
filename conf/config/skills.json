@@ -1,0 +1,41 @@
+[
+  {
+    "id": "1001",
+    "name": "火球术",
+    "type": "magic",
+    "level": 1,
+    "damage": 25,
+    "mana_cost": 15,
+    "cooldown": 3.0,
+    "range": 10,
+    "description": "发射一个火球攻击敌人",
+    "effects": ["burn", "stun"],
+    "unlock_level": 5
+  },
+  {
+    "id": "1002",
+    "name": "治疗术",
+    "type": "heal",
+    "level": 1,
+    "heal_amount": 30,
+    "mana_cost": 20,
+    "cooldown": 5.0,
+    "range": 8,
+    "description": "恢复目标生命值",
+    "effects": ["regeneration"],
+    "unlock_level": 3
+  },
+  {
+    "id": "2001",
+    "name": "冲锋",
+    "type": "physical",
+    "level": 1,
+    "damage": 20,
+    "stamina_cost": 25,
+    "cooldown": 8.0,
+    "range": 15,
+    "description": "快速冲向敌人并造成伤害",
+    "effects": ["knockback"],
+    "unlock_level": 2
+  }
+]

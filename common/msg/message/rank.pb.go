@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v6.32.0--rc1
-// source: rank.proto
+// source: rank/rank.proto
 
 package message
 
@@ -33,7 +33,7 @@ type C2S_GetRankList struct {
 
 func (x *C2S_GetRankList) Reset() {
 	*x = C2S_GetRankList{}
-	mi := &file_rank_proto_msgTypes[0]
+	mi := &file_rank_rank_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -45,7 +45,7 @@ func (x *C2S_GetRankList) String() string {
 func (*C2S_GetRankList) ProtoMessage() {}
 
 func (x *C2S_GetRankList) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[0]
+	mi := &file_rank_rank_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -58,7 +58,7 @@ func (x *C2S_GetRankList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_GetRankList.ProtoReflect.Descriptor instead.
 func (*C2S_GetRankList) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{0}
+	return file_rank_rank_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *C2S_GetRankList) GetRankType() int32 {
@@ -94,7 +94,7 @@ type S2C_GetRankList struct {
 
 func (x *S2C_GetRankList) Reset() {
 	*x = S2C_GetRankList{}
-	mi := &file_rank_proto_msgTypes[1]
+	mi := &file_rank_rank_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -106,7 +106,7 @@ func (x *S2C_GetRankList) String() string {
 func (*S2C_GetRankList) ProtoMessage() {}
 
 func (x *S2C_GetRankList) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[1]
+	mi := &file_rank_rank_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -119,7 +119,7 @@ func (x *S2C_GetRankList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_GetRankList.ProtoReflect.Descriptor instead.
 func (*S2C_GetRankList) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{1}
+	return file_rank_rank_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *S2C_GetRankList) GetRankType() int32 {
@@ -165,7 +165,7 @@ type RankItem struct {
 
 func (x *RankItem) Reset() {
 	*x = RankItem{}
-	mi := &file_rank_proto_msgTypes[2]
+	mi := &file_rank_rank_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -177,7 +177,7 @@ func (x *RankItem) String() string {
 func (*RankItem) ProtoMessage() {}
 
 func (x *RankItem) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[2]
+	mi := &file_rank_rank_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -190,7 +190,7 @@ func (x *RankItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RankItem.ProtoReflect.Descriptor instead.
 func (*RankItem) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{2}
+	return file_rank_rank_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RankItem) GetPlayerId() int64 {
@@ -245,7 +245,7 @@ type C2S_GetMyRank struct {
 
 func (x *C2S_GetMyRank) Reset() {
 	*x = C2S_GetMyRank{}
-	mi := &file_rank_proto_msgTypes[3]
+	mi := &file_rank_rank_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -257,7 +257,7 @@ func (x *C2S_GetMyRank) String() string {
 func (*C2S_GetMyRank) ProtoMessage() {}
 
 func (x *C2S_GetMyRank) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[3]
+	mi := &file_rank_rank_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,7 +270,7 @@ func (x *C2S_GetMyRank) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_GetMyRank.ProtoReflect.Descriptor instead.
 func (*C2S_GetMyRank) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{3}
+	return file_rank_rank_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *C2S_GetMyRank) GetRankType() int32 {
@@ -292,7 +292,7 @@ type S2C_GetMyRank struct {
 
 func (x *S2C_GetMyRank) Reset() {
 	*x = S2C_GetMyRank{}
-	mi := &file_rank_proto_msgTypes[4]
+	mi := &file_rank_rank_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -304,7 +304,7 @@ func (x *S2C_GetMyRank) String() string {
 func (*S2C_GetMyRank) ProtoMessage() {}
 
 func (x *S2C_GetMyRank) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[4]
+	mi := &file_rank_rank_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -317,7 +317,7 @@ func (x *S2C_GetMyRank) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_GetMyRank.ProtoReflect.Descriptor instead.
 func (*S2C_GetMyRank) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{4}
+	return file_rank_rank_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *S2C_GetMyRank) GetRankType() int32 {
@@ -359,7 +359,7 @@ type C2S_UpdateRankData struct {
 
 func (x *C2S_UpdateRankData) Reset() {
 	*x = C2S_UpdateRankData{}
-	mi := &file_rank_proto_msgTypes[5]
+	mi := &file_rank_rank_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -371,7 +371,7 @@ func (x *C2S_UpdateRankData) String() string {
 func (*C2S_UpdateRankData) ProtoMessage() {}
 
 func (x *C2S_UpdateRankData) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[5]
+	mi := &file_rank_rank_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +384,7 @@ func (x *C2S_UpdateRankData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_UpdateRankData.ProtoReflect.Descriptor instead.
 func (*C2S_UpdateRankData) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{5}
+	return file_rank_rank_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *C2S_UpdateRankData) GetRankType() int32 {
@@ -411,7 +411,7 @@ type S2C_UpdateRankData struct {
 
 func (x *S2C_UpdateRankData) Reset() {
 	*x = S2C_UpdateRankData{}
-	mi := &file_rank_proto_msgTypes[6]
+	mi := &file_rank_rank_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +423,7 @@ func (x *S2C_UpdateRankData) String() string {
 func (*S2C_UpdateRankData) ProtoMessage() {}
 
 func (x *S2C_UpdateRankData) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_proto_msgTypes[6]
+	mi := &file_rank_rank_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +436,7 @@ func (x *S2C_UpdateRankData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_UpdateRankData.ProtoReflect.Descriptor instead.
 func (*S2C_UpdateRankData) Descriptor() ([]byte, []int) {
-	return file_rank_proto_rawDescGZIP(), []int{6}
+	return file_rank_rank_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *S2C_UpdateRankData) GetSuccess() bool {
@@ -453,12 +453,11 @@ func (x *S2C_UpdateRankData) GetNewRank() int32 {
 	return 0
 }
 
-var File_rank_proto protoreflect.FileDescriptor
+var File_rank_rank_proto protoreflect.FileDescriptor
 
-const file_rank_proto_rawDesc = "" +
+const file_rank_rank_proto_rawDesc = "" +
 	"\n" +
-	"\n" +
-	"rank.proto\x1a\x10message_id.proto\"d\n" +
+	"\x0frank/rank.proto\x1a\x10message_id.proto\"d\n" +
 	"\x0fC2S_GetRankList\x12\x1a\n" +
 	"\brankType\x18\x01 \x01(\x05R\brankType\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1a\n" +
@@ -496,19 +495,19 @@ const file_rank_proto_rawDesc = "" +
 	"\anewRank\x18\x02 \x01(\x05R\anewRank:\x05\x80\xb5\x18\xdb\x04B\x0eZ\f./../messageb\x06proto3"
 
 var (
-	file_rank_proto_rawDescOnce sync.Once
-	file_rank_proto_rawDescData []byte
+	file_rank_rank_proto_rawDescOnce sync.Once
+	file_rank_rank_proto_rawDescData []byte
 )
 
-func file_rank_proto_rawDescGZIP() []byte {
-	file_rank_proto_rawDescOnce.Do(func() {
-		file_rank_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rank_proto_rawDesc), len(file_rank_proto_rawDesc)))
+func file_rank_rank_proto_rawDescGZIP() []byte {
+	file_rank_rank_proto_rawDescOnce.Do(func() {
+		file_rank_rank_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rank_rank_proto_rawDesc), len(file_rank_rank_proto_rawDesc)))
 	})
-	return file_rank_proto_rawDescData
+	return file_rank_rank_proto_rawDescData
 }
 
-var file_rank_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_rank_proto_goTypes = []any{
+var file_rank_rank_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_rank_rank_proto_goTypes = []any{
 	(*C2S_GetRankList)(nil),    // 0: C2S_GetRankList
 	(*S2C_GetRankList)(nil),    // 1: S2C_GetRankList
 	(*RankItem)(nil),           // 2: RankItem
@@ -517,7 +516,7 @@ var file_rank_proto_goTypes = []any{
 	(*C2S_UpdateRankData)(nil), // 5: C2S_UpdateRankData
 	(*S2C_UpdateRankData)(nil), // 6: S2C_UpdateRankData
 }
-var file_rank_proto_depIdxs = []int32{
+var file_rank_rank_proto_depIdxs = []int32{
 	2, // 0: S2C_GetRankList.rankItems:type_name -> RankItem
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
@@ -526,9 +525,9 @@ var file_rank_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_rank_proto_init() }
-func file_rank_proto_init() {
-	if File_rank_proto != nil {
+func init() { file_rank_rank_proto_init() }
+func file_rank_rank_proto_init() {
+	if File_rank_rank_proto != nil {
 		return
 	}
 	file_message_id_proto_init()
@@ -536,17 +535,17 @@ func file_rank_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rank_proto_rawDesc), len(file_rank_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rank_rank_proto_rawDesc), len(file_rank_rank_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_rank_proto_goTypes,
-		DependencyIndexes: file_rank_proto_depIdxs,
-		MessageInfos:      file_rank_proto_msgTypes,
+		GoTypes:           file_rank_rank_proto_goTypes,
+		DependencyIndexes: file_rank_rank_proto_depIdxs,
+		MessageInfos:      file_rank_rank_proto_msgTypes,
 	}.Build()
-	File_rank_proto = out.File
-	file_rank_proto_goTypes = nil
-	file_rank_proto_depIdxs = nil
+	File_rank_rank_proto = out.File
+	file_rank_rank_proto_goTypes = nil
+	file_rank_rank_proto_depIdxs = nil
 }

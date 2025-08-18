@@ -2,6 +2,7 @@ syntax = "proto3";
 
 option go_package = "./../message";
 import "message_id.proto";
+import "game/player.proto";
 
 // C2S 100--200
 // S2C 200--300
@@ -11,10 +12,10 @@ enum LoginType {
     WeChat = 2;
 }
 
-// todo llw 返回角色其他信息
 message S2C_Login {
     option (message_id) = 201;
     int32 login_result = 1; // 为0登录成功，其他都登录失败
+    PlayerInfo playerInfo = 2;
 }
 
 // client -> server -> toDouyinCheck
@@ -25,10 +26,10 @@ message C2S_Login {
     string code = 3;
 }
 
-message C2S_Reconnect {
+message C2S_Heart {
     option (message_id) = 102;
 }
 
-message C2S_Heart {
-    option (message_id) = 103;
+message S2C_Heart {
+    option (message_id) = 202;
 }

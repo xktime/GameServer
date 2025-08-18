@@ -240,6 +240,7 @@ func (g *MethodGenerator) formatType(expr ast.Expr) string {
 		if fmt.Sprintf("%v", expr) == "map[string]interface{}" {
 			return "map[string]interface{}"
 		}
+		// 尝试处理更复杂的类型表达式
 		return fmt.Sprintf("%v", expr)
 	}
 }
@@ -422,6 +423,10 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 			}
 			if strings.Contains(ret, "team.") {
 				hasTeam = true
+			}
+			// 检查返回值是否包含message类型
+			if strings.Contains(ret, "message.") {
+				hasMessage = true
 			}
 		}
 		if len(method.Returns) > 0 {

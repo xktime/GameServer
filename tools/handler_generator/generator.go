@@ -259,21 +259,14 @@ func (g *HandlerGenerator) runProtoc() error {
 	}
 	defer os.Chdir(originalDir) // 恢复原目录
 
-	// 递归查找所有proto文件
-	var protoFiles []string
-	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	// 确保输出目录存在
+	outputDir := "../message"
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("创建输出目录失败: %v", err)
+	}
 
-		// 只处理.proto文件
-		if !info.IsDir() && strings.HasSuffix(path, ".proto") {
-			protoFiles = append(protoFiles, path)
-		}
-
-		return nil
-	})
-
+	// 动态扫描所有proto文件
+	protoFiles, err := g.scanProtoFiles()
 	if err != nil {
 		return fmt.Errorf("扫描proto文件失败: %v", err)
 	}
@@ -283,61 +276,172 @@ func (g *HandlerGenerator) runProtoc() error {
 		return nil
 	}
 
-	fmt.Printf("找到 %d 个proto文件\n", len(protoFiles))
-
-	// 确保输出目录存在
-	outputDir := "../message"
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return fmt.Errorf("创建输出目录失败: %v", err)
+	// 根据依赖关系排序proto文件
+	sortedFiles, err := g.sortProtoFilesByDependency(protoFiles)
+	if err != nil {
+		return fmt.Errorf("排序proto文件失败: %v", err)
 	}
 
-	// 为每个proto文件执行protoc命令
-	for _, protoFile := range protoFiles {
-		fmt.Printf("处理proto文件: %s\n", protoFile)
+	fmt.Printf("找到 %d 个proto文件，按依赖顺序排列:\n", len(sortedFiles))
+	for i, file := range sortedFiles {
+		fmt.Printf("  %d. %s\n", i+1, file)
+	}
 
-		// 获取proto文件所在目录
-		protoDir := filepath.Dir(protoFile)
-		protoName := filepath.Base(protoFile)
+	// 构建protoc命令参数
+	args := []string{
+		"--proto_path=.",
+		fmt.Sprintf("--go_out=%s", outputDir),
+	}
+	args = append(args, sortedFiles...)
 
-		// 切换到proto文件所在目录
-		if protoDir != "." {
-			if err := os.Chdir(protoDir); err != nil {
-				return fmt.Errorf("切换到目录 %s 失败: %v", protoDir, err)
-			}
-		}
+	// 执行protoc命令
+	cmd := exec.Command("protoc", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-		// 计算相对于当前目录的输出路径
-		relativeOutputDir := "."
-		if protoDir != "." {
-			// 如果不在根目录，需要调整输出路径
-			relativeOutputDir = ".."
-		}
+	fmt.Printf("执行命令: protoc %s\n", strings.Join(args, " "))
 
-		// 执行protoc命令
-		cmd := exec.Command("protoc",
-			"--proto_path=.",
-			"--proto_path=..",
-			fmt.Sprintf("--go_out=%s", relativeOutputDir),
-			protoName)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		fmt.Printf("执行命令: %s\n", strings.Join(cmd.Args, " "))
-
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("protoc命令执行失败: %v", err)
-		}
-
-		// 恢复原目录
-		if protoDir != "." {
-			if err := os.Chdir(".."); err != nil {
-				return fmt.Errorf("恢复目录失败: %v", err)
-			}
-		}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("protoc命令执行失败: %v", err)
 	}
 
 	fmt.Println("所有proto文件处理完成")
 	return nil
+}
+
+// 扫描所有proto文件
+func (g *HandlerGenerator) scanProtoFiles() ([]string, error) {
+	var protoFiles []string
+
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// 只处理.proto文件
+		if !info.IsDir() && strings.HasSuffix(path, ".proto") {
+			// 转换为相对路径
+			relPath, err := filepath.Rel(".", path)
+			if err != nil {
+				return err
+			}
+			protoFiles = append(protoFiles, relPath)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return protoFiles, nil
+}
+
+// 根据依赖关系排序proto文件
+func (g *HandlerGenerator) sortProtoFilesByDependency(protoFiles []string) ([]string, error) {
+	// 构建依赖图
+	dependencyGraph := make(map[string][]string)
+	fileContents := make(map[string]string)
+
+	// 读取所有proto文件内容
+	for _, file := range protoFiles {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("读取文件 %s 失败: %v", file, err)
+		}
+		fileContents[file] = string(content)
+	}
+
+	// 分析每个文件的依赖
+	for _, file := range protoFiles {
+		dependencies := g.extractDependencies(fileContents[file])
+		dependencyGraph[file] = dependencies
+	}
+
+	// 拓扑排序
+	sortedFiles, err := g.topologicalSort(dependencyGraph)
+	if err != nil {
+		return nil, fmt.Errorf("拓扑排序失败: %v", err)
+	}
+
+	return sortedFiles, nil
+}
+
+// 提取proto文件中的import依赖
+func (g *HandlerGenerator) extractDependencies(content string) []string {
+	var dependencies []string
+
+	// 匹配import语句的正则表达式
+	importRegex := regexp.MustCompile(`import\s+"([^"]+)"`)
+	matches := importRegex.FindAllStringSubmatch(content, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			importPath := match[1]
+			// 将import路径转换为文件名
+			if strings.HasSuffix(importPath, ".proto") {
+				dependencies = append(dependencies, importPath)
+			} else {
+				// 如果没有.proto后缀，尝试添加
+				dependencies = append(dependencies, importPath+".proto")
+			}
+		}
+	}
+
+	return dependencies
+}
+
+// 拓扑排序
+func (g *HandlerGenerator) topologicalSort(dependencyGraph map[string][]string) ([]string, error) {
+	// 计算每个文件的入度
+	inDegree := make(map[string]int)
+	for file := range dependencyGraph {
+		inDegree[file] = 0
+	}
+
+	for _, dependencies := range dependencyGraph {
+		for _, dep := range dependencies {
+			if _, exists := inDegree[dep]; exists {
+				inDegree[dep]++
+			}
+		}
+	}
+
+	// 使用队列进行拓扑排序
+	var queue []string
+	var result []string
+
+	// 将所有入度为0的文件加入队列
+	for file, degree := range inDegree {
+		if degree == 0 {
+			queue = append(queue, file)
+		}
+	}
+
+	// 处理队列
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		result = append(result, current)
+
+		// 减少依赖文件的入度
+		for _, dep := range dependencyGraph[current] {
+			if _, exists := inDegree[dep]; exists {
+				inDegree[dep]--
+				if inDegree[dep] == 0 {
+					queue = append(queue, dep)
+				}
+			}
+		}
+	}
+
+	// 检查是否有循环依赖
+	if len(result) != len(dependencyGraph) {
+		return nil, fmt.Errorf("检测到循环依赖，无法完成排序")
+	}
+
+	return result, nil
 }
 
 // 更新相关的注册文件

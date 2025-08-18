@@ -100,6 +100,7 @@ func (cm *ConfigManager) ReloadConfig(filename string) error {
 
 // ReloadAll 重新加载所有配置文件
 func (cm *ConfigManager) ReloadAll() error {
+	// 先重新加载原始配置文件
 	cm.mu.Lock()
 	filenames := make([]string, 0, len(cm.configs))
 	for filename := range cm.configs {
@@ -112,7 +113,44 @@ func (cm *ConfigManager) ReloadAll() error {
 			return err
 		}
 	}
+
+	// 然后调用每个生成文件的 reload 方法
+	if err := reloadAllGeneratedConfigs(); err != nil {
+		return fmt.Errorf("重新加载生成配置失败: %v", err)
+	}
+
 	return nil
+}
+
+// reloadAllGeneratedConfigs 重新加载所有生成的配置文件
+func reloadAllGeneratedConfigs() error {
+	// 由于生成的配置文件在不同的包中，我们需要通过其他方式来调用它们的 reload 方法
+	// 这里我们提供一个通用的机制，让外部代码可以注册自己的 reload 函数
+
+	// 调用所有注册的 reload 函数
+	for _, reloadFunc := range registeredReloadFuncs {
+		if err := reloadFunc(); err != nil {
+			return fmt.Errorf("调用注册的 reload 函数失败: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// ReloadFunc 重新加载配置的函数类型
+type ReloadFunc func() error
+
+// registeredReloadFuncs 存储所有注册的 reload 函数
+var registeredReloadFuncs []ReloadFunc
+
+// RegisterReloadFunc 注册一个重新加载配置的函数
+func RegisterReloadFunc(reloadFunc ReloadFunc) {
+	registeredReloadFuncs = append(registeredReloadFuncs, reloadFunc)
+}
+
+// UnregisterAllReloadFuncs 清空所有注册的 reload 函数
+func UnregisterAllReloadFuncs() {
+	registeredReloadFuncs = nil
 }
 
 // ListLoadedFiles 列出已加载的配置文件

@@ -13,10 +13,13 @@ func init() {
 
 func rpcCloseAgent(args []interface{}) {
 	a := args[0].(gate.Agent)
-	playerId := a.UserData().(models.User).PlayerId
-	team := game.External.TeamManager.DirectCaller.GetTeamByPlayerId(playerId)
-	if team != nil {
-		room.PlayerOffline(team.RoomId, playerId)
+	user := a.UserData()
+	if user != nil {
+		playerId := user.(models.User).PlayerId
+		team := game.External.TeamManager.DirectCaller.GetTeamByPlayerId(playerId)
+		if team != nil {
+			room.PlayerOffline(team.RoomId, playerId)
+		}
 	}
 	_ = a
 }

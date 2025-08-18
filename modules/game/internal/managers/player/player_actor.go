@@ -6,10 +6,18 @@ import (
 	
 	
 	
-	
+	"gameserver/common/msg/message"
 	"google.golang.org/protobuf/proto"
 )
 
+
+// ToPlayerInfo 调用Player的ToPlayerInfo方法
+func ToPlayerInfo(PlayerId int64) (*message.PlayerInfo) {
+	sendArgs := []interface{}{}
+	future := actor_manager.RequestFuture[Player](PlayerId, "ToPlayerInfo", sendArgs)
+	result, _ := future.Result()
+	return result.(*message.PlayerInfo)
+}
 
 // Print 调用Player的Print方法
 func Print(PlayerId int64) {

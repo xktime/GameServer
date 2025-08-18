@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
+	"gameserver/common/msg/message"
 	"gameserver/core/log"
 	"testing"
 
@@ -84,10 +85,10 @@ func TestBulkSave(t *testing.T) {
 	mongodb.Init("mongodb://localhost:27017", "testMongo", 50, 50)
 	// 初始化测试数据
 	users := []mongodb.PersistData{
-		&models.User{AccountId: "test1", ServerId: 2, OpenId: "open1", PlayerId: 1001, Platform: models.DouYin},
-		&models.User{AccountId: "test2", ServerId: 2, OpenId: "open2", PlayerId: 1002, Platform: models.WeChat},
-		&models.User{AccountId: "test3", ServerId: 1, OpenId: "open3", PlayerId: 1003, Platform: models.DouYin},
-		&models.User{AccountId: "test5", ServerId: 5, OpenId: "open3", PlayerId: 1003, Platform: models.DouYin},
+		&models.User{AccountId: "test1", ServerId: 2, OpenId: "open1", PlayerId: 1001, Platform: message.LoginType_DouYin},
+		&models.User{AccountId: "test2", ServerId: 2, OpenId: "open2", PlayerId: 1002, Platform: message.LoginType_WeChat},
+		&models.User{AccountId: "test3", ServerId: 1, OpenId: "open3", PlayerId: 1003, Platform: message.LoginType_DouYin},
+		&models.User{AccountId: "test5", ServerId: 5, OpenId: "open3", PlayerId: 1003, Platform: message.LoginType_DouYin},
 	}
 
 	// 测试批量保存

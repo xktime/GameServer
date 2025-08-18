@@ -22,16 +22,15 @@ func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 	}
 	loginResp := loginProcessor.ReqLogin(context.Background(), msg)
 	log.Debug("loginResp %v", loginResp)
-	result := &message.S2C_Login{}
-	defer agent.WriteMsg(result)
-	// todo 登录失败需要关闭agent
 	if loginResp.ErrCode != 0 {
 		log.Error("login failed %v", loginResp)
-		result.LoginResult = -1
+		agent.WriteMsg(&message.S2C_Login{
+			LoginResult: -1,
+		})
+		agent.Close()
 		return
 	}
-	result.LoginResult = 1
-	game.External.UserManager.DirectCaller.UserLogin(agent, loginResp.Openid, msg.ServerId)
+	game.External.UserManager.DirectCaller.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

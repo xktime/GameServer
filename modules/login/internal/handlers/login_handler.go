@@ -27,5 +27,6 @@ func C2S_LoginHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_Login消息: %v, agent: %v", msg, agent)
+	managers.GetConnectManager().UpdateHeartbeat(agent)
 	managers.GetLoginManager().DirectCaller.HandleLogin(msg, agent)
 }

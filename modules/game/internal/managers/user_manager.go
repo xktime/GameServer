@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
+	"gameserver/common/msg/message"
 	"gameserver/common/utils"
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -25,7 +27,7 @@ var (
 	playerCache sync.Map // 玩家缓存
 )
 
-func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32) {
+func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
 	// 1. 优先从缓存查找用户（检测顶号操作）
 	accountId := fmt.Sprintf("%d_%s", serverId, openId)
 	if existingUser := m.getUserFromCache(accountId); existingUser != nil {
@@ -49,8 +51,7 @@ func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32)
 			OpenId:    openId,
 			ServerId:  serverId,
 			PlayerId:  utils.FlakeId(),
-			// todo platform需要传进来修改？
-			Platform: models.DouYin,
+			Platform:  loginType,
 		}
 		if _, err := mongodb.Save(user); err != nil {
 			log.Error("Failed to save new user [openId: %s, serverId: %d]: %v", openId, serverId, err)
@@ -74,6 +75,11 @@ func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32)
 	// 调用玩家登录
 	p := player.Login(agent, isNew)
 	m.updatePlayerCache(p)
+
+	p.SendToClient(&message.S2C_Login{
+		LoginResult: 1,
+		PlayerInfo:  p.ToPlayerInfo(),
+	})
 }
 
 // 玩家下线处理
@@ -227,6 +233,31 @@ func (m *UserManager) GetPlayers() []*player.Player {
 		return true
 	})
 	return players
+}
+
+func (m *UserManager) GetRandomPlayer(exceptPlayerId []int64) *player.Player {
+	// 先筛选出不在exceptPlayerId中的玩家
+	var filteredPlayers []*player.Player
+	players := m.GetPlayers()
+	for _, p := range players {
+		exist := false
+		for _, id := range exceptPlayerId {
+			if p.PlayerId == id {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			filteredPlayers = append(filteredPlayers, p)
+		}
+	}
+	// 如果没有可选玩家，返回nil
+	if len(filteredPlayers) == 0 {
+		return nil
+	}
+	// 随机返回一个玩家
+	randIdx := rand.Intn(len(filteredPlayers))
+	return filteredPlayers[randIdx]
 }
 
 // 获取缓存的玩家（优先从缓存获取，缓存没有则从Actor获取）

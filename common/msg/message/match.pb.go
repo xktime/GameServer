@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v6.32.0--rc1
-// source: match.proto
+// source: match/match.proto
 
 package message
 
@@ -21,7 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// todo 根据playerId获取playerinfo接口
 type MatchPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
@@ -32,7 +31,7 @@ type MatchPlayerInfo struct {
 
 func (x *MatchPlayerInfo) Reset() {
 	*x = MatchPlayerInfo{}
-	mi := &file_match_proto_msgTypes[0]
+	mi := &file_match_match_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -44,7 +43,7 @@ func (x *MatchPlayerInfo) String() string {
 func (*MatchPlayerInfo) ProtoMessage() {}
 
 func (x *MatchPlayerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[0]
+	mi := &file_match_match_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -57,7 +56,7 @@ func (x *MatchPlayerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MatchPlayerInfo.ProtoReflect.Descriptor instead.
 func (*MatchPlayerInfo) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{0}
+	return file_match_match_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *MatchPlayerInfo) GetPlayerId() int64 {
@@ -83,7 +82,7 @@ type C2S_StartMatch struct {
 
 func (x *C2S_StartMatch) Reset() {
 	*x = C2S_StartMatch{}
-	mi := &file_match_proto_msgTypes[1]
+	mi := &file_match_match_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +94,7 @@ func (x *C2S_StartMatch) String() string {
 func (*C2S_StartMatch) ProtoMessage() {}
 
 func (x *C2S_StartMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[1]
+	mi := &file_match_match_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +107,7 @@ func (x *C2S_StartMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_StartMatch.ProtoReflect.Descriptor instead.
 func (*C2S_StartMatch) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{1}
+	return file_match_match_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *C2S_StartMatch) GetType() int32 {
@@ -127,7 +126,7 @@ type S2C_StartMatch struct {
 
 func (x *S2C_StartMatch) Reset() {
 	*x = S2C_StartMatch{}
-	mi := &file_match_proto_msgTypes[2]
+	mi := &file_match_match_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -139,7 +138,7 @@ func (x *S2C_StartMatch) String() string {
 func (*S2C_StartMatch) ProtoMessage() {}
 
 func (x *S2C_StartMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[2]
+	mi := &file_match_match_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -152,7 +151,7 @@ func (x *S2C_StartMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_StartMatch.ProtoReflect.Descriptor instead.
 func (*S2C_StartMatch) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{2}
+	return file_match_match_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *S2C_StartMatch) GetResult() bool {
@@ -172,7 +171,7 @@ type S2C_MatchResult struct {
 
 func (x *S2C_MatchResult) Reset() {
 	*x = S2C_MatchResult{}
-	mi := &file_match_proto_msgTypes[3]
+	mi := &file_match_match_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -184,7 +183,7 @@ func (x *S2C_MatchResult) String() string {
 func (*S2C_MatchResult) ProtoMessage() {}
 
 func (x *S2C_MatchResult) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[3]
+	mi := &file_match_match_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -197,7 +196,7 @@ func (x *S2C_MatchResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_MatchResult.ProtoReflect.Descriptor instead.
 func (*S2C_MatchResult) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{3}
+	return file_match_match_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *S2C_MatchResult) GetRoomId() int64 {
@@ -222,7 +221,7 @@ type C2S_CancelMatch struct {
 
 func (x *C2S_CancelMatch) Reset() {
 	*x = C2S_CancelMatch{}
-	mi := &file_match_proto_msgTypes[4]
+	mi := &file_match_match_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -234,7 +233,7 @@ func (x *C2S_CancelMatch) String() string {
 func (*C2S_CancelMatch) ProtoMessage() {}
 
 func (x *C2S_CancelMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[4]
+	mi := &file_match_match_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -247,7 +246,7 @@ func (x *C2S_CancelMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_CancelMatch.ProtoReflect.Descriptor instead.
 func (*C2S_CancelMatch) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{4}
+	return file_match_match_proto_rawDescGZIP(), []int{4}
 }
 
 type S2C_CancelMatch struct {
@@ -259,7 +258,7 @@ type S2C_CancelMatch struct {
 
 func (x *S2C_CancelMatch) Reset() {
 	*x = S2C_CancelMatch{}
-	mi := &file_match_proto_msgTypes[5]
+	mi := &file_match_match_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -271,7 +270,7 @@ func (x *S2C_CancelMatch) String() string {
 func (*S2C_CancelMatch) ProtoMessage() {}
 
 func (x *S2C_CancelMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[5]
+	mi := &file_match_match_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -284,7 +283,7 @@ func (x *S2C_CancelMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_CancelMatch.ProtoReflect.Descriptor instead.
 func (*S2C_CancelMatch) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{5}
+	return file_match_match_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *S2C_CancelMatch) GetResult() bool {
@@ -303,7 +302,7 @@ type S2C_PlayerOffline struct {
 
 func (x *S2C_PlayerOffline) Reset() {
 	*x = S2C_PlayerOffline{}
-	mi := &file_match_proto_msgTypes[6]
+	mi := &file_match_match_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +314,7 @@ func (x *S2C_PlayerOffline) String() string {
 func (*S2C_PlayerOffline) ProtoMessage() {}
 
 func (x *S2C_PlayerOffline) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[6]
+	mi := &file_match_match_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +327,7 @@ func (x *S2C_PlayerOffline) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_PlayerOffline.ProtoReflect.Descriptor instead.
 func (*S2C_PlayerOffline) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{6}
+	return file_match_match_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *S2C_PlayerOffline) GetPlayerId() int64 {
@@ -349,7 +348,7 @@ type C2S_RecordGameOperate struct {
 
 func (x *C2S_RecordGameOperate) Reset() {
 	*x = C2S_RecordGameOperate{}
-	mi := &file_match_proto_msgTypes[7]
+	mi := &file_match_match_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -361,7 +360,7 @@ func (x *C2S_RecordGameOperate) String() string {
 func (*C2S_RecordGameOperate) ProtoMessage() {}
 
 func (x *C2S_RecordGameOperate) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[7]
+	mi := &file_match_match_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -374,7 +373,7 @@ func (x *C2S_RecordGameOperate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_RecordGameOperate.ProtoReflect.Descriptor instead.
 func (*C2S_RecordGameOperate) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{7}
+	return file_match_match_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *C2S_RecordGameOperate) GetRoomId() int64 {
@@ -400,7 +399,7 @@ type S2C_RecordGameOperate struct {
 
 func (x *S2C_RecordGameOperate) Reset() {
 	*x = S2C_RecordGameOperate{}
-	mi := &file_match_proto_msgTypes[8]
+	mi := &file_match_match_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -412,7 +411,7 @@ func (x *S2C_RecordGameOperate) String() string {
 func (*S2C_RecordGameOperate) ProtoMessage() {}
 
 func (x *S2C_RecordGameOperate) ProtoReflect() protoreflect.Message {
-	mi := &file_match_proto_msgTypes[8]
+	mi := &file_match_match_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -425,7 +424,7 @@ func (x *S2C_RecordGameOperate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_RecordGameOperate.ProtoReflect.Descriptor instead.
 func (*S2C_RecordGameOperate) Descriptor() ([]byte, []int) {
-	return file_match_proto_rawDescGZIP(), []int{8}
+	return file_match_match_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *S2C_RecordGameOperate) GetOperateInfo() string {
@@ -435,11 +434,11 @@ func (x *S2C_RecordGameOperate) GetOperateInfo() string {
 	return ""
 }
 
-var File_match_proto protoreflect.FileDescriptor
+var File_match_match_proto protoreflect.FileDescriptor
 
-const file_match_proto_rawDesc = "" +
+const file_match_match_proto_rawDesc = "" +
 	"\n" +
-	"\vmatch.proto\x1a\x10message_id.proto\"G\n" +
+	"\x11match/match.proto\x1a\x10message_id.proto\"G\n" +
 	"\x0fMatchPlayerInfo\x12\x1a\n" +
 	"\bplayerId\x18\x01 \x01(\x03R\bplayerId\x12\x18\n" +
 	"\aisRobot\x18\x02 \x01(\bR\aisRobot\"+\n" +
@@ -462,19 +461,19 @@ const file_match_proto_rawDesc = "" +
 	"\voperateInfo\x18\x01 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\x94\x03B\x0eZ\f./../messageb\x06proto3"
 
 var (
-	file_match_proto_rawDescOnce sync.Once
-	file_match_proto_rawDescData []byte
+	file_match_match_proto_rawDescOnce sync.Once
+	file_match_match_proto_rawDescData []byte
 )
 
-func file_match_proto_rawDescGZIP() []byte {
-	file_match_proto_rawDescOnce.Do(func() {
-		file_match_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_match_proto_rawDesc), len(file_match_proto_rawDesc)))
+func file_match_match_proto_rawDescGZIP() []byte {
+	file_match_match_proto_rawDescOnce.Do(func() {
+		file_match_match_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_match_match_proto_rawDesc), len(file_match_match_proto_rawDesc)))
 	})
-	return file_match_proto_rawDescData
+	return file_match_match_proto_rawDescData
 }
 
-var file_match_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
-var file_match_proto_goTypes = []any{
+var file_match_match_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_match_match_proto_goTypes = []any{
 	(*MatchPlayerInfo)(nil),       // 0: MatchPlayerInfo
 	(*C2S_StartMatch)(nil),        // 1: C2S_StartMatch
 	(*S2C_StartMatch)(nil),        // 2: S2C_StartMatch
@@ -485,7 +484,7 @@ var file_match_proto_goTypes = []any{
 	(*C2S_RecordGameOperate)(nil), // 7: C2S_RecordGameOperate
 	(*S2C_RecordGameOperate)(nil), // 8: S2C_RecordGameOperate
 }
-var file_match_proto_depIdxs = []int32{
+var file_match_match_proto_depIdxs = []int32{
 	0, // 0: S2C_MatchResult.playerInfos:type_name -> MatchPlayerInfo
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
@@ -494,9 +493,9 @@ var file_match_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_match_proto_init() }
-func file_match_proto_init() {
-	if File_match_proto != nil {
+func init() { file_match_match_proto_init() }
+func file_match_match_proto_init() {
+	if File_match_match_proto != nil {
 		return
 	}
 	file_message_id_proto_init()
@@ -504,17 +503,17 @@ func file_match_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_match_proto_rawDesc), len(file_match_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_match_match_proto_rawDesc), len(file_match_match_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_match_proto_goTypes,
-		DependencyIndexes: file_match_proto_depIdxs,
-		MessageInfos:      file_match_proto_msgTypes,
+		GoTypes:           file_match_match_proto_goTypes,
+		DependencyIndexes: file_match_match_proto_depIdxs,
+		MessageInfos:      file_match_match_proto_msgTypes,
 	}.Build()
-	File_match_proto = out.File
-	file_match_proto_goTypes = nil
-	file_match_proto_depIdxs = nil
+	File_match_match_proto = out.File
+	file_match_match_proto_goTypes = nil
+	file_match_match_proto_depIdxs = nil
 }
