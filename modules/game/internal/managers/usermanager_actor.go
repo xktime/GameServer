@@ -41,6 +41,15 @@ func GetUserManager() *UserManagerActorProxy {
 }
 
 
+// OnInitData 调用UserManager的OnInitData方法
+func (*UserManagerActorProxy) OnInitData() {
+	sendArgs := []interface{}{}
+	
+
+	actor_manager.Send[UserManager](GetUserManagerActorId(), "OnInitData", sendArgs)
+}
+
+
 // UserLogin 调用UserManager的UserLogin方法
 func (*UserManagerActorProxy) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
 	sendArgs := []interface{}{}
@@ -51,6 +60,19 @@ func (*UserManagerActorProxy) UserLogin(agent gate.Agent, openId string, serverI
 	
 
 	actor_manager.Send[UserManager](GetUserManagerActorId(), "UserLogin", sendArgs)
+}
+
+
+// ModifyName 调用UserManager的ModifyName方法
+func (*UserManagerActorProxy) ModifyName(playerId int64, name string) (message.Result) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, playerId)
+	sendArgs = append(sendArgs, name)
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "ModifyName", sendArgs)
+	result, _ := future.Result()
+	return result.(message.Result)
 }
 
 
@@ -197,6 +219,35 @@ func (*UserManagerActorProxy) GetCacheStats() (map[string]interface{}) {
 	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetCacheStats", sendArgs)
 	result, _ := future.Result()
 	return result.(map[string]interface{})
+}
+
+
+// AddNameToCache 调用UserManager的AddNameToCache方法
+func (*UserManagerActorProxy) AddNameToCache(playerName string) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, playerName)
+	
+
+	actor_manager.Send[UserManager](GetUserManagerActorId(), "AddNameToCache", sendArgs)
+}
+
+
+// RemoveNameFromCache 调用UserManager的RemoveNameFromCache方法
+func (*UserManagerActorProxy) RemoveNameFromCache(playerName string) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, playerName)
+	
+
+	actor_manager.Send[UserManager](GetUserManagerActorId(), "RemoveNameFromCache", sendArgs)
+}
+
+
+// PreloadNames 调用UserManager的PreloadNames方法
+func (*UserManagerActorProxy) PreloadNames() {
+	sendArgs := []interface{}{}
+	
+
+	actor_manager.Send[UserManager](GetUserManagerActorId(), "PreloadNames", sendArgs)
 }
 
 

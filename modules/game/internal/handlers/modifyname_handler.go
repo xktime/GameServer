@@ -6,7 +6,6 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers"
-	"gameserver/modules/game/internal/managers/player"
 )
 
 // C2S_ModifyNameHandler 处理C2S_ModifyName消息
@@ -29,8 +28,9 @@ func C2S_ModifyNameHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_ModifyName消息: %v, agent: %v", msg, agent)
+	userManager := managers.GetUserManager()
 	playerId := agent.UserData().(models.User).PlayerId
-	p := managers.GetUserManager().GetPlayer(playerId)
+	p := userManager.GetPlayer(playerId)
 	resultMsg := &message.S2C_ModifyName{
 		Result: message.Result_Success,
 	}
@@ -40,12 +40,11 @@ func C2S_ModifyNameHandler(args []interface{}) {
 		resultMsg.Result = message.Result_Fail
 		return
 	}
-	result := managers.GetUserManager().DirectCaller.CheckName(msg.Name)
+	result := userManager.CheckName(msg.Name)
 	if result != message.Result_Success {
 		resultMsg.Result = result
 		return
 	}
-	result = player.ModifyName(playerId, msg.Name)
-	resultMsg.Result = result
+	resultMsg.Result = userManager.ModifyName(playerId, msg.Name)
 	p.SendToClient(resultMsg)
 }

@@ -14,18 +14,23 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type UserManager struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
+	memCache                          sync.Map           // 用户缓存
+	playerCache                       sync.Map           // 玩家缓存
+	nameCache                         sync.Map           // 名称缓存，key: playerName, value: bool (true表示已存在)
+	nameBloomFilter                   *utils.BloomFilter // 布隆过滤器，用于快速判断名称是否可能重复
 }
 
-// 全局缓存，使用sync.Map保证并发安全
-var (
-	memCache    sync.Map // 用户缓存
-	playerCache sync.Map // 玩家缓存
-)
+// 初始化布隆过滤器
+func (m *UserManager) OnInitData() {
+	// 假设最多支持100万个名称，误判率控制在1%以内
+	m.nameBloomFilter = utils.NewBloomFilter(1000000, 7)
+	m.PreloadNames()
+}
 
 func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
 	// 1. 优先从缓存查找用户（检测顶号操作）
@@ -82,6 +87,19 @@ func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32,
 	})
 }
 
+func (m *UserManager) ModifyName(playerId int64, name string) message.Result {
+	p := m.getPlayerFromCache(playerId)
+	if p != nil {
+		result := p.ModifyName(name)
+		if result == message.Result_Success {
+			m.AddNameToCache(name)
+			return message.Result_Success
+		}
+		return result
+	}
+	return message.Result_Illegal
+}
+
 // 玩家下线处理
 func (m *UserManager) UserOffline(user models.User) {
 	// 先从缓存获取玩家信息
@@ -101,28 +119,48 @@ func (m *UserManager) UserOffline(user models.User) {
 	log.Debug("User offline: %s, PlayerId: %d", user.AccountId, user.PlayerId)
 }
 
-// todo 可以加缓存
-// todo 有可能player还没回存也查不到
 func (m *UserManager) CheckName(playerName string) message.Result {
 	// 1. 校验名称合法性
 	if !m.isValidPlayerName(playerName) {
 		return message.Result_Illegal
 	}
 
-	// 2. 查询数据库中是否已存在相同名称的玩家
+	// 2. 布隆过滤器快速检查（可能误判，但不会漏判）
+	if !m.nameBloomFilter.Contains(playerName) {
+		// 布隆过滤器显示名称一定不存在，直接返回成功
+		return message.Result_Success
+	}
+
+	// 3. 检查内存缓存
+	if value, exists := m.nameCache.Load(playerName); exists {
+		if isDuplicate, ok := value.(bool); ok {
+			if isDuplicate {
+				return message.Result_Duplicate
+			} else {
+				return message.Result_Success
+			}
+		}
+	}
+
+	// 4. 缓存未命中，查询数据库
 	existingPlayer, err := mongodb.FindOne[player.Player](bson.M{"player_info.player_name": playerName})
 	if err != nil {
 		log.Error("CheckName query database failed: %v", err)
 		return message.Result_Fail
 	}
 
-	// 3. 如果存在相同名称，返回重复结果
+	// 5. 更新缓存和布隆过滤器
 	if existingPlayer != nil {
+		// 名称已存在
+		m.nameCache.Store(playerName, true)
+		m.nameBloomFilter.Add(playerName)
 		return message.Result_Duplicate
+	} else {
+		// 名称可用
+		m.nameCache.Store(playerName, false)
+		m.nameBloomFilter.Add(playerName)
+		return message.Result_Success
 	}
-
-	// 4. 名称可用
-	return message.Result_Success
 }
 
 // 校验玩家名称合法性
@@ -174,7 +212,7 @@ func (m *UserManager) GetUser(accountId string) (models.User, bool) {
 // 获取所有在线用户
 func (m *UserManager) GetUsers() []models.User {
 	var users []models.User
-	memCache.Range(func(key, value interface{}) bool {
+	m.memCache.Range(func(key, value interface{}) bool {
 		if user, ok := value.(*models.User); ok {
 			users = append(users, *user)
 		}
@@ -189,44 +227,44 @@ func (m *UserManager) ClearAllCache() {
 	userCount := 0
 	playerCount := 0
 
-	memCache.Range(func(key, value interface{}) bool {
+	m.memCache.Range(func(key, value interface{}) bool {
 		userCount++
 		return true
 	})
 
-	playerCache.Range(func(key, value interface{}) bool {
+	m.playerCache.Range(func(key, value interface{}) bool {
 		playerCount++
 		return true
 	})
 
 	// 清理所有缓存
-	memCache = sync.Map{}
-	playerCache = sync.Map{}
+	m.memCache = sync.Map{}
+	m.playerCache = sync.Map{}
 	log.Debug("Cleared all caches - users: %d, players: %d", userCount, playerCount)
 }
 
 // 检查用户是否在线
 func (m *UserManager) IsUserOnline(accountId string) bool {
-	_, exists := memCache.Load(accountId)
+	_, exists := m.memCache.Load(accountId)
 	return exists
 }
 
 // 更新用户缓存
 func (m *UserManager) updateUserCache(user *models.User) {
-	memCache.Store(user.AccountId, user)
+	m.memCache.Store(user.AccountId, user)
 }
 
 // 移除用户缓存
 func (m *UserManager) removeUserCache(accountId string) {
-	if _, exists := memCache.Load(accountId); exists {
-		memCache.Delete(accountId)
+	if _, exists := m.memCache.Load(accountId); exists {
+		m.memCache.Delete(accountId)
 		log.Debug("Removed user cache: %s", accountId)
 	}
 }
 
 // 从缓存获取用户（内部方法）
 func (m *UserManager) getUserFromCache(accountId string) *models.User {
-	if value, exists := memCache.Load(accountId); exists {
+	if value, exists := m.memCache.Load(accountId); exists {
 		if user, ok := value.(*models.User); ok {
 			return user
 		}
@@ -236,12 +274,12 @@ func (m *UserManager) getUserFromCache(accountId string) *models.User {
 
 // 更新玩家缓存
 func (m *UserManager) updatePlayerCache(playerInstance *player.Player) {
-	playerCache.Store(playerInstance.PlayerId, playerInstance)
+	m.playerCache.Store(playerInstance.PlayerId, playerInstance)
 }
 
 // 从缓存获取玩家
 func (m *UserManager) getPlayerFromCache(playerId int64) *player.Player {
-	if value, exists := playerCache.Load(playerId); exists {
+	if value, exists := m.playerCache.Load(playerId); exists {
 		if playerInstance, ok := value.(*player.Player); ok {
 			return playerInstance
 		}
@@ -251,8 +289,8 @@ func (m *UserManager) getPlayerFromCache(playerId int64) *player.Player {
 
 // 移除玩家缓存
 func (m *UserManager) removePlayerCache(playerId int64) {
-	if _, exists := playerCache.Load(playerId); exists {
-		playerCache.Delete(playerId)
+	if _, exists := m.playerCache.Load(playerId); exists {
+		m.playerCache.Delete(playerId)
 		log.Debug("Removed player cache: %d", playerId)
 	}
 }
@@ -260,7 +298,7 @@ func (m *UserManager) removePlayerCache(playerId int64) {
 // 获取所有缓存的玩家
 func (m *UserManager) GetPlayers() []*player.Player {
 	var players []*player.Player
-	playerCache.Range(func(key, value interface{}) bool {
+	m.playerCache.Range(func(key, value interface{}) bool {
 		if playerInstance, ok := value.(*player.Player); ok {
 			players = append(players, playerInstance)
 		}
@@ -314,7 +352,7 @@ func (m *UserManager) GetPlayer(playerId int64) *player.Player {
 // 获取玩家缓存统计信息
 func (m *UserManager) GetPlayerCacheStats() map[string]interface{} {
 	count := 0
-	playerCache.Range(func(key, value interface{}) bool {
+	m.playerCache.Range(func(key, value interface{}) bool {
 		count++
 		return true
 	})
@@ -329,20 +367,62 @@ func (m *UserManager) GetPlayerCacheStats() map[string]interface{} {
 func (m *UserManager) GetCacheStats() map[string]interface{} {
 	userCount := 0
 	playerCount := 0
+	nameCount := 0
 
-	memCache.Range(func(key, value interface{}) bool {
+	m.memCache.Range(func(key, value interface{}) bool {
 		userCount++
 		return true
 	})
 
-	playerCache.Range(func(key, value interface{}) bool {
+	m.playerCache.Range(func(key, value interface{}) bool {
 		playerCount++
+		return true
+	})
+
+	m.nameCache.Range(func(key, value interface{}) bool {
+		nameCount++
 		return true
 	})
 
 	return map[string]interface{}{
 		"online_users":     userCount,
 		"cached_players":   playerCount,
-		"total_cache_size": userCount + playerCount,
+		"cached_names":     nameCount,
+		"total_cache_size": userCount + playerCount + nameCount,
 	}
+}
+
+// 添加名称到缓存（用于预加载或批量导入）
+func (m *UserManager) AddNameToCache(playerName string) {
+	m.nameCache.Store(playerName, true)
+	m.nameBloomFilter.Add(playerName)
+}
+
+// 从名称缓存中移除（用于清理过期数据）
+func (m *UserManager) RemoveNameFromCache(playerName string) {
+	m.nameCache.Delete(playerName)
+	// 注意：布隆过滤器不支持删除，这里只清理内存缓存
+}
+
+// 预加载名称到缓存（启动时调用，从数据库加载所有已存在的名称）
+func (m *UserManager) PreloadNames() {
+	log.Debug("Starting to preload player names from database...")
+
+	// 查询所有玩家名称
+	players, err := mongodb.FindAll[player.Player](bson.M{})
+	if err != nil {
+		log.Error("Failed to preload names: %v", err)
+		return
+	}
+
+	// 批量添加到缓存
+	count := 0
+	for _, p := range players {
+		if p.PlayerInfo != nil && p.PlayerInfo.PlayerName != "" {
+			m.AddNameToCache(p.PlayerInfo.PlayerName)
+			count++
+		}
+	}
+
+	log.Debug("Preloaded %d names from database", count)
 }
