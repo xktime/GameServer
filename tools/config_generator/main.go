@@ -10,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // FieldInfo 字段信息
@@ -376,7 +379,7 @@ func extractFieldsFromMap(data map[string]interface{}) []FieldInfo {
 			fields = append(fields, FieldInfo{
 				Name:     toCamelCase(priorityKey),
 				JSONName: priorityKey,
-				Type:     inferGoType(value),
+				Type:     inferGoType(value, priorityKey),
 				Comment:  priorityKey,
 				Order:    order,
 			})
@@ -399,7 +402,7 @@ func extractFieldsFromMap(data map[string]interface{}) []FieldInfo {
 			field := FieldInfo{
 				Name:     toCamelCase(key),
 				JSONName: key,
-				Type:     inferGoType(value),
+				Type:     inferGoType(value, key),
 				Comment:  key,
 				Order:    order,
 			}
@@ -412,11 +415,15 @@ func extractFieldsFromMap(data map[string]interface{}) []FieldInfo {
 }
 
 // inferGoType 推断Go类型
-func inferGoType(value interface{}) string {
+func inferGoType(value interface{}, fieldName string) string {
 	switch v := value.(type) {
 	case string:
 		return "string"
 	case float64:
+		// 对于充值配置，金额和排序字段使用int64
+		if fieldName == "amount" || fieldName == "bonus" || fieldName == "sort_order" {
+			return "int64"
+		}
 		// 对于游戏配置，我们倾向于使用float64来保持精度
 		// 特别是对于时间、距离等可能需要小数的值
 		return "float64"
@@ -450,10 +457,19 @@ func toCamelCase(s string) string {
 	parts := strings.Split(s, "_")
 	for i, part := range parts {
 		if i > 0 && len(part) > 0 {
-			parts[i] = strings.Title(part)
+			parts[i] = titleCase(part)
 		}
 	}
-	return strings.Title(parts[0])
+	return titleCase(parts[0])
+}
+
+// titleCase 将字符串首字母大写（替代已弃用的 strings.Title）
+func titleCase(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	caser := cases.Title(language.English)
+	return caser.String(s)
 }
 
 // generateStructName 生成结构体名称
@@ -462,11 +478,9 @@ func generateStructName(fileName string) string {
 	name := strings.TrimSuffix(fileName, ".json")
 
 	// 转换为单数形式并首字母大写
-	if strings.HasSuffix(name, "s") {
-		name = name[:len(name)-1]
-	}
+	name = strings.TrimSuffix(name, "s")
 
-	return strings.Title(name)
+	return titleCase(name)
 }
 
 // generateGoFile 生成Go文件

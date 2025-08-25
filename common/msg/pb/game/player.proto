@@ -5,7 +5,12 @@ import "message_id.proto";
 
 // C2S 800--900
 // S2C 900--1000
-
+enum Result {
+    Success = 0;
+    Fail = 1;
+    Duplicate = 2;
+    Illegal = 3;
+}
 
 message PlayerInfo {
     int32 server_id = 1;
@@ -22,4 +27,24 @@ message C2S_GetPlayerInfo {
 message S2C_GetPlayerInfo {
     option (message_id) = 901;
     PlayerInfo playerInfo = 1;
+}
+
+message C2S_CheckName {
+    option (message_id) = 802;
+    string name = 1;
+}
+
+message S2C_CheckName {
+    option (message_id) = 902;
+    Result result = 1;
+}
+
+message C2S_ModifyName {
+    option (message_id) = 803;
+    string name = 1;
+}
+
+message S2C_ModifyName {
+    option (message_id) = 903;
+    Result result = 1;
 }

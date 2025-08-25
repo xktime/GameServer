@@ -1,0 +1,62 @@
+[
+  {
+    "id": "config_001",
+    "name": "6元充值包",
+    "amount": 600,
+    "bonus": 0,
+    "currency": "CNY",
+    "description": "充值6元",
+    "is_active": true,
+    "sort_order": 1
+  },
+  {
+    "id": "config_002",
+    "name": "30元充值包",
+    "amount": 3000,
+    "bonus": 300,
+    "currency": "CNY",
+    "description": "充值30元赠送3元",
+    "is_active": true,
+    "sort_order": 2
+  },
+  {
+    "id": "config_003",
+    "name": "68元充值包",
+    "amount": 6800,
+    "bonus": 800,
+    "currency": "CNY",
+    "description": "充值68元赠送8元",
+    "is_active": true,
+    "sort_order": 3
+  },
+  {
+    "id": "config_004",
+    "name": "128元充值包",
+    "amount": 12800,
+    "bonus": 1800,
+    "currency": "CNY",
+    "description": "充值128元赠送18元",
+    "is_active": true,
+    "sort_order": 4
+  },
+  {
+    "id": "config_005",
+    "name": "328元充值包",
+    "amount": 32800,
+    "bonus": 5200,
+    "currency": "CNY",
+    "description": "充值328元赠送52元",
+    "is_active": true,
+    "sort_order": 5
+  },
+  {
+    "id": "config_006",
+    "name": "648元充值包",
+    "amount": 64800,
+    "bonus": 12000,
+    "currency": "CNY",
+    "description": "充值648元赠送120元",
+    "is_active": true,
+    "sort_order": 6
+  }
+]

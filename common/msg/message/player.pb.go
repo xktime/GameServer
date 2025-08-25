@@ -21,6 +21,60 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// C2S 800--900
+// S2C 900--1000
+type Result int32
+
+const (
+	Result_Success   Result = 0
+	Result_Fail      Result = 1
+	Result_Duplicate Result = 2
+	Result_Illegal   Result = 3
+)
+
+// Enum value maps for Result.
+var (
+	Result_name = map[int32]string{
+		0: "Success",
+		1: "Fail",
+		2: "Duplicate",
+		3: "Illegal",
+	}
+	Result_value = map[string]int32{
+		"Success":   0,
+		"Fail":      1,
+		"Duplicate": 2,
+		"Illegal":   3,
+	}
+)
+
+func (x Result) Enum() *Result {
+	p := new(Result)
+	*p = x
+	return p
+}
+
+func (x Result) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Result) Descriptor() protoreflect.EnumDescriptor {
+	return file_game_player_proto_enumTypes[0].Descriptor()
+}
+
+func (Result) Type() protoreflect.EnumType {
+	return &file_game_player_proto_enumTypes[0]
+}
+
+func (x Result) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Result.Descriptor instead.
+func (Result) EnumDescriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{0}
+}
+
 type PlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServerId      int32                  `protobuf:"varint,1,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
@@ -177,6 +231,182 @@ func (x *S2C_GetPlayerInfo) GetPlayerInfo() *PlayerInfo {
 	return nil
 }
 
+type C2S_CheckName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_CheckName) Reset() {
+	*x = C2S_CheckName{}
+	mi := &file_game_player_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_CheckName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_CheckName) ProtoMessage() {}
+
+func (x *C2S_CheckName) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_CheckName.ProtoReflect.Descriptor instead.
+func (*C2S_CheckName) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *C2S_CheckName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type S2C_CheckName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Result        Result                 `protobuf:"varint,1,opt,name=result,proto3,enum=Result" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_CheckName) Reset() {
+	*x = S2C_CheckName{}
+	mi := &file_game_player_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_CheckName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_CheckName) ProtoMessage() {}
+
+func (x *S2C_CheckName) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_CheckName.ProtoReflect.Descriptor instead.
+func (*S2C_CheckName) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *S2C_CheckName) GetResult() Result {
+	if x != nil {
+		return x.Result
+	}
+	return Result_Success
+}
+
+type C2S_ModifyName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_ModifyName) Reset() {
+	*x = C2S_ModifyName{}
+	mi := &file_game_player_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_ModifyName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_ModifyName) ProtoMessage() {}
+
+func (x *C2S_ModifyName) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_ModifyName.ProtoReflect.Descriptor instead.
+func (*C2S_ModifyName) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *C2S_ModifyName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type S2C_ModifyName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Result        Result                 `protobuf:"varint,1,opt,name=result,proto3,enum=Result" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_ModifyName) Reset() {
+	*x = S2C_ModifyName{}
+	mi := &file_game_player_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_ModifyName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_ModifyName) ProtoMessage() {}
+
+func (x *S2C_ModifyName) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_ModifyName.ProtoReflect.Descriptor instead.
+func (*S2C_ModifyName) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *S2C_ModifyName) GetResult() Result {
+	if x != nil {
+		return x.Result
+	}
+	return Result_Success
+}
+
 var File_game_player_proto protoreflect.FileDescriptor
 
 const file_game_player_proto_rawDesc = "" +
@@ -194,7 +424,20 @@ const file_game_player_proto_rawDesc = "" +
 	"\x11S2C_GetPlayerInfo\x12+\n" +
 	"\n" +
 	"playerInfo\x18\x01 \x01(\v2\v.PlayerInfoR\n" +
-	"playerInfo:\x05\x80\xb5\x18\x85\aB\x0eZ\f./../messageb\x06proto3"
+	"playerInfo:\x05\x80\xb5\x18\x85\a\"*\n" +
+	"\rC2S_CheckName\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name:\x05\x80\xb5\x18\xa2\x06\"7\n" +
+	"\rS2C_CheckName\x12\x1f\n" +
+	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result:\x05\x80\xb5\x18\x86\a\"+\n" +
+	"\x0eC2S_ModifyName\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name:\x05\x80\xb5\x18\xa3\x06\"8\n" +
+	"\x0eS2C_ModifyName\x12\x1f\n" +
+	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result:\x05\x80\xb5\x18\x87\a*;\n" +
+	"\x06Result\x12\v\n" +
+	"\aSuccess\x10\x00\x12\b\n" +
+	"\x04Fail\x10\x01\x12\r\n" +
+	"\tDuplicate\x10\x02\x12\v\n" +
+	"\aIllegal\x10\x03B\x0eZ\f./../messageb\x06proto3"
 
 var (
 	file_game_player_proto_rawDescOnce sync.Once
@@ -208,19 +451,27 @@ func file_game_player_proto_rawDescGZIP() []byte {
 	return file_game_player_proto_rawDescData
 }
 
-var file_game_player_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_game_player_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_game_player_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_game_player_proto_goTypes = []any{
-	(*PlayerInfo)(nil),        // 0: PlayerInfo
-	(*C2S_GetPlayerInfo)(nil), // 1: C2S_GetPlayerInfo
-	(*S2C_GetPlayerInfo)(nil), // 2: S2C_GetPlayerInfo
+	(Result)(0),               // 0: Result
+	(*PlayerInfo)(nil),        // 1: PlayerInfo
+	(*C2S_GetPlayerInfo)(nil), // 2: C2S_GetPlayerInfo
+	(*S2C_GetPlayerInfo)(nil), // 3: S2C_GetPlayerInfo
+	(*C2S_CheckName)(nil),     // 4: C2S_CheckName
+	(*S2C_CheckName)(nil),     // 5: S2C_CheckName
+	(*C2S_ModifyName)(nil),    // 6: C2S_ModifyName
+	(*S2C_ModifyName)(nil),    // 7: S2C_ModifyName
 }
 var file_game_player_proto_depIdxs = []int32{
-	0, // 0: S2C_GetPlayerInfo.playerInfo:type_name -> PlayerInfo
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 0: S2C_GetPlayerInfo.playerInfo:type_name -> PlayerInfo
+	0, // 1: S2C_CheckName.result:type_name -> Result
+	0, // 2: S2C_ModifyName.result:type_name -> Result
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_game_player_proto_init() }
@@ -234,13 +485,14 @@ func file_game_player_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_game_player_proto_rawDesc), len(file_game_player_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_game_player_proto_goTypes,
 		DependencyIndexes: file_game_player_proto_depIdxs,
+		EnumInfos:         file_game_player_proto_enumTypes,
 		MessageInfos:      file_game_player_proto_msgTypes,
 	}.Build()
 	File_game_player_proto = out.File

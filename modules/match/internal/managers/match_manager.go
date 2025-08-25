@@ -28,6 +28,7 @@ func (m *MatchManager) OnInitData() {
 	schedule.RegisterIntervalSchedul(60, GetMatchManager().ProcessTimeoutRequests)
 }
 
+// todo actor优化
 // Matching 定时任务，每10秒执行一次匹配
 func (m *MatchManager) Matching() {
 	log.Debug("开始执行匹配任务")
@@ -147,6 +148,7 @@ func (m *MatchManager) HandleCancelMatch(agent gate.Agent) {
 	}
 }
 
+// todo 根据type使用配置获取
 // 匹配算法实现 - 以队伍为单位的匹配
 var targetRoomSize = 8 // 目标房间大小
 

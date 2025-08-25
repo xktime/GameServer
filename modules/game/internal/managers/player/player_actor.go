@@ -19,10 +19,14 @@ func ToPlayerInfo(PlayerId int64) (*message.PlayerInfo) {
 	return result.(*message.PlayerInfo)
 }
 
-// Print 调用Player的Print方法
-func Print(PlayerId int64) {
+// ModifyName 调用Player的ModifyName方法
+func ModifyName(PlayerId int64, name string) (message.Result) {
 	sendArgs := []interface{}{}
-	actor_manager.Send[Player](PlayerId, "Print", sendArgs)
+	sendArgs = append(sendArgs, name)
+	
+	future := actor_manager.RequestFuture[Player](PlayerId, "ModifyName", sendArgs)
+	result, _ := future.Result()
+	return result.(message.Result)
 }
 
 // InitTeam 调用Player的InitTeam方法

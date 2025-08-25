@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+// 充值相关消息
+// C2S 1000--1099
+// S2C 1100--1199
+
+// 支付平台
+enum PaymentPlatform {
+    Platform_None = 0;
+    Platform_WeChat = 1;
+    Platform_AliPay = 2;
+    Platform_DouYin = 3;
+}
+
+// 充值配置
+message RechargeConfig {
+    string id = 1;          // 配置ID
+    string name = 2;        // 充值包名称
+    int64 amount = 3;       // 充值金额（分）
+    int64 bonus = 4;        // 赠送金额（分）
+    string currency = 5;    // 货币类型
+    string description = 6; // 描述
+    bool is_active = 7;     // 是否激活
+    int32 sort_order = 8;   // 排序
+}
+
+
+// 充值记录
+message RechargeRecord {
+    string id = 1;              // 充值订单ID
+    int64 player_id = 2;        // 玩家ID
+    string account_id = 3;      // 账户ID
+    int64 amount = 4;           // 充值金额（分）
+    string currency = 5;        // 货币类型
+    int32 platform = 6;         // 支付平台
+    int32 status = 7;           // 充值状态 0:待处理 1:成功 2:失败 3:已取消
+    string order_id = 8;        // 第三方订单ID
+    string transaction_id = 9;  // 交易流水号
+    int64 create_time = 10;     // 创建时间
+    int64 update_time = 11;     // 更新时间
+    int64 complete_time = 12;   // 完成时间
+    string description = 13;    // 充值描述
+}
+
+// 充值请求
+message C2S_RechargeRequest {
+    option (message_id) = 1001;
+    int64 amount = 1;      // 充值金额（分）
+    PaymentPlatform platform = 2;
+    string config_id = 3;  // 充值配置ID（可选）
+}
+
+// 充值响应
+message S2C_RechargeResponse {
+    option (message_id) = 1101;
+    bool success = 1;      // 是否成功
+    string order_id = 2;   // 订单ID
+    string message = 3;    // 消息
+    string payment_url = 4; // 支付链接
+    string qr_code = 5;    // 二维码
+}
+
+// 充值成功通知
+message S2C_RechargeSuccess {
+    option (message_id) = 1102;
+    string order_id = 1;     // 订单ID
+    int64 amount = 2;        // 充值金额
+    int64 total_amount = 3;  // 总金额（含赠送）
+    int64 balance = 4;       // 当前余额
+}
+
+// 获取充值配置请求
+message C2S_GetRechargeConfigs {
+    option (message_id) = 1003;
+}
+
+// 获取充值配置响应
+message S2C_GetRechargeConfigs {
+    option (message_id) = 1103;
+    repeated RechargeConfig configs = 1;
+}
+
+// 获取充值记录请求
+message C2S_GetRechargeRecords {
+    option (message_id) = 1004;
+    int32 limit = 1;        // 限制数量
+}
+
+// 获取充值记录响应
+message S2C_GetRechargeRecords {
+    option (message_id) = 1104;
+    repeated RechargeRecord records = 1;
+}

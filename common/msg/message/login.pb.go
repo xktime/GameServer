@@ -21,8 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// C2S 100--200
-// S2C 200--300
+// C2S 100--199
+// S2C 200--299
 type LoginType int32
 
 const (

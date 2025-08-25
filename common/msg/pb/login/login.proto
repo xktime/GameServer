@@ -4,8 +4,8 @@ option go_package = "./../message";
 import "message_id.proto";
 import "game/player.proto";
 
-// C2S 100--200
-// S2C 200--300
+// C2S 100--199
+// S2C 200--299
 enum LoginType {
     None = 0;
     DouYin = 1;

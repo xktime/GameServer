@@ -7,33 +7,30 @@ import (
 	"sync"
 )
 
-// Skill skills.json配置结构体
-type Skill struct {
+// Recharge recharge.json配置结构体
+type Recharge struct {
 	Id string `json:"id"` // id
 	Name string `json:"name"` // name
-	Type string `json:"type"` // type
-	Level float64 `json:"level"` // level
 	Description string `json:"description"` // description
-	Mana float64 `json:"mana_cost"` // mana_cost
-	Cooldown float64 `json:"cooldown"` // cooldown
-	Range float64 `json:"range"` // range
-	Effects []string `json:"effects"` // effects
-	Damage float64 `json:"damage"` // damage
-	Unlock float64 `json:"unlock_level"` // unlock_level
+	Amount int64 `json:"amount"` // amount
+	Bonus int64 `json:"bonus"` // bonus
+	Currency string `json:"currency"` // currency
+	Is bool `json:"is_active"` // is_active
+	Sort int64 `json:"sort_order"` // sort_order
 }
 
-// SkillCache skills.json配置缓存
-type SkillCache struct {
-	cache map[string]*Skill
+// RechargeCache recharge.json配置缓存
+type RechargeCache struct {
+	cache map[string]*Recharge
 	mu    sync.RWMutex
 }
 
-var SkillCacheInstance = &SkillCache{
-	cache: make(map[string]*Skill),
+var RechargeCacheInstance = &RechargeCache{
+	cache: make(map[string]*Recharge),
 }
 
-// getSkillFromCache 从缓存获取配置
-func (c *SkillCache) getSkillFromCache(id string) (*Skill, bool) {
+// getRechargeFromCache 从缓存获取配置
+func (c *RechargeCache) getRechargeFromCache(id string) (*Recharge, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	
@@ -43,26 +40,26 @@ func (c *SkillCache) getSkillFromCache(id string) (*Skill, bool) {
 	return nil, false
 }
 
-// setSkillToCache 设置配置到缓存
-func (c *SkillCache) setSkillToCache(id string, item *Skill) {
+// setRechargeToCache 设置配置到缓存
+func (c *RechargeCache) setRechargeToCache(id string, item *Recharge) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	
 	c.cache[id] = item
 }
 
-// clearSkillCache 清空缓存
-func (c *SkillCache) clearSkillCache() {
+// clearRechargeCache 清空缓存
+func (c *RechargeCache) clearRechargeCache() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	
-	c.cache = make(map[string]*Skill)
+	c.cache = make(map[string]*Recharge)
 }
 
-// convertToSkill 将原始配置转换为Skill结构体
-func convertToSkill(config interface{}) (*Skill, bool) {
+// convertToRecharge 将原始配置转换为Recharge结构体
+func convertToRecharge(config interface{}) (*Recharge, bool) {
 	if configMap, ok := config.(map[string]interface{}); ok {
-		result := &Skill{}
+		result := &Recharge{}
 		
 		// 使用反射设置字段值
 		configValue := reflect.ValueOf(result).Elem()
@@ -115,39 +112,39 @@ func convertToSkill(config interface{}) (*Skill, bool) {
 	return nil, false
 }
 
-// GetSkillConfig 获取skills.json配置（带缓存）
-func GetSkillConfig(id string) (*Skill, bool) {
+// GetRechargeConfig 获取recharge.json配置（带缓存）
+func GetRechargeConfig(id string) (*Recharge, bool) {
 	// 先从缓存获取
-	if item, exists := SkillCacheInstance.getSkillFromCache(id); exists {
+	if item, exists := RechargeCacheInstance.getRechargeFromCache(id); exists {
 		return item, true
 	}
 	
 	// 缓存未命中，从原始配置获取
-	config, exists := config.GetConfig("skills.json", id)
+	config, exists := config.GetConfig("recharge.json", id)
 	if !exists {
 		return nil, false
 	}
 
 	// 转换为结构体
-	if item, ok := convertToSkill(config); ok {
+	if item, ok := convertToRecharge(config); ok {
 		// 设置到缓存
-		SkillCacheInstance.setSkillToCache(id, item)
+		RechargeCacheInstance.setRechargeToCache(id, item)
 		return item, true
 	}
 
 	return nil, false
 }
 
-// GetAllSkillConfigs 获取所有skills.json配置（带缓存）
-func GetAllSkillConfigs() (map[string]*Skill, bool) {
-	configs, exists := config.GetAllConfigs("skills.json")
+// GetAllRechargeConfigs 获取所有recharge.json配置（带缓存）
+func GetAllRechargeConfigs() (map[string]*Recharge, bool) {
+	configs, exists := config.GetAllConfigs("recharge.json")
 	if !exists {
 		return nil, false
 	}
 
-	result := make(map[string]*Skill)
+	result := make(map[string]*Recharge)
 	for id := range configs {
-		if item, ok := GetSkillConfig(id); ok {
+		if item, ok := GetRechargeConfig(id); ok {
 			result[id] = item
 		}
 	}
@@ -155,32 +152,32 @@ func GetAllSkillConfigs() (map[string]*Skill, bool) {
 	return result, true
 }
 
-// GetSkillName 获取skills.json名称
-func GetSkillName(id string) (string, bool) {
-	if item, exists := GetSkillConfig(id); exists {
+// GetRechargeName 获取recharge.json名称
+func GetRechargeName(id string) (string, bool) {
+	if item, exists := GetRechargeConfig(id); exists {
 		return item.Name, true
 	}
 	return "", false
 }
 
-// ReloadSkillConfig 重新加载skills.json配置并清空缓存
-func ReloadSkillConfig() error {
+// ReloadRechargeConfig 重新加载recharge.json配置并清空缓存
+func ReloadRechargeConfig() error {
 	// 清空缓存
-	SkillCacheInstance.clearSkillCache()
+	RechargeCacheInstance.clearRechargeCache()
 	
 	// 重新加载配置
-	return config.ReloadConfig("skills.json")
+	return config.ReloadConfig("recharge.json")
 }
 
-// ValidateSkillConfig 验证skills.json配置
-func ValidateSkillConfig(id string) error {
-	if _, exists := GetSkillConfig(id); !exists {
+// ValidateRechargeConfig 验证recharge.json配置
+func ValidateRechargeConfig(id string) error {
+	if _, exists := GetRechargeConfig(id); !exists {
 		return fmt.Errorf("配置不存在: %s", id)
 	}
 	return nil
 }
 
-// ClearSkillCache 手动清空skills.json配置缓存
-func ClearSkillCache() {
-	SkillCacheInstance.clearSkillCache()
+// ClearRechargeCache 手动清空recharge.json配置缓存
+func ClearRechargeCache() {
+	RechargeCacheInstance.clearRechargeCache()
 }

@@ -6,6 +6,14 @@
             { "keys": { "ServerId": 1, "OpenId": 1}, "unique": true },
             { "keys": { "PlayerId": 1}, "unique": true }
           ]
+        },
+        {
+          "collection": "RechargeRecord",
+          "create": [
+            { "keys": { "PlayerId": 1}, "unique": false },
+            { "keys": { "CreateTime": -1}, "unique": false },
+            { "keys": { "Status": 1}, "unique": false }
+          ]
         }
       ]
-  }
+}

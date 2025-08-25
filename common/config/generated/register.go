@@ -17,6 +17,10 @@ func init() {
 	config.RegisterReloadFunc(func() error {
 		return ReloadMonsterConfig()
 	})
+	// 注册Recharge配置重载函数
+	config.RegisterReloadFunc(func() error {
+		return ReloadRechargeConfig()
+	})
 	// 注册Skill配置重载函数
 	config.RegisterReloadFunc(func() error {
 		return ReloadSkillConfig()

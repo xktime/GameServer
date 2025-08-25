@@ -184,8 +184,8 @@ func (r *RankManager) sortRankData(rankData *models.RankData) {
 			if rankData.Items[i].Score != rankData.Items[j].Score {
 				return rankData.Items[i].Score > rankData.Items[j].Score
 			}
-			// 分数相同时，按更新时间排序（新的排在前面）
-			return rankData.Items[i].UpdateTime.After(rankData.Items[j].UpdateTime)
+			// 分数相同时，按更新时间排序（老的排在前面）
+			return rankData.Items[j].UpdateTime.After(rankData.Items[i].UpdateTime)
 		default:
 			return false
 		}

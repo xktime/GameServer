@@ -46,6 +46,8 @@ func main() {
 		packageName := structInfo.Package
 		filePath := structInfo.FilePath
 
+		fmt.Printf("正在处理结构体: %s (包: %s, 文件: %s)\n", structName, packageName, filePath)
+
 		// 检查结构体是否有方法
 		hasMethods, err := CheckStructHasMethods(sourceDir, structName)
 		if err != nil {
@@ -58,9 +60,13 @@ func main() {
 			continue
 		}
 
+		fmt.Printf("结构体 %s 有方法，开始生成代码\n", structName)
+
 		// 根据结构体所在文件路径确定输出目录
 		outputDir := filepath.Dir(filePath)
 		outputFile := filepath.Join(outputDir, fmt.Sprintf("%s_actor.go", strings.ToLower(structName)))
+
+		fmt.Printf("输出文件: %s\n", outputFile)
 
 		// 确保输出目录存在
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -69,7 +75,8 @@ func main() {
 
 		// 生成代码
 		if err := GenerateFromFile(sourceDir, outputFile, structName, packageName); err != nil {
-			log.Fatalf("生成代码失败: %v", err)
+			log.Printf("生成代码失败: %v", err)
+			continue
 		}
 
 		fmt.Printf("成功生成代码: %s\n", outputFile)

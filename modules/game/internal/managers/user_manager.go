@@ -101,6 +101,40 @@ func (m *UserManager) UserOffline(user models.User) {
 	log.Debug("User offline: %s, PlayerId: %d", user.AccountId, user.PlayerId)
 }
 
+// todo 可以加缓存
+// todo 有可能player还没回存也查不到
+func (m *UserManager) CheckName(playerName string) message.Result {
+	// 1. 校验名称合法性
+	if !m.isValidPlayerName(playerName) {
+		return message.Result_Illegal
+	}
+
+	// 2. 查询数据库中是否已存在相同名称的玩家
+	existingPlayer, err := mongodb.FindOne[player.Player](bson.M{"player_info.player_name": playerName})
+	if err != nil {
+		log.Error("CheckName query database failed: %v", err)
+		return message.Result_Fail
+	}
+
+	// 3. 如果存在相同名称，返回重复结果
+	if existingPlayer != nil {
+		return message.Result_Duplicate
+	}
+
+	// 4. 名称可用
+	return message.Result_Success
+}
+
+// 校验玩家名称合法性
+func (m *UserManager) isValidPlayerName(name string) bool {
+	// 名称长度检查（2-20个字符）
+	if len(name) < 2 || len(name) > 20 {
+		return false
+	}
+	// todo 还有其他合法性校验
+	return true
+}
+
 // 通过openId和serverId获取用户（优先缓存，后查数据库）
 func (m *UserManager) GetUserByOpenId(openId string, serverId int32) (models.User, bool) {
 	accountId := fmt.Sprintf("%d_%s", serverId, openId)

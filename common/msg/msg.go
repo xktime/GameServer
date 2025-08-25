@@ -10,6 +10,11 @@ var Processor = protobuf.NewProcessor()
 
 func init() {
 	Processor.Register(&message.C2S_Login{})
+	Processor.Register(&message.C2S_GetRechargeRecords{})
+	Processor.Register(&message.C2S_GetRechargeConfigs{})
+	Processor.Register(&message.C2S_RechargeRequest{})
+	Processor.Register(&message.C2S_ModifyName{})
+	Processor.Register(&message.C2S_CheckName{})
 	Processor.Register(&message.C2S_GetPlayerInfo{})
 	Processor.Register(&message.C2S_UpdateRankData{})
 	Processor.Register(&message.C2S_GetMyRank{})

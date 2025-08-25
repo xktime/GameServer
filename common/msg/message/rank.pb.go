@@ -21,135 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// 获取排行榜
-type C2S_GetRankList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"` // 排行榜类型：1-等级榜，2-战力榜，3-财富榜
-	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`         // 页码，从1开始
-	PageSize      int32                  `protobuf:"varint,3,opt,name=pageSize,proto3" json:"pageSize,omitempty"` // 每页大小
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *C2S_GetRankList) Reset() {
-	*x = C2S_GetRankList{}
-	mi := &file_rank_rank_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *C2S_GetRankList) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*C2S_GetRankList) ProtoMessage() {}
-
-func (x *C2S_GetRankList) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use C2S_GetRankList.ProtoReflect.Descriptor instead.
-func (*C2S_GetRankList) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *C2S_GetRankList) GetRankType() int32 {
-	if x != nil {
-		return x.RankType
-	}
-	return 0
-}
-
-func (x *C2S_GetRankList) GetPage() int32 {
-	if x != nil {
-		return x.Page
-	}
-	return 0
-}
-
-func (x *C2S_GetRankList) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
-	}
-	return 0
-}
-
-type S2C_GetRankList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"`
-	RankItems     []*RankItem            `protobuf:"bytes,2,rep,name=rankItems,proto3" json:"rankItems,omitempty"`
-	TotalCount    int32                  `protobuf:"varint,3,opt,name=totalCount,proto3" json:"totalCount,omitempty"`
-	CurrentPage   int32                  `protobuf:"varint,4,opt,name=currentPage,proto3" json:"currentPage,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *S2C_GetRankList) Reset() {
-	*x = S2C_GetRankList{}
-	mi := &file_rank_rank_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *S2C_GetRankList) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*S2C_GetRankList) ProtoMessage() {}
-
-func (x *S2C_GetRankList) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use S2C_GetRankList.ProtoReflect.Descriptor instead.
-func (*S2C_GetRankList) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *S2C_GetRankList) GetRankType() int32 {
-	if x != nil {
-		return x.RankType
-	}
-	return 0
-}
-
-func (x *S2C_GetRankList) GetRankItems() []*RankItem {
-	if x != nil {
-		return x.RankItems
-	}
-	return nil
-}
-
-func (x *S2C_GetRankList) GetTotalCount() int32 {
-	if x != nil {
-		return x.TotalCount
-	}
-	return 0
-}
-
-func (x *S2C_GetRankList) GetCurrentPage() int32 {
-	if x != nil {
-		return x.CurrentPage
-	}
-	return 0
-}
-
 // 排行榜项目
 type RankItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -165,7 +36,7 @@ type RankItem struct {
 
 func (x *RankItem) Reset() {
 	*x = RankItem{}
-	mi := &file_rank_rank_proto_msgTypes[2]
+	mi := &file_rank_rank_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -177,7 +48,7 @@ func (x *RankItem) String() string {
 func (*RankItem) ProtoMessage() {}
 
 func (x *RankItem) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[2]
+	mi := &file_rank_rank_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -190,7 +61,7 @@ func (x *RankItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RankItem.ProtoReflect.Descriptor instead.
 func (*RankItem) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{2}
+	return file_rank_rank_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RankItem) GetPlayerId() int64 {
@@ -231,6 +102,135 @@ func (x *RankItem) GetAvatar() string {
 func (x *RankItem) GetLevel() int32 {
 	if x != nil {
 		return x.Level
+	}
+	return 0
+}
+
+// 获取排行榜
+type C2S_GetRankList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"` // 排行榜类型
+	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`         // 页码，从1开始
+	PageSize      int32                  `protobuf:"varint,3,opt,name=pageSize,proto3" json:"pageSize,omitempty"` // 每页大小
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_GetRankList) Reset() {
+	*x = C2S_GetRankList{}
+	mi := &file_rank_rank_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_GetRankList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_GetRankList) ProtoMessage() {}
+
+func (x *C2S_GetRankList) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_GetRankList.ProtoReflect.Descriptor instead.
+func (*C2S_GetRankList) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *C2S_GetRankList) GetRankType() int32 {
+	if x != nil {
+		return x.RankType
+	}
+	return 0
+}
+
+func (x *C2S_GetRankList) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *C2S_GetRankList) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type S2C_GetRankList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"`
+	RankItems     []*RankItem            `protobuf:"bytes,2,rep,name=rankItems,proto3" json:"rankItems,omitempty"`
+	TotalCount    int32                  `protobuf:"varint,3,opt,name=totalCount,proto3" json:"totalCount,omitempty"`
+	CurrentPage   int32                  `protobuf:"varint,4,opt,name=currentPage,proto3" json:"currentPage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_GetRankList) Reset() {
+	*x = S2C_GetRankList{}
+	mi := &file_rank_rank_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_GetRankList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_GetRankList) ProtoMessage() {}
+
+func (x *S2C_GetRankList) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_GetRankList.ProtoReflect.Descriptor instead.
+func (*S2C_GetRankList) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *S2C_GetRankList) GetRankType() int32 {
+	if x != nil {
+		return x.RankType
+	}
+	return 0
+}
+
+func (x *S2C_GetRankList) GetRankItems() []*RankItem {
+	if x != nil {
+		return x.RankItems
+	}
+	return nil
+}
+
+func (x *S2C_GetRankList) GetTotalCount() int32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
+}
+
+func (x *S2C_GetRankList) GetCurrentPage() int32 {
+	if x != nil {
+		return x.CurrentPage
 	}
 	return 0
 }
@@ -348,6 +348,7 @@ func (x *S2C_GetMyRank) GetTotalCount() int32 {
 	return 0
 }
 
+// todo 正常不应该客户端请求更新
 // 更新排行榜数据
 type C2S_UpdateRankData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -457,7 +458,16 @@ var File_rank_rank_proto protoreflect.FileDescriptor
 
 const file_rank_rank_proto_rawDesc = "" +
 	"\n" +
-	"\x0frank/rank.proto\x1a\x10message_id.proto\"d\n" +
+	"\x0frank/rank.proto\x1a\x10message_id.proto\"\x9e\x01\n" +
+	"\bRankItem\x12\x1a\n" +
+	"\bplayerId\x18\x01 \x01(\x03R\bplayerId\x12\x1e\n" +
+	"\n" +
+	"playerName\x18\x02 \x01(\tR\n" +
+	"playerName\x12\x12\n" +
+	"\x04rank\x18\x03 \x01(\x05R\x04rank\x12\x14\n" +
+	"\x05score\x18\x04 \x01(\x03R\x05score\x12\x16\n" +
+	"\x06avatar\x18\x05 \x01(\tR\x06avatar\x12\x14\n" +
+	"\x05level\x18\x06 \x01(\x05R\x05level\"d\n" +
 	"\x0fC2S_GetRankList\x12\x1a\n" +
 	"\brankType\x18\x01 \x01(\x05R\brankType\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1a\n" +
@@ -468,16 +478,7 @@ const file_rank_rank_proto_rawDesc = "" +
 	"\n" +
 	"totalCount\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12 \n" +
-	"\vcurrentPage\x18\x04 \x01(\x05R\vcurrentPage:\x05\x80\xb5\x18\xd9\x04\"\x9e\x01\n" +
-	"\bRankItem\x12\x1a\n" +
-	"\bplayerId\x18\x01 \x01(\x03R\bplayerId\x12\x1e\n" +
-	"\n" +
-	"playerName\x18\x02 \x01(\tR\n" +
-	"playerName\x12\x12\n" +
-	"\x04rank\x18\x03 \x01(\x05R\x04rank\x12\x14\n" +
-	"\x05score\x18\x04 \x01(\x03R\x05score\x12\x16\n" +
-	"\x06avatar\x18\x05 \x01(\tR\x06avatar\x12\x14\n" +
-	"\x05level\x18\x06 \x01(\x05R\x05level\"2\n" +
+	"\vcurrentPage\x18\x04 \x01(\x05R\vcurrentPage:\x05\x80\xb5\x18\xd9\x04\"2\n" +
 	"\rC2S_GetMyRank\x12\x1a\n" +
 	"\brankType\x18\x01 \x01(\x05R\brankType:\x05\x80\xb5\x18\xf6\x03\"\x84\x01\n" +
 	"\rS2C_GetMyRank\x12\x1a\n" +
@@ -508,16 +509,16 @@ func file_rank_rank_proto_rawDescGZIP() []byte {
 
 var file_rank_rank_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_rank_rank_proto_goTypes = []any{
-	(*C2S_GetRankList)(nil),    // 0: C2S_GetRankList
-	(*S2C_GetRankList)(nil),    // 1: S2C_GetRankList
-	(*RankItem)(nil),           // 2: RankItem
+	(*RankItem)(nil),           // 0: RankItem
+	(*C2S_GetRankList)(nil),    // 1: C2S_GetRankList
+	(*S2C_GetRankList)(nil),    // 2: S2C_GetRankList
 	(*C2S_GetMyRank)(nil),      // 3: C2S_GetMyRank
 	(*S2C_GetMyRank)(nil),      // 4: S2C_GetMyRank
 	(*C2S_UpdateRankData)(nil), // 5: C2S_UpdateRankData
 	(*S2C_UpdateRankData)(nil), // 6: S2C_UpdateRankData
 }
 var file_rank_rank_proto_depIdxs = []int32{
-	2, // 0: S2C_GetRankList.rankItems:type_name -> RankItem
+	0, // 0: S2C_GetRankList.rankItems:type_name -> RankItem
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

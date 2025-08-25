@@ -28,6 +28,7 @@ func C2S_GetPlayerInfoHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_GetPlayerInfo消息: %v, agent: %v", msg, agent)
+	// todo 这里只能取得到在线玩家
 	playerId := agent.UserData().(models.User).PlayerId
 	player := managers.GetUserManager().GetPlayer(playerId)
 	playerInfo := player.ToPlayerInfo()

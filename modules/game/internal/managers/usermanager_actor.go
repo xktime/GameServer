@@ -3,6 +3,8 @@ package managers
 import (
 	"gameserver/common/models"
 	
+	
+	
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/common/msg/message"
@@ -59,6 +61,18 @@ func (*UserManagerActorProxy) UserOffline(user models.User) {
 	
 
 	actor_manager.Send[UserManager](GetUserManagerActorId(), "UserOffline", sendArgs)
+}
+
+
+// CheckName 调用UserManager的CheckName方法
+func (*UserManagerActorProxy) CheckName(playerName string) (message.Result) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, playerName)
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "CheckName", sendArgs)
+	result, _ := future.Result()
+	return result.(message.Result)
 }
 
 

@@ -1,7 +1,6 @@
 package player
 
 import (
-	"encoding/json"
 	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
@@ -101,14 +100,12 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*player.Playe
 	}
 }
 
-func (p *Player) Print() {
-	data, err := json.Marshal(p.PlayerInfo)
-	if err != nil {
-		log.Error("JSON 序列化错误: %v\n", err)
-		return
+func (p *Player) ModifyName(name string) message.Result {
+	if len(name) < 2 || len(name) > 20 {
+		return message.Result_Illegal
 	}
-	log.Release("Print Player: %s", string(data))
-	p.SendToClient(&message.S2C_Login{LoginResult: -1})
+	p.PlayerInfo.PlayerName = name
+	return message.Result_Success
 }
 
 func (p *Player) InitTeam() {

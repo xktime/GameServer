@@ -216,6 +216,7 @@ func (g *MethodGenerator) formatType(expr ast.Expr) string {
 		if ident, ok := t.X.(*ast.Ident); ok {
 			return ident.Name + "." + t.Sel.Name
 		}
+		// 处理更复杂的选择器表达式
 		return fmt.Sprintf("%v", expr)
 	case *ast.ArrayType:
 		return "[]" + g.formatType(t.Elt)
@@ -241,6 +242,8 @@ func (g *MethodGenerator) formatType(expr ast.Expr) string {
 			return "map[string]interface{}"
 		}
 		// 尝试处理更复杂的类型表达式
+		// 添加调试信息
+		fmt.Printf("未处理的类型表达式: %T - %v\n", expr, expr)
 		return fmt.Sprintf("%v", expr)
 	}
 }
@@ -278,6 +281,8 @@ func (g *MethodGenerator) generateCode(methods []MethodInfo) error {
 import (
 	{{if .HasModels}}"gameserver/common/models"{{end}}
 	{{if .HasRankModels}}"gameserver/modules/rank/internal/models"{{end}}
+	{{if .HasConfig}}config "gameserver/common/config/generated"{{end}}
+	{{if .HasRecharge}}"gameserver/modules/game/internal/models/recharge"{{end}}
 	actor_manager "gameserver/core/actor"
 	{{if .HasGate}}"gameserver/core/gate"{{end}}
 	{{if .HasMessage}}"gameserver/common/msg/message"{{end}}
@@ -377,6 +382,8 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 	hasPlayer := false
 	hasTeam := false
 	hasRankModels := false
+	hasConfig := false
+	hasRecharge := false
 	for _, method := range methods {
 		for _, param := range method.Params {
 			if strings.Contains(param.Type, "gate.Agent") {
@@ -387,6 +394,14 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 			}
 			if strings.Contains(param.Type, "message.") {
 				hasMessage = true
+			}
+			// 检查是否包含config包类型
+			if strings.Contains(param.Type, "config.") {
+				hasConfig = true
+			}
+			// 检查是否包含recharge包类型
+			if strings.Contains(param.Type, "recharge.") {
+				hasRecharge = true
 			}
 			// 检查是否包含rank模块的models类型
 			if strings.Contains(param.Type, "RankUpdateRequest") ||
@@ -407,6 +422,14 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 			}
 		}
 		for _, ret := range method.Returns {
+			// 检查返回值是否包含config包类型
+			if strings.Contains(ret, "config.") {
+				hasConfig = true
+			}
+			// 检查返回值是否包含recharge包类型
+			if strings.Contains(ret, "recharge.") {
+				hasRecharge = true
+			}
 			// 检查返回值是否包含rank模块的models类型
 			if strings.Contains(ret, "RankUpdateRequest") ||
 				strings.Contains(ret, "GetRankListRequest") ||
@@ -446,6 +469,8 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 		HasMessage    bool
 		HasPlayer     bool
 		HasTeam       bool
+		HasConfig     bool
+		HasRecharge   bool
 	}{
 		StructName:    g.StructName,
 		PackageName:   g.PackageName,
@@ -458,6 +483,8 @@ func {{.Name}}({{$.StructName}}Id int64{{if .Params}}, {{range $index, $param :=
 		HasMessage:    hasMessage,
 		HasPlayer:     hasPlayer,
 		HasTeam:       hasTeam,
+		HasConfig:     hasConfig,
+		HasRecharge:   hasRecharge,
 	}
 	return tmpl.Execute(file, data)
 }

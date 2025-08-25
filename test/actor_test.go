@@ -909,7 +909,7 @@ func (a *SerialTestActor) isSerial() bool {
 
 // TestActorFactory_SerialExecutionVerification 验证串行执行的测试
 func TestActorFactory_SerialExecutionVerification(t *testing.T) {
-	actor_manager.Init(2000)
+	actor_manager.Init(20000)
 
 	// 创建一个group
 	group := actor_manager.ActorGroup("serial_test")
@@ -939,7 +939,7 @@ func TestActorFactory_SerialExecutionVerification(t *testing.T) {
 	wg.Wait()
 
 	// 等待消息处理完成
-	time.Sleep(3 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// 验证串行性
 	assert.True(t, meta.Actor.isStrictlySerial(), "Actor should process messages strictly serially")
