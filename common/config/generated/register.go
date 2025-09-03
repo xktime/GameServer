@@ -13,6 +13,10 @@ func init() {
 	config.RegisterReloadFunc(func() error {
 		return ReloadItemConfig()
 	})
+	// 注册Match配置重载函数
+	config.RegisterReloadFunc(func() error {
+		return ReloadMatchConfig()
+	})
 	// 注册Monster配置重载函数
 	config.RegisterReloadFunc(func() error {
 		return ReloadMonsterConfig()

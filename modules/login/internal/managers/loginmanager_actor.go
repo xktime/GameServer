@@ -10,6 +10,7 @@ import (
 	"gameserver/common/msg/message"
 	
 	
+	
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type LoginManagerActorProxy struct {
 }
 
 var (
-	loginManageractorProxy *LoginManagerActorProxy
+	loginManagerActorProxy *LoginManagerActorProxy
 	loginManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetLoginManagerActorId() int64 {
 func GetLoginManager() *LoginManagerActorProxy {
 	loginManagerOnce.Do(func() {
 		loginManagerMeta, _ := actor_manager.Register[LoginManager](GetLoginManagerActorId(), actor_manager.ActorGroup("loginManager"))
-		loginManageractorProxy = &LoginManagerActorProxy{
+		loginManagerActorProxy = &LoginManagerActorProxy{
 			DirectCaller: loginManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(loginManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(loginManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return loginManageractorProxy
+	return loginManagerActorProxy
 }
 
 

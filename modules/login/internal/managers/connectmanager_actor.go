@@ -10,6 +10,7 @@ import (
 	
 	
 	
+	
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type ConnectManagerActorProxy struct {
 }
 
 var (
-	connectManageractorProxy *ConnectManagerActorProxy
+	connectManagerActorProxy *ConnectManagerActorProxy
 	connectManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetConnectManagerActorId() int64 {
 func GetConnectManager() *ConnectManagerActorProxy {
 	connectManagerOnce.Do(func() {
 		connectManagerMeta, _ := actor_manager.Register[ConnectManager](GetConnectManagerActorId(), actor_manager.ActorGroup("connectManager"))
-		connectManageractorProxy = &ConnectManagerActorProxy{
+		connectManagerActorProxy = &ConnectManagerActorProxy{
 			DirectCaller: connectManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(connectManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(connectManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return connectManageractorProxy
+	return connectManagerActorProxy
 }
 
 

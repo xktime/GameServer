@@ -19,7 +19,6 @@ func rpcNewAgent(args []interface{}) {
 
 func rpcCloseAgent(args []interface{}) {
 	a := args[0].(gate.Agent)
-	log.Release("game 断开链接")
 	user := a.UserData()
 	if user != nil {
 		log.Debug("断开链接 %v", user)

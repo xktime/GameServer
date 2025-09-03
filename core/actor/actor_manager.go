@@ -178,7 +178,6 @@ func Send[T any](uniqueID interface{}, methodName string, args []interface{}) {
 		log.Error("Send: Actor with ID %s not found", uniqueID)
 		return
 	}
-
 	meta.Send(methodName, args)
 }
 

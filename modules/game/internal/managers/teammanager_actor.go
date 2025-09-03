@@ -10,6 +10,7 @@ import (
 	
 	
 	"gameserver/modules/game/internal/managers/team"
+	"google.golang.org/protobuf/proto"
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type TeamManagerActorProxy struct {
 }
 
 var (
-	teamManageractorProxy *TeamManagerActorProxy
+	teamManagerActorProxy *TeamManagerActorProxy
 	teamManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetTeamManagerActorId() int64 {
 func GetTeamManager() *TeamManagerActorProxy {
 	teamManagerOnce.Do(func() {
 		teamManagerMeta, _ := actor_manager.Register[TeamManager](GetTeamManagerActorId(), actor_manager.ActorGroup("teamManager"))
-		teamManageractorProxy = &TeamManagerActorProxy{
+		teamManagerActorProxy = &TeamManagerActorProxy{
 			DirectCaller: teamManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(teamManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(teamManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return teamManageractorProxy
+	return teamManagerActorProxy
 }
 
 
@@ -71,6 +72,17 @@ func (*TeamManagerActorProxy) LeaveRoom(teamId int64) {
 	
 
 	actor_manager.Send[TeamManager](GetTeamManagerActorId(), "LeaveRoom", sendArgs)
+}
+
+
+// SendMessage 调用TeamManager的SendMessage方法
+func (*TeamManagerActorProxy) SendMessage(teamId int64, msg proto.Message) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, teamId)
+	sendArgs = append(sendArgs, msg)
+	
+
+	actor_manager.Send[TeamManager](GetTeamManagerActorId(), "SendMessage", sendArgs)
 }
 
 

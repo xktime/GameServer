@@ -1,7 +1,10 @@
 package models
 
 import (
+	"gameserver/common/msg/message"
 	"gameserver/core/log"
+	"gameserver/modules/game"
+	"gameserver/modules/match/internal/managers/room"
 	"time"
 )
 
@@ -109,6 +112,50 @@ func (q *MatchQueue) GetTeamRequests() []*TeamMatchRequest {
 	}
 
 	return requests
+}
+
+// processTeamMatchResults 处理队伍匹配结果（指定队列）
+func (q *MatchQueue) ProcessTeamMatchResults(matchedGroups [][]*TeamMatchRequest) {
+	for _, group := range matchedGroups {
+		if len(group) > 0 {
+			// 收集所有玩家ID
+			var allPlayerIds []int64
+			var teamIds []int64
+
+			for _, teamReq := range group {
+				allPlayerIds = append(allPlayerIds, teamReq.PlayerIds...)
+				teamIds = append(teamIds, teamReq.TeamId)
+			}
+
+			// 生成房间ID
+			r := room.CreateRoom(allPlayerIds, teamIds)
+
+			// 构建匹配结果消息
+			var playerInfos []*message.MatchPlayerInfo
+			for _, teamReq := range group {
+				for _, playerId := range teamReq.PlayerIds {
+					playerInfos = append(playerInfos, &message.MatchPlayerInfo{
+						PlayerId: playerId,
+						IsRobot:  teamReq.IsRobot,
+					})
+				}
+			}
+			for _, p := range allPlayerIds {
+				game.External.TeamManager.JoinRoom(p, r.RoomId)
+			}
+			// 发送匹配结果给所有玩家
+			room.SendRoomMessage(r.RoomId, &message.S2C_MatchResult{
+				RoomId:      r.RoomId,
+				PlayerInfos: playerInfos,
+			})
+
+			// 从匹配队列中移除已匹配的队伍
+			q.RemoveTeamRequests(teamIds)
+
+			log.Debug("成功匹配 %d 个队伍，包含 %d 个玩家，房间ID: %s",
+				len(group), len(allPlayerIds), r.RoomId)
+		}
+	}
 }
 
 // 为了向后兼容，保留原有的玩家匹配请求结构

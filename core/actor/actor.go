@@ -5,6 +5,7 @@ import (
 	"gameserver/core/log"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/asynkron/protoactor-go/actor"
 )
@@ -14,10 +15,38 @@ type ActorInit interface {
 	OnInitData()
 }
 
+type ActorTimer interface {
+	GetInterval() int
+	OnTimer()
+}
+
+func OnTimer() {
+	actorsSnapshot := make(map[string]interface{}, len(actorFactory.actors))
+	actorFactory.mu.RLock()
+	{
+		// 创建副本，同时保存key和meta
+		for key, meta := range actorFactory.actors {
+			actorsSnapshot[key] = meta
+		}
+	}
+	actorFactory.mu.RUnlock()
+	now := time.Now()
+	for _, meta := range actorsSnapshot {
+		a := getActorByReflect(meta)
+		if a == nil {
+			continue
+		}
+		if timer, ok := a.(ActorTimer); ok {
+			if now.Second()%timer.GetInterval() == 0 {
+				timer.OnTimer()
+			}
+		}
+	}
+}
+
 // ActorMeta 用于描述 actor 的元信息
 // 支持分组、标签
 type ActorMeta[T any] struct {
-	//	ActorMessageHandler
 	ID          string
 	PID         *actor.PID
 	Group       ActorGroup

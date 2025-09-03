@@ -26,13 +26,26 @@ func C2S_GetPlayerInfoHandler(args []interface{}) {
 		log.Error("C2S_GetPlayerInfoHandler: Agent类型错误")
 		return
 	}
+	var playerInfo *message.PlayerInfo
+	defer func() {
+		agent.WriteMsg(&message.S2C_GetPlayerInfo{
+			PlayerInfo: playerInfo,
+		})
+	}()
 
 	log.Debug("收到C2S_GetPlayerInfo消息: %v, agent: %v", msg, agent)
-	// todo 这里只能取得到在线玩家
 	playerId := agent.UserData().(models.User).PlayerId
-	player := managers.GetUserManager().GetPlayer(playerId)
-	playerInfo := player.ToPlayerInfo()
-	player.SendToClient(&message.S2C_GetPlayerInfo{
-		PlayerInfo: playerInfo,
-	})
+	userManager := managers.GetUserManager()
+	p := managers.GetUserManager().GetPlayer(playerId)
+
+	if p != nil {
+		playerInfo = p.PlayerInfo.ToMsgPlayerInfo()
+	} else {
+		// 如果玩家不在线
+		existingPlayer := userManager.GetOfflinePlayer(playerId)
+		if existingPlayer == nil {
+			return
+		}
+		playerInfo = existingPlayer.PlayerInfo.ToMsgPlayerInfo()
+	}
 }

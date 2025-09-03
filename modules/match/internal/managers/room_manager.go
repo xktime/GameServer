@@ -29,5 +29,4 @@ func (r *RoomManager) HandleRecordOperate(msg *message.C2S_RecordGameOperate, ag
 	room.SendRoomMessage(roomId, &message.S2C_RecordGameOperate{
 		OperateInfo: msg.OperateInfo,
 	})
-
 }

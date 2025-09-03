@@ -2,7 +2,10 @@ package managers
 
 import (
 	actor_manager "gameserver/core/actor"
+	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type TeamManager struct {
@@ -31,4 +34,19 @@ func (t *TeamManager) LeaveRoom(teamId int64) {
 		return
 	}
 	team.LeaveRoom()
+}
+
+func (t *TeamManager) SendMessage(teamId int64, msg proto.Message) {
+	team := actor_manager.Get[team.Team](teamId)
+	if team == nil {
+		return
+	}
+	for _, member := range team.TeamMembers {
+		p := GetUserManager().DirectCaller.GetPlayer(member)
+		if p == nil {
+			log.Debug("玩家 %d 不在线", member)
+			continue
+		}
+		p.SendToClient(msg)
+	}
 }

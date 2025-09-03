@@ -26,7 +26,7 @@ type ConnectManager struct {
 func (m *ConnectManager) OnInitData() {
 	log.Debug("初始化连接管理器")
 	m.clients = make(map[string]*ClientHeartbeat)
-	schedule.RegisterIntervalSchedul(10, GetConnectManager().CheckHeartbeats)
+	schedule.RegisterIntervalSchedule(10, GetConnectManager().CheckHeartbeats)
 }
 
 // UpdateHeartbeat 更新客户端心跳

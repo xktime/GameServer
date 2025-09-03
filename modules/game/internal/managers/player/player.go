@@ -26,15 +26,6 @@ func (p Player) GetPersistId() interface{} {
 	return p.PlayerId
 }
 
-func (p *Player) ToPlayerInfo() *message.PlayerInfo {
-	return &message.PlayerInfo{
-		ServerId:   int32(p.PlayerInfo.ServerId),
-		PlayerName: p.PlayerInfo.PlayerName,
-		Avatar:     p.PlayerInfo.Avatar,
-		Level:      int64(p.PlayerInfo.Level),
-	}
-}
-
 // 玩家模块
 func InitPlayer(agent gate.Agent, isNew bool) *Player {
 	user := agent.UserData().(models.User)
@@ -48,7 +39,7 @@ func InitPlayer(agent gate.Agent, isNew bool) *Player {
 	}
 
 	// 初始化玩家数据
-	playerInfo, err := initPlayerData(playerId, user, isNew)
+	p, err := initPlayerData(playerId, user, isNew)
 	if err != nil {
 		log.Error("初始化玩家数据失败: %v", err)
 		return nil
@@ -57,7 +48,8 @@ func InitPlayer(agent gate.Agent, isNew bool) *Player {
 	// 注册Actor
 	meta, err := PlayerActorRegister(playerId, func(a *Player) {
 		a.PlayerId = playerId
-		a.PlayerInfo = playerInfo
+		a.PlayerInfo = p.PlayerInfo
+		a.TeamId = p.TeamId
 		a.agent = agent
 	})
 	if err != nil {
@@ -69,7 +61,7 @@ func InitPlayer(agent gate.Agent, isNew bool) *Player {
 }
 
 // initPlayerData 初始化玩家数据
-func initPlayerData(playerId int64, user models.User, isNew bool) (*player.PlayerInfo, error) {
+func initPlayerData(playerId int64, user models.User, isNew bool) (*Player, error) {
 	if isNew {
 		// 新玩家：创建初始数据
 		playerInfo := &player.PlayerInfo{
@@ -85,7 +77,7 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*player.Playe
 			return nil, err
 		}
 
-		return playerInfo, nil
+		return player, nil
 	} else {
 		// 老玩家：从数据库加载数据
 		existingPlayer, err := mongodb.FindOneById[Player](playerId)
@@ -96,7 +88,7 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*player.Playe
 			return nil, fmt.Errorf("老玩家数据不存在: %v", playerId)
 		}
 
-		return existingPlayer.PlayerInfo, nil
+		return existingPlayer, nil
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	actor_manager "gameserver/core/actor"
 	"gameserver/core/log"
 	"gameserver/modules/login"
+	"math/rand"
 	"net"
 	"sync"
 	"testing"
@@ -65,7 +66,7 @@ func TestServer_TcpServer(t *testing.T) {
 
 func TestServer_WebSocket(t *testing.T) {
 	const total = 1000000
-	const batchSize = 500
+	const batchSize = 1000
 
 	for batchStart := 0; batchStart < total; batchStart += batchSize {
 		var wg sync.WaitGroup
@@ -89,8 +90,8 @@ func TestServer_WebSocket(t *testing.T) {
 				defer func(j int) {
 					if conn != nil {
 						// 发送关闭消息
-						// conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-						// conn.Close()
+						conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+						conn.Close()
 					}
 					fmt.Printf("WebSocket第 %d 次连接关闭\n", j)
 				}(k + 1)
@@ -128,7 +129,7 @@ func TestServer_WebSocket(t *testing.T) {
 				// 2. 登录成功后，自动请求匹配
 				fmt.Println("登录成功，开始请求匹配...")
 				startMatchMsg := &message.C2S_StartMatch{
-					Type: 1, // 匹配类型1
+					Type: int32(rand.Intn(3) + 1), // 随机匹配类型1、2、3
 				}
 
 				if err := sendMessage(conn, startMatchMsg); err != nil {
@@ -216,8 +217,7 @@ func TestServer_WebSocket(t *testing.T) {
 						// 尝试解析为匹配结果消息
 						matchResult := &message.S2C_MatchResult{}
 						if err := parseMessage(resp, matchResult); err == nil {
-							fmt.Printf("收到匹配结果: %+v\n", matchResult)
-							fmt.Printf("房间ID: %d, 玩家数量: %d\n", matchResult.RoomId, len(matchResult.PlayerInfos))
+							fmt.Printf("房间ID: %d, 房间类型: %d, 玩家数量: %d\n", matchResult.RoomId, startMatchMsg.Type, len(matchResult.PlayerInfos))
 
 							// 打印玩家信息
 							for i, player := range matchResult.PlayerInfos {

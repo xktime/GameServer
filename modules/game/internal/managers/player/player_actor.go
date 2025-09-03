@@ -11,14 +11,6 @@ import (
 )
 
 
-// ToPlayerInfo 调用Player的ToPlayerInfo方法
-func ToPlayerInfo(PlayerId int64) (*message.PlayerInfo) {
-	sendArgs := []interface{}{}
-	future := actor_manager.RequestFuture[Player](PlayerId, "ToPlayerInfo", sendArgs)
-	result, _ := future.Result()
-	return result.(*message.PlayerInfo)
-}
-
 // ModifyName 调用Player的ModifyName方法
 func ModifyName(PlayerId int64, name string) (message.Result) {
 	sendArgs := []interface{}{}

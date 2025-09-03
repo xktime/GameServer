@@ -11,12 +11,24 @@ import (
 )
 
 
-// CheckExpiration 调用Room的CheckExpiration方法
-func CheckExpiration(RoomId int64) (bool) {
+// GetInterval 调用Room的GetInterval方法
+func GetInterval(RoomId int64) (int) {
 	sendArgs := []interface{}{}
-	future := actor_manager.RequestFuture[Room](RoomId, "CheckExpiration", sendArgs)
+	future := actor_manager.RequestFuture[Room](RoomId, "GetInterval", sendArgs)
 	result, _ := future.Result()
-	return result.(bool)
+	return result.(int)
+}
+
+// OnTimer 调用Room的OnTimer方法
+func OnTimer(RoomId int64) {
+	sendArgs := []interface{}{}
+	actor_manager.Send[Room](RoomId, "OnTimer", sendArgs)
+}
+
+// CheckExpiration 调用Room的CheckExpiration方法
+func CheckExpiration(RoomId int64) {
+	sendArgs := []interface{}{}
+	actor_manager.Send[Room](RoomId, "CheckExpiration", sendArgs)
 }
 
 // Stop 调用Room的Stop方法

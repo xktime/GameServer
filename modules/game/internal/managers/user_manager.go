@@ -10,6 +10,7 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
+	"gameserver/modules/game/internal/managers/team"
 	"math/rand"
 	"sync"
 	"time"
@@ -79,11 +80,18 @@ func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32,
 
 	// 调用玩家登录
 	p := player.Login(agent, isNew)
+	if p == nil {
+		agent.WriteMsg(&message.S2C_Login{
+			LoginResult: -1,
+		})
+		agent.Close()
+		log.Debug("UserLogin failed: %v", p)
+		return
+	}
 	m.updatePlayerCache(p)
-
 	p.SendToClient(&message.S2C_Login{
 		LoginResult: 1,
-		PlayerInfo:  p.ToPlayerInfo(),
+		PlayerInfo:  p.PlayerInfo.ToMsgPlayerInfo(),
 	})
 }
 
@@ -111,6 +119,8 @@ func (m *UserManager) UserOffline(user models.User) {
 		// 清理玩家缓存
 		m.removePlayerCache(user.PlayerId)
 
+		// todo 玩家离线是否需要离开队伍？有可能需要重连房间
+		team.LeaveTeam(p.TeamId, p.PlayerId)
 	}
 
 	// 清理用户缓存
@@ -347,6 +357,19 @@ func (m *UserManager) GetPlayer(playerId int64) *player.Player {
 	}
 
 	return nil
+}
+
+func (m *UserManager) GetOfflinePlayer(playerId int64) *player.Player {
+	player, err := mongodb.FindOneById[player.Player](playerId)
+	if err != nil {
+		log.Error("获取非在线玩家Info异常: %v, err: %v", playerId, err)
+		return nil
+	}
+	if player == nil {
+		log.Error("获取非在线玩家Info玩家数据不存在: %v", playerId)
+		return nil
+	}
+	return player
 }
 
 // 获取玩家缓存统计信息

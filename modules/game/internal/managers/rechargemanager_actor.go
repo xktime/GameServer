@@ -10,6 +10,7 @@ import (
 	"gameserver/common/msg/message"
 	
 	
+	
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type RechargeManagerActorProxy struct {
 }
 
 var (
-	rechargeManageractorProxy *RechargeManagerActorProxy
+	rechargeManagerActorProxy *RechargeManagerActorProxy
 	rechargeManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetRechargeManagerActorId() int64 {
 func GetRechargeManager() *RechargeManagerActorProxy {
 	rechargeManagerOnce.Do(func() {
 		rechargeManagerMeta, _ := actor_manager.Register[RechargeManager](GetRechargeManagerActorId(), actor_manager.ActorGroup("rechargeManager"))
-		rechargeManageractorProxy = &RechargeManagerActorProxy{
+		rechargeManagerActorProxy = &RechargeManagerActorProxy{
 			DirectCaller: rechargeManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(rechargeManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(rechargeManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return rechargeManageractorProxy
+	return rechargeManagerActorProxy
 }
 
 

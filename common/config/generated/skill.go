@@ -14,12 +14,12 @@ type Skill struct {
 	Type string `json:"type"` // type
 	Level float64 `json:"level"` // level
 	Description string `json:"description"` // description
-	Mana float64 `json:"mana_cost"` // mana_cost
 	Cooldown float64 `json:"cooldown"` // cooldown
 	Range float64 `json:"range"` // range
-	Effects []string `json:"effects"` // effects
-	Damage float64 `json:"damage"` // damage
 	Unlock float64 `json:"unlock_level"` // unlock_level
+	Damage float64 `json:"damage"` // damage
+	Mana float64 `json:"mana_cost"` // mana_cost
+	Effects []string `json:"effects"` // effects
 }
 
 // SkillCache skills.json配置缓存

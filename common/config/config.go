@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"gameserver/core/log"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -49,6 +50,8 @@ func (cm *ConfigManager) LoadConfig(filename string) error {
 		if id, ok := item["id"]; ok {
 			idStr := fmt.Sprintf("%v", id)
 			configMap[idStr] = item
+		} else {
+			log.Error("配置文件 %s 缺少ID字段", filePath)
 		}
 	}
 

@@ -33,5 +33,9 @@ EXPOSE 3653
 # tcp端口
 EXPOSE 3563
 
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD nc -z localhost 3563 || exit 1
+
 # 启动服务
 CMD ["./GameServer"]

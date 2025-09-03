@@ -35,6 +35,8 @@ func Init() {
 }
 
 func Register() {
+	// 启动Actor定时任务
+	StartActorTimer(1)
 	// 启动Actor定时保存任务
 	StartActorSaver(60)
 }
@@ -45,12 +47,16 @@ func StartActorSaver(interval int) {
 		interval = 60 // 默认60秒
 	}
 
-	RegisterIntervalSchedul(interval, actor_manager.SaveAllActorData)
+	RegisterIntervalSchedule(interval, actor_manager.SaveAllActorData)
 	log.Release("Actor自动保存任务已启动，间隔%d秒", interval)
 }
 
+func StartActorTimer(interval int) {
+	RegisterIntervalSchedule(interval, actor_manager.OnTimer)
+}
+
 // interval: 保存间隔（秒）
-func RegisterIntervalSchedul(interval int, f func()) {
+func RegisterIntervalSchedule(interval int, f func()) {
 	// 创建Cron表达式，每隔interval秒执行一次
 	cronExprStr := fmt.Sprintf("*/%d * * * * *", interval)
 	cronExpr, err := timer.NewCronExpr(cronExprStr)

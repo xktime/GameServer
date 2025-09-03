@@ -10,6 +10,7 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/modules/game/internal/managers/player"
 	
+	
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type UserManagerActorProxy struct {
 }
 
 var (
-	userManageractorProxy *UserManagerActorProxy
+	userManagerActorProxy *UserManagerActorProxy
 	userManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetUserManagerActorId() int64 {
 func GetUserManager() *UserManagerActorProxy {
 	userManagerOnce.Do(func() {
 		userManagerMeta, _ := actor_manager.Register[UserManager](GetUserManagerActorId(), actor_manager.ActorGroup("userManager"))
-		userManageractorProxy = &UserManagerActorProxy{
+		userManagerActorProxy = &UserManagerActorProxy{
 			DirectCaller: userManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(userManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(userManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return userManageractorProxy
+	return userManagerActorProxy
 }
 
 
@@ -195,6 +196,18 @@ func (*UserManagerActorProxy) GetPlayer(playerId int64) (*player.Player) {
 	
 
 	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetPlayer", sendArgs)
+	result, _ := future.Result()
+	return result.(*player.Player)
+}
+
+
+// GetOfflinePlayer 调用UserManager的GetOfflinePlayer方法
+func (*UserManagerActorProxy) GetOfflinePlayer(playerId int64) (*player.Player) {
+	sendArgs := []interface{}{}
+	sendArgs = append(sendArgs, playerId)
+	
+
+	future := actor_manager.RequestFuture[UserManager](GetUserManagerActorId(), "GetOfflinePlayer", sendArgs)
 	result, _ := future.Result()
 	return result.(*player.Player)
 }

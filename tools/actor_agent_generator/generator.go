@@ -288,6 +288,7 @@ import (
 	{{if .HasMessage}}"gameserver/common/msg/message"{{end}}
 	{{if .HasPlayer}}"gameserver/modules/game/internal/managers/player"{{end}}
 	{{if .HasTeam}}"gameserver/modules/game/internal/managers/team"{{end}}
+	{{if .HasProto}}"google.golang.org/protobuf/proto"{{end}}
 	"sync"
 )
 
@@ -297,7 +298,7 @@ type {{.StructName}}ActorProxy struct {
 }
 
 var (
-	{{.StructName | lowerFirst}}actorProxy *{{.StructName}}ActorProxy
+	{{.StructName | lowerFirst}}ActorProxy *{{.StructName}}ActorProxy
 	{{.StructName | lowerFirst}}Once sync.Once
 )
 
@@ -308,14 +309,14 @@ func Get{{.StructName}}ActorId() int64 {
 func Get{{.StructName}}() *{{.StructName}}ActorProxy {
 	{{.StructName | lowerFirst}}Once.Do(func() {
 		{{.StructName | lowerFirst}}Meta, _ := actor_manager.Register[{{.StructName}}](Get{{.StructName}}ActorId(), actor_manager.ActorGroup("{{.StructName | lowerFirst}}"))
-		{{.StructName | lowerFirst}}actorProxy = &{{.StructName}}ActorProxy{
+		{{.StructName | lowerFirst}}ActorProxy = &{{.StructName}}ActorProxy{
 			DirectCaller: {{.StructName | lowerFirst}}Meta.Actor,
 		}
-		if actorInit, ok := interface{}({{.StructName | lowerFirst}}actorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}({{.StructName | lowerFirst}}ActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return {{.StructName | lowerFirst}}actorProxy
+	return {{.StructName | lowerFirst}}ActorProxy
 }
 
 {{range .Methods}}

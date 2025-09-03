@@ -10,6 +10,7 @@ import (
 	"gameserver/common/msg/message"
 	
 	
+	
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type MatchManagerActorProxy struct {
 }
 
 var (
-	matchManageractorProxy *MatchManagerActorProxy
+	matchManagerActorProxy *MatchManagerActorProxy
 	matchManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetMatchManagerActorId() int64 {
 func GetMatchManager() *MatchManagerActorProxy {
 	matchManagerOnce.Do(func() {
 		matchManagerMeta, _ := actor_manager.Register[MatchManager](GetMatchManagerActorId(), actor_manager.ActorGroup("matchManager"))
-		matchManageractorProxy = &MatchManagerActorProxy{
+		matchManagerActorProxy = &MatchManagerActorProxy{
 			DirectCaller: matchManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(matchManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(matchManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return matchManageractorProxy
+	return matchManagerActorProxy
 }
 
 
@@ -47,6 +48,26 @@ func (*MatchManagerActorProxy) OnInitData() {
 	
 
 	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "OnInitData", sendArgs)
+}
+
+
+// GetInterval 调用MatchManager的GetInterval方法
+func (*MatchManagerActorProxy) GetInterval() (int) {
+	sendArgs := []interface{}{}
+	
+
+	future := actor_manager.RequestFuture[MatchManager](GetMatchManagerActorId(), "GetInterval", sendArgs)
+	result, _ := future.Result()
+	return result.(int)
+}
+
+
+// OnTimer 调用MatchManager的OnTimer方法
+func (*MatchManagerActorProxy) OnTimer() {
+	sendArgs := []interface{}{}
+	
+
+	actor_manager.Send[MatchManager](GetMatchManagerActorId(), "OnTimer", sendArgs)
 }
 
 

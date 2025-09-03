@@ -16,6 +16,7 @@ const (
 	MaxRoomLifetime = 30 * time.Minute // 房间最大存活时间：30分钟
 )
 
+// todo 玩家退出房间
 // Room 房间结构
 type Room struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
@@ -29,7 +30,7 @@ type Room struct {
 // CreateRoom 创建房间
 func CreateRoom(playerIds []int64, teamIds []int64) *Room {
 	roomId := generateRoomId()
-	meta, _ := actor_manager.Register(roomId, actor_manager.User, func(room *Room) {
+	meta, _ := actor_manager.Register(roomId, actor_manager.Room, func(room *Room) {
 		room.RoomMembers = playerIds
 		room.RoomId = roomId
 		room.CreateTime = time.Now()
@@ -41,14 +42,20 @@ func CreateRoom(playerIds []int64, teamIds []int64) *Room {
 	return meta.Actor
 }
 
+func (r *Room) GetInterval() int {
+	return 10
+}
+
+func (r *Room) OnTimer() {
+	CheckExpiration(r.RoomId)
+}
+
 // CheckExpiration 检查房间是否过期，如果过期则自动停止
-func (r *Room) CheckExpiration() bool {
+func (r *Room) CheckExpiration() {
 	if r.IsExpired() {
 		log.Debug("房间 %d 已过期，开始自动停止", r.RoomId)
 		r.Stop()
-		return true
 	}
-	return false
 }
 
 // cleanup 清理房间资源
@@ -75,7 +82,7 @@ func (r *Room) Stop() {
 	r.cleanup()
 
 	// 停止Actor
-	actor_manager.StopGroup(actor_manager.User, r.RoomId)
+	actor_manager.StopGroup(actor_manager.Room, r.RoomId)
 }
 
 // IsExpired 检查房间是否已过期

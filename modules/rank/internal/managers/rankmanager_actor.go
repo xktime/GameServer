@@ -10,6 +10,7 @@ import (
 	"gameserver/common/msg/message"
 	
 	
+	
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type RankManagerActorProxy struct {
 }
 
 var (
-	rankManageractorProxy *RankManagerActorProxy
+	rankManagerActorProxy *RankManagerActorProxy
 	rankManagerOnce sync.Once
 )
 
@@ -30,14 +31,14 @@ func GetRankManagerActorId() int64 {
 func GetRankManager() *RankManagerActorProxy {
 	rankManagerOnce.Do(func() {
 		rankManagerMeta, _ := actor_manager.Register[RankManager](GetRankManagerActorId(), actor_manager.ActorGroup("rankManager"))
-		rankManageractorProxy = &RankManagerActorProxy{
+		rankManagerActorProxy = &RankManagerActorProxy{
 			DirectCaller: rankManagerMeta.Actor,
 		}
-		if actorInit, ok := interface{}(rankManageractorProxy).(actor_manager.ActorInit); ok {
+		if actorInit, ok := interface{}(rankManagerActorProxy).(actor_manager.ActorInit); ok {
 			actorInit.OnInitData()
 		}
 	})
-	return rankManageractorProxy
+	return rankManagerActorProxy
 }
 
 
