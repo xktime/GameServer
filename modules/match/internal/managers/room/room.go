@@ -92,7 +92,7 @@ func (r *Room) IsExpired() bool {
 
 func (r *Room) SendRoomMessage(msg proto.Message) {
 	for _, member := range r.RoomMembers {
-		p := game.External.UserManager.DirectCaller.GetPlayer(member)
+		p := game.External.UserManager.GetPlayer(member)
 		if p == nil {
 			log.Debug("玩家 %d 不在线", member)
 			continue
@@ -106,7 +106,7 @@ func (r *Room) SendRoomMessageExceptSelf(msg proto.Message, selfId int64) {
 		if member == selfId {
 			continue
 		}
-		p := game.External.UserManager.DirectCaller.GetPlayer(member)
+		p := game.External.UserManager.GetPlayer(member)
 		if p == nil {
 			log.Debug("玩家 %d 不在线", member)
 			continue

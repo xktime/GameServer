@@ -30,7 +30,7 @@ func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 		agent.Close()
 		return
 	}
-	game.External.UserManager.DirectCaller.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
+	game.External.UserManager.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

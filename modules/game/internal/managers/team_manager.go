@@ -13,7 +13,7 @@ type TeamManager struct {
 }
 
 func (t *TeamManager) GetTeamByPlayerId(playerId int64) *team.Team {
-	player := GetUserManager().DirectCaller.GetPlayer(playerId)
+	player := GetUserManager().GetPlayer(playerId)
 	if player == nil {
 		return nil
 	}
@@ -21,7 +21,7 @@ func (t *TeamManager) GetTeamByPlayerId(playerId int64) *team.Team {
 }
 
 func (t *TeamManager) JoinRoom(playerId int64, roomId int64) {
-	player := GetUserManager().DirectCaller.GetPlayer(playerId)
+	player := GetUserManager().GetPlayer(playerId)
 	if player == nil {
 		return
 	}
@@ -42,7 +42,7 @@ func (t *TeamManager) SendMessage(teamId int64, msg proto.Message) {
 		return
 	}
 	for _, member := range team.TeamMembers {
-		p := GetUserManager().DirectCaller.GetPlayer(member)
+		p := GetUserManager().GetPlayer(member)
 		if p == nil {
 			log.Debug("玩家 %d 不在线", member)
 			continue

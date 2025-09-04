@@ -60,7 +60,7 @@ func (m *MatchManager) Matching() {
 // HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
 	user := agent.UserData().(models.User)
-	player := game.External.UserManager.DirectCaller.GetPlayer(user.PlayerId)
+	player := game.External.UserManager.GetPlayer(user.PlayerId)
 	if player == nil {
 		log.Error("玩家不存在: %d", user.PlayerId)
 		return
@@ -129,7 +129,7 @@ func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch
 // HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) {
 	user := agent.UserData().(models.User)
-	player := game.External.UserManager.DirectCaller.GetPlayer(user.PlayerId)
+	player := game.External.UserManager.GetPlayer(user.PlayerId)
 	if player == nil {
 		log.Error("玩家不存在: %d", user.PlayerId)
 		return
@@ -265,7 +265,7 @@ func sortTeamsBySize(teams []*match_models.TeamMatchRequest) []*match_models.Tea
 func RandomRobotPlayerIds(matchType int32, needRobots int, exceptPlayerId []int64) []*match_models.TeamMatchRequest {
 	var robotTeams []*match_models.TeamMatchRequest
 	for i := 0; i < needRobots; i++ {
-		player := game.External.UserManager.DirectCaller.GetRandomPlayer(exceptPlayerId)
+		player := game.External.UserManager.GetRandomPlayer(exceptPlayerId)
 		if player == nil {
 			log.Error("没有找到机器人玩家，当前填充数量: %d", i)
 			continue

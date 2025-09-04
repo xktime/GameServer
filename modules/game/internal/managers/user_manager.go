@@ -13,6 +13,7 @@ import (
 	"gameserver/modules/game/internal/managers/player"
 	"gameserver/modules/game/internal/managers/team"
 	"math/rand"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -28,28 +29,33 @@ type UserManager struct {
 	nameBloomFilter *utils.BloomFilter       // 布隆过滤器，用于快速判断名称是否可能重复
 }
 
-// NewUserManager 创建UserManager实例
+var (
+	userManager     *UserManager
+	userManagerOnce sync.Once
+)
 
-// Start 启动UserManager
-func (m *UserManager) Start() {
-	m.TaskHandler.Start()
+func GetUserManager() *UserManager {
+	userManagerOnce.Do(func() {
+		userManager = &UserManager{}
+		userManager.Init()
+	})
+	return userManager
 }
 
-// Stop 停止UserManager
-func (m *UserManager) Stop() {
-	m.TaskHandler.Stop()
-}
-
-// 初始化布隆过滤器
-func (m *UserManager) OnInitData() {
+func (m *UserManager) Init() {
 	m.memCache = make(map[string]*models.User)
 	m.playerCache = make(map[int64]*player.Player)
 	m.nameCache = make(map[string]bool)
 	m.TaskHandler = actor.InitTaskHandler(actor.User, "1", m)
 	// 假设最多支持100万个名称，误判率控制在1%以内
 	m.nameBloomFilter = utils.NewBloomFilter(1000000, 7)
-	m.Start()
+	m.TaskHandler.Start()
 	m.PreloadNames()
+}
+
+// Stop 停止UserManager
+func (m *UserManager) Stop() {
+	m.TaskHandler.Stop()
 }
 
 // UserLogin 用户登录 - 异步执行

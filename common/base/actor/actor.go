@@ -18,7 +18,7 @@ type Response struct {
 	Error  error         // 添加错误字段
 }
 
-// BaseActor 提供通用的Actor实现
+// TaskHandler 提供通用的Actor实现
 type TaskHandler struct {
 	taskQueue chan *TaskQueue
 	ctx       context.Context

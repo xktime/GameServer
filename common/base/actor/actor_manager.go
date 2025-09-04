@@ -4,24 +4,25 @@ import (
 	"sync"
 )
 
+// todo 启动时自动调用Init
 type IActor interface {
-	Start()
+	Init()
 	Stop()
 }
 
-// ActorManager 统一管理所有Actor实例
+// ActorManager 统一管理所有TaskHandler实例
 type ActorManager struct {
 	taskHandlers map[string]*TaskHandler
 	mu           sync.RWMutex
 }
 
 var (
-	actorFactory *ActorManager
+	globalActorManager *ActorManager
 )
 
-// GetActorManager 获取全局Actor管理器实例（单例模式）
+// Init 初始化全局Actor管理器实例
 func Init(milliseconds int) {
-	actorFactory = NewActorManager()
+	globalActorManager = NewActorManager()
 }
 
 func NewActorManager() *ActorManager {
@@ -30,26 +31,26 @@ func NewActorManager() *ActorManager {
 	}
 }
 
-// RegisterActor 注册Actor到管理器
-func Register(name string, actor *TaskHandler) bool {
-	actorFactory.mu.Lock()
-	defer actorFactory.mu.Unlock()
+// Register 注册TaskHandler到管理器
+func Register(name string, taskHandler *TaskHandler) bool {
+	globalActorManager.mu.Lock()
+	defer globalActorManager.mu.Unlock()
 
-	if _, exists := actorFactory.taskHandlers[name]; exists {
-		return false // Actor已存在
+	if _, exists := globalActorManager.taskHandlers[name]; exists {
+		return false // TaskHandler已存在
 	}
 
-	actorFactory.taskHandlers[name] = actor
+	globalActorManager.taskHandlers[name] = taskHandler
 	return true
 }
 
-// UnregisterActor 从管理器注销Actor
+// Unregister 从管理器注销TaskHandler
 func Unregister(name string) bool {
-	actorFactory.mu.Lock()
-	defer actorFactory.mu.Unlock()
+	globalActorManager.mu.Lock()
+	defer globalActorManager.mu.Unlock()
 
-	if _, exists := actorFactory.taskHandlers[name]; exists {
-		delete(actorFactory.taskHandlers, name)
+	if _, exists := globalActorManager.taskHandlers[name]; exists {
+		delete(globalActorManager.taskHandlers, name)
 		return true
 	}
 
@@ -73,49 +74,49 @@ func GetActor[T IActor](actorGroup ActorGroup, uniqueID interface{}) (T, bool) {
 	return zero, false
 }
 
-// GetActor 获取指定名称的Actor
+// GetHandler 获取指定名称的TaskHandler
 func GetHandler(name string) (*TaskHandler, bool) {
-	actorFactory.mu.RLock()
-	defer actorFactory.mu.RUnlock()
+	globalActorManager.mu.RLock()
+	defer globalActorManager.mu.RUnlock()
 
-	actor, exists := actorFactory.taskHandlers[name]
-	return actor, exists
+	taskHandler, exists := globalActorManager.taskHandlers[name]
+	return taskHandler, exists
 }
 
-// GetAllActors 获取所有注册的Actor
-func GetAllActors() map[string]*TaskHandler {
-	actorFactory.mu.RLock()
-	defer actorFactory.mu.RUnlock()
+// GetAllTaskHandlers 获取所有注册的TaskHandler
+func GetAllTaskHandlers() map[string]*TaskHandler {
+	globalActorManager.mu.RLock()
+	defer globalActorManager.mu.RUnlock()
 
 	result := make(map[string]*TaskHandler)
-	for name, actor := range actorFactory.taskHandlers {
-		result[name] = actor
+	for name, taskHandler := range globalActorManager.taskHandlers {
+		result[name] = taskHandler
 	}
 	return result
 }
 
-// StopAll 停止所有注册的Actor
+// StopAll 停止所有注册的TaskHandler
 func StopAll() {
-	actorFactory.mu.RLock()
-	defer actorFactory.mu.RUnlock()
+	globalActorManager.mu.RLock()
+	defer globalActorManager.mu.RUnlock()
 
-	for name, actor := range actorFactory.taskHandlers {
-		go func(name string, actor *TaskHandler) {
-			actor.Stop()
-		}(name, actor)
+	for name, taskHandler := range globalActorManager.taskHandlers {
+		go func(name string, taskHandler *TaskHandler) {
+			taskHandler.Stop()
+		}(name, taskHandler)
 	}
 }
 
-// GetActorCount 获取注册的Actor数量
-func (am *ActorManager) GetActorCount() int {
+// GetTaskHandlerCount 获取注册的TaskHandler数量
+func (am *ActorManager) GetTaskHandlerCount() int {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
 	return len(am.taskHandlers)
 }
 
-// IsActorRegistered 检查Actor是否已注册
-func (am *ActorManager) IsActorRegistered(name string) bool {
+// IsTaskHandlerRegistered 检查TaskHandler是否已注册
+func (am *ActorManager) IsTaskHandlerRegistered(name string) bool {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 

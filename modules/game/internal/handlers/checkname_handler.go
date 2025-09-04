@@ -28,7 +28,7 @@ func C2S_CheckNameHandler(args []interface{}) {
 
 	log.Debug("收到C2S_CheckName消息: %v, agent: %v", msg, agent)
 	playerName := msg.Name
-	result := managers.GetUserManager().DirectCaller.CheckName(playerName)
+	result := managers.GetUserManager().CheckName(playerName)
 	agent.WriteMsg(&message.S2C_CheckName{
 		Result: result,
 	})
