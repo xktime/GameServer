@@ -18,6 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+// todo csp改造
 type UserManager struct {
 	actor_manager.ActorMessageHandler `bson:"-"`
 	memCache                          sync.Map           // 用户缓存
@@ -121,6 +122,8 @@ func (m *UserManager) UserOffline(user models.User) {
 
 		// todo 玩家离线是否需要离开队伍？有可能需要重连房间
 		team.LeaveTeam(p.TeamId, p.PlayerId)
+
+		p.CloseAgent()
 	}
 
 	// 清理用户缓存

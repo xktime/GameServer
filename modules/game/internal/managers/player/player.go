@@ -119,3 +119,7 @@ func (p *Player) InitTeam() {
 func (p *Player) SendToClient(message proto.Message) {
 	p.agent.WriteMsg(message)
 }
+
+func (p *Player) CloseAgent() {
+	p.agent.Close()
+}
