@@ -11,7 +11,7 @@ import (
 type LoginExternal struct {
 	Module       *internal.Module
 	ChanRPC      *chanrpc.Server
-	LoginManager *managers.LoginManagerActorProxy
+	LoginManager *managers.LoginManager
 }
 
 var External = &LoginExternal{}

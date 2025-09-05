@@ -2,19 +2,55 @@ package managers
 
 import (
 	"context"
+	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game"
 	"gameserver/modules/login/internal/processor"
+	"sync"
 )
 
+// LoginManager 使用TaskHandler实现，确保登录操作按顺序执行
 type LoginManager struct {
-	actor_manager.ActorMessageHandler `bson:"-"`
+	*actor.TaskHandler
 }
 
+var (
+	loginManager     *LoginManager
+	loginManagerOnce sync.Once
+)
+
+func GetLoginManager() *LoginManager {
+	loginManagerOnce.Do(func() {
+		loginManager = &LoginManager{}
+		loginManager.Init()
+	})
+	return loginManager
+}
+
+// Init 初始化LoginManager
+func (m *LoginManager) Init() {
+	// 初始化TaskHandler
+	m.TaskHandler = actor.InitTaskHandler(actor.Login, "1", m)
+	m.TaskHandler.Start()
+}
+
+// Stop 停止LoginManager
+func (m *LoginManager) Stop() {
+	m.TaskHandler.Stop()
+}
+
+// HandleLogin 处理登录请求 - 异步执行
 func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
+	m.SendTask(func() *actor.Response {
+		m.doHandleLogin(msg, agent)
+		return nil
+	})
+}
+
+// doHandleLogin 处理登录请求的同步实现
+func (m *LoginManager) doHandleLogin(msg *message.C2S_Login, agent gate.Agent) {
 	loginProcessor := getLoginProcessor(msg.LoginType)
 	if loginProcessor == nil {
 		log.Error("loginProcessor is nil")

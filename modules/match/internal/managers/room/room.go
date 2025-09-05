@@ -62,7 +62,7 @@ func (r *Room) CheckExpiration() {
 func (r *Room) cleanup() {
 	// 通知所有玩家离开房间
 	for _, teamId := range r.TeamIds {
-		game.External.TeamManager.DirectCaller.LeaveRoom(teamId)
+		game.External.TeamManager.LeaveRoom(teamId)
 	}
 
 	// 清空房间成员列表

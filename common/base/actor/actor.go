@@ -38,7 +38,7 @@ func InitTaskHandler(ActorGroup ActorGroup, uniqueID interface{}, a IActor) *Tas
 	} else {
 		ctx, cancel := context.WithCancel(context.Background())
 		h := &TaskHandler{
-			taskQueue: make(chan *TaskQueue, 1000),
+			taskQueue: make(chan *TaskQueue, 10000),
 			ctx:       ctx,
 			cancel:    cancel,
 			id:        id,

@@ -8,6 +8,10 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Debug binaries in test directory
+test/__debug_bin.exe*
+test/*.exe
+
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
@@ -44,3 +48,5 @@ coverage.txt
 dist/
 
 .idea
+
+**.exe

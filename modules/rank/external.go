@@ -9,7 +9,7 @@ import (
 )
 
 type RankExternal struct {
-	RankManager *managers.RankManagerActorProxy
+	RankManager *managers.RankManager
 	Module      *internal.Module
 	ChanRPC     *chanrpc.Server
 }

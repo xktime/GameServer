@@ -127,7 +127,7 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 	}
 
 	// 获取队伍信息
-	team := game.External.TeamManager.DirectCaller.GetTeamByPlayerId(user.PlayerId)
+	team := game.External.TeamManager.GetTeamByPlayerId(user.PlayerId)
 	if team == nil {
 		log.Error("无法获取玩家 %d 的队伍信息", user.PlayerId)
 		player.SendToClient(&message.S2C_StartMatch{

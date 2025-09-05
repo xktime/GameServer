@@ -10,7 +10,7 @@ import (
 
 type GameExternal struct {
 	UserManager *managers.UserManager
-	TeamManager *managers.TeamManagerActorProxy
+	TeamManager *managers.TeamManager
 	Module      *internal.Module
 	ChanRPC     *chanrpc.Server
 }
