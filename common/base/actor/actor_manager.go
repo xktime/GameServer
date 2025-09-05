@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"reflect"
 	"sync"
 )
 
@@ -58,21 +59,42 @@ func Unregister(name string) bool {
 	return false
 }
 
-func GetActor[T IActor](actorGroup ActorGroup, uniqueID interface{}) (T, bool) {
+func GetActor[T any](actorGroup ActorGroup, uniqueID interface{}) (*T, bool) {
 	id := getUniqueId(actorGroup, uniqueID)
 	handler, exists := GetHandler(id)
 	if !exists {
-		var zero T
-		return zero, false
+		return nil, false
 	}
 
 	// 安全的类型断言
-	if actor, ok := handler.actors[getActorNameByType[T]()].(T); ok {
-		return actor, true
+	name := getActorNameByType[T]()
+	if actor, ok := handler.actors[name]; ok {
+		// 使用反射进行类型转换
+		actorValue := reflect.ValueOf(actor)
+		var zero T
+		zeroType := reflect.TypeOf(zero)
+
+		// 如果存储的是指针类型
+		if actorValue.Kind() == reflect.Ptr {
+			// 检查指针指向的类型是否匹配
+			if actorValue.Type().Elem() == zeroType {
+				// 使用反射进行安全的类型转换
+				result := reflect.New(zeroType)
+				result.Elem().Set(actorValue.Elem())
+				return result.Interface().(*T), true
+			}
+		}
+
+		// 如果存储的是值类型
+		if actorValue.Type() == zeroType {
+			// 创建指针并返回
+			ptr := reflect.New(zeroType)
+			ptr.Elem().Set(actorValue)
+			return ptr.Interface().(*T), true
+		}
 	}
 
-	var zero T
-	return zero, false
+	return nil, false
 }
 
 // GetHandler 获取指定名称的TaskHandler
@@ -99,13 +121,22 @@ func GetAllTaskHandlers() map[string]*TaskHandler {
 // StopAll 停止所有注册的TaskHandler
 func StopAll() {
 	globalActorManager.mu.RLock()
-	defer globalActorManager.mu.RUnlock()
-
-	for name, taskHandler := range globalActorManager.taskHandlers {
-		go func(name string, taskHandler *TaskHandler) {
-			taskHandler.Stop()
-		}(name, taskHandler)
+	// 先获取所有TaskHandler的副本
+	taskHandlers := make([]*TaskHandler, 0, len(globalActorManager.taskHandlers))
+	for _, taskHandler := range globalActorManager.taskHandlers {
+		taskHandlers = append(taskHandlers, taskHandler)
 	}
+	globalActorManager.mu.RUnlock()
+
+	// 停止所有TaskHandler（不持有锁）
+	for _, taskHandler := range taskHandlers {
+		taskHandler.Stop()
+	}
+
+	// 最后清空所有TaskHandler
+	globalActorManager.mu.Lock()
+	globalActorManager.taskHandlers = make(map[string]*TaskHandler)
+	globalActorManager.mu.Unlock()
 }
 
 // GetTaskHandlerCount 获取注册的TaskHandler数量

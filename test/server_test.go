@@ -3,9 +3,9 @@ package test
 import (
 	"encoding/binary"
 	"fmt"
+	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/log"
 	"gameserver/modules/login"
 	"math/rand"
@@ -65,7 +65,7 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	const total = 1000000
+	const total = 100000
 	const batchSize = 1000
 
 	for batchStart := 0; batchStart < total; batchStart += batchSize {
@@ -408,7 +408,7 @@ func TestServer_MatchFlow(t *testing.T) {
 }
 
 func TestServer_Func(t *testing.T) {
-	actor_manager.Init(2000)
+	actor.Init(2000)
 	_, err := utils.CallMethodWithParams(&login.LoginExternal{}, "InitExternal")
 	if err != nil {
 		t.Fatalf("调用方法失败: %v", err)

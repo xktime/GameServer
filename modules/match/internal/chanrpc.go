@@ -17,9 +17,10 @@ func rpcCloseAgent(args []interface{}) {
 	if user != nil {
 		playerId := user.(models.User).PlayerId
 		team := game.External.TeamManager.GetTeamByPlayerId(playerId)
-		if team != nil {
-			room.PlayerOffline(team.RoomId, playerId)
+		if team == nil {
+			return
 		}
+		room.PlayerOffline(team.RoomId, playerId)
 	}
 	_ = a
 }

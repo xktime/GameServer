@@ -2,10 +2,10 @@ package player
 
 import (
 	"fmt"
+	"gameserver/common/base/actor"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
@@ -15,11 +15,11 @@ import (
 )
 
 type Player struct {
-	actor_manager.ActorMessageHandler `bson:"-"`
-	PlayerId                          int64              `bson:"_id"`
-	PlayerInfo                        *player.PlayerInfo `bson:"player_info"`
-	TeamId                            int64              `bson:"team_id"`
-	agent                             gate.Agent         `bson:"-"`
+	*actor.TaskHandler `bson:"-"`
+	PlayerId           int64              `bson:"_id"`
+	PlayerInfo         *player.PlayerInfo `bson:"player_info"`
+	TeamId             int64              `bson:"team_id"`
+	agent              gate.Agent         `bson:"-"`
 }
 
 func (p Player) GetPersistId() interface{} {
@@ -32,10 +32,12 @@ func InitPlayer(agent gate.Agent, isNew bool) *Player {
 	playerId := user.PlayerId
 
 	// 检查是否已存在Actor
-	if existingMeta := actor_manager.GetMeta[Player](playerId); existingMeta != nil {
+	if existingPlayer, ok := actor.GetActor[Player](actor.Player, playerId); ok {
 		log.Error("玩家Actor已存在，可能是离线未正常清理: %v", playerId)
-		// 可以选择清理旧的Actor或直接返回
-		actor_manager.StopGroup(actor_manager.Player, playerId)
+		// 异步停止旧的Actor，避免在TaskHandler上下文中调用Stop造成死锁
+		go func() {
+			existingPlayer.Stop()
+		}()
 	}
 
 	// 初始化玩家数据
@@ -45,19 +47,18 @@ func InitPlayer(agent gate.Agent, isNew bool) *Player {
 		return nil
 	}
 
-	// 注册Actor
-	meta, err := PlayerActorRegister(playerId, func(a *Player) {
-		a.PlayerId = playerId
-		a.PlayerInfo = p.PlayerInfo
-		a.TeamId = p.TeamId
-		a.agent = agent
-	})
-	if err != nil {
-		log.Error("注册玩家Actor失败: %v", err)
-		return nil
-	}
+	p.TaskHandler = actor.InitTaskHandler(actor.Player, playerId, p)
+	p.agent = agent
+	p.Init()
+	return p
+}
 
-	return meta.Actor
+func (p *Player) Init() {
+	p.TaskHandler.Start()
+}
+
+func (p *Player) Stop() {
+	p.TaskHandler.Stop()
 }
 
 // initPlayerData 初始化玩家数据
@@ -93,6 +94,25 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*Player, erro
 }
 
 func (p *Player) ModifyName(name string) message.Result {
+	response := p.SendTask(func() *actor.Response {
+		result := p.doModifyName(name)
+		return &actor.Response{
+			Result: []interface{}{result},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if result, ok := response.Result[0].(message.Result); ok {
+			return result
+		}
+	}
+	return message.Result_Fail
+}
+
+func (p *Player) doModifyName(name string) message.Result {
+	if len(name) < 2 || len(name) > 20 {
+		return message.Result_Illegal
+	}
 	if len(name) < 2 || len(name) > 20 {
 		return message.Result_Illegal
 	}
@@ -101,19 +121,25 @@ func (p *Player) ModifyName(name string) message.Result {
 }
 
 func (p *Player) InitTeam() {
+	// 直接调用，避免在TaskHandler上下文中再次调用SendTask造成死锁
+	p.doInitTeam()
+}
+
+func (p *Player) doInitTeam() {
 	if p.TeamId != 0 {
-		teamActor := actor_manager.Get[team.Team](p.TeamId)
-		if teamActor != nil {
-			// todo 重连房间
-			if teamActor.RoomId > 0 {
-				return
-			}
+		teamActor, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
+		if !ok {
+			return
+		}
+		// todo 重连房间
+		if teamActor.RoomId > 0 {
+			return
 		}
 	}
 	teamInfo := team.InitTeam(p.agent)
 	p.TeamId = teamInfo.TeamId
-	team.JoinTeam(p.TeamId, p.PlayerId)
-
+	// 直接调用，避免在TaskHandler上下文中再次调用SendTask造成死锁
+	// teamInfo.doJoinTeam(p.PlayerId)
 }
 
 func (p *Player) SendToClient(message proto.Message) {

@@ -7,11 +7,9 @@ import (
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
-	"gameserver/modules/game/internal/managers/team"
 	"math/rand"
 	"sync"
 	"time"
@@ -172,14 +170,21 @@ func (m *UserManager) doUserOffline(user models.User) {
 	// 先从缓存获取玩家信息
 	p := m.getPlayerFromCache(user.PlayerId)
 	if p != nil {
-		// 停止玩家Actor
-		actor_manager.StopGroup(actor_manager.Player, p.PlayerId)
+		// 异步停止玩家Actor，避免在TaskHandler上下文中调用Stop造成死锁
+		go func() {
+			p.Stop()
+		}()
 
 		// 清理玩家缓存
 		m.removePlayerCache(user.PlayerId)
 
 		// todo 玩家离线是否需要离开队伍？有可能需要重连房间
-		team.LeaveTeam(p.TeamId, p.PlayerId)
+		// teamInfo, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
+		// if !ok {
+		// 	return
+		// }
+		// // 直接调用，避免在TaskHandler上下文中再次调用SendTask造成死锁
+		// teamInfo.doLeaveTeam(p.PlayerId)
 
 		p.CloseAgent()
 	}
@@ -474,7 +479,7 @@ func (m *UserManager) GetPlayer(playerId int64) *player.Player {
 	}
 
 	// 缓存中没有，从Actor获取
-	if actorPlayer := actor_manager.Get[player.Player](playerId); actorPlayer != nil {
+	if actorPlayer, ok := actor.GetActor[player.Player](actor.Player, playerId); ok {
 		// 获取到后更新缓存
 		m.updatePlayerCache(actorPlayer)
 		return actorPlayer

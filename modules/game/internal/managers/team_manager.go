@@ -2,7 +2,6 @@ package managers
 
 import (
 	"gameserver/common/base/actor"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
 	"sync"
@@ -63,7 +62,11 @@ func (t *TeamManager) doGetTeamByPlayerId(playerId int64) *team.Team {
 	if player == nil {
 		return nil
 	}
-	return actor_manager.Get[team.Team](player.TeamId)
+	teamInfo, ok := actor.GetActor[team.Team](actor.Team, player.TeamId)
+	if !ok {
+		return nil
+	}
+	return teamInfo
 }
 
 // JoinRoom 加入房间 - 异步执行
@@ -80,7 +83,11 @@ func (t *TeamManager) doJoinRoom(playerId int64, roomId int64) {
 	if player == nil {
 		return
 	}
-	team.JoinRoom(player.TeamId, roomId)
+	teamInfo, ok := actor.GetActor[team.Team](actor.Team, player.TeamId)
+	if !ok {
+		return
+	}
+	teamInfo.JoinRoom(roomId)
 }
 
 // LeaveRoom 离开房间 - 异步执行
@@ -93,8 +100,8 @@ func (t *TeamManager) LeaveRoom(teamId int64) {
 
 // doLeaveRoom 离开房间的同步实现
 func (t *TeamManager) doLeaveRoom(teamId int64) {
-	team := actor_manager.Get[team.Team](teamId)
-	if team == nil {
+	team, ok := actor.GetActor[team.Team](actor.Team, teamId)
+	if !ok {
 		return
 	}
 	team.LeaveRoom()
@@ -110,8 +117,8 @@ func (t *TeamManager) SendMessage(teamId int64, msg proto.Message) {
 
 // doSendMessage 发送消息给队伍的同步实现
 func (t *TeamManager) doSendMessage(teamId int64, msg proto.Message) {
-	team := actor_manager.Get[team.Team](teamId)
-	if team == nil {
+	team, ok := actor.GetActor[team.Team](actor.Team, teamId)
+	if !ok {
 		return
 	}
 	for _, member := range team.TeamMembers {

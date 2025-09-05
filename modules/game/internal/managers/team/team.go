@@ -1,21 +1,21 @@
 package team
 
 import (
+	"gameserver/common/base/actor"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/utils"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"slices"
 )
 
 type Team struct {
-	actor_manager.ActorMessageHandler `bson:"-"`
-	TeamId                            int64   `bson:"_id"`
-	LeaderId                          int64   `bson:"leader_id"`
-	TeamMembers                       []int64 `bson:"team_members"`
-	RoomId                            int64   `bson:"room_id"`
+	*actor.TaskHandler `bson:"-"`
+	TeamId             int64   `bson:"_id"`
+	LeaderId           int64   `bson:"leader_id"`
+	TeamMembers        []int64 `bson:"team_members"`
+	RoomId             int64   `bson:"room_id"`
 }
 
 func (t Team) GetPersistId() interface{} {
@@ -30,20 +30,32 @@ func InitTeam(agent gate.Agent) *Team {
 	teamId := utils.FlakeId()
 	log.Debug("开始初始化队伍，玩家ID: %d, 队伍ID: %d", playerId, teamId)
 
-	// 注册Actor
-	meta, err := actor_manager.Register(teamId, actor_manager.Team, func(a *Team) {
-		a.TeamId = teamId
-		a.LeaderId = playerId
-	})
-
-	if err != nil {
-		log.Error("注册队伍Actor失败: %v", err)
-		return nil
+	team := &Team{
+		TeamId:   teamId,
+		LeaderId: playerId,
 	}
-	return meta.Actor
+	// 注册Actor
+	team.TaskHandler = actor.InitTaskHandler(actor.Team, teamId, team)
+	team.Init()
+	return team
+}
+
+func (t *Team) Init() {
+	t.TaskHandler.Start()
+}
+
+func (t *Team) Stop() {
+	t.TaskHandler.Stop()
 }
 
 func (t *Team) JoinTeam(playerId int64) {
+	t.SendTask(func() *actor.Response {
+		t.doJoinTeam(playerId)
+		return nil
+	})
+}
+
+func (t *Team) doJoinTeam(playerId int64) {
 	if t.LeaderId == 0 {
 		t.LeaderId = playerId
 	}
@@ -53,16 +65,37 @@ func (t *Team) JoinTeam(playerId int64) {
 }
 
 func (t *Team) JoinRoom(roomId int64) {
+	t.SendTask(func() *actor.Response {
+		t.doJoinRoom(roomId)
+		return nil
+	})
+}
+
+func (t *Team) doJoinRoom(roomId int64) {
 	t.RoomId = roomId
 	log.Debug("队伍 %d 成功加入房间 %d", t.TeamId, roomId)
 }
 
 func (t *Team) LeaveRoom() {
+	t.SendTask(func() *actor.Response {
+		t.doLeaveRoom()
+		return nil
+	})
+}
+
+func (t *Team) doLeaveRoom() {
 	t.RoomId = 0
 	log.Debug("队伍 %d 成功离开房间", t.TeamId)
 }
 
 func (t *Team) LeaveTeam(playerId int64) {
+	t.SendTask(func() *actor.Response {
+		t.doLeaveTeam(playerId)
+		return nil
+	})
+}
+
+func (t *Team) doLeaveTeam(playerId int64) {
 	log.Debug("玩家 %d 请求离开队伍 %d", playerId, t.TeamId)
 
 	// 检查是否是队长离开
@@ -83,7 +116,7 @@ func (t *Team) LeaveTeam(playerId int64) {
 	// 检查队伍是否为空
 	if len(t.TeamMembers) == 0 {
 		log.Debug("队伍 %d 已无成员，停止队伍Actor", t.TeamId)
-		actor_manager.StopGroup(actor_manager.Team, t.TeamId)
+		t.Stop()
 		mongodb.DeleteByID[Team](t.TeamId)
 		return
 	}
@@ -99,10 +132,40 @@ func (t *Team) LeaveTeam(playerId int64) {
 
 // IsMember 检查玩家是否是队伍成员
 func (t *Team) IsMember(playerId int64) bool {
+	response := t.SendTask(func() *actor.Response {
+		return &actor.Response{
+			Result: []interface{}{t.doIsMember(playerId)},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if result, ok := response.Result[0].(bool); ok {
+			return result
+		}
+	}
+	return false
+}
+
+func (t *Team) doIsMember(playerId int64) bool {
 	return slices.Contains(t.TeamMembers, playerId)
 }
 
 // IsLeader 检查玩家是否是队长
 func (t *Team) IsLeader(playerId int64) bool {
+	response := t.SendTask(func() *actor.Response {
+		return &actor.Response{
+			Result: []interface{}{t.doIsLeader(playerId)},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if result, ok := response.Result[0].(bool); ok {
+			return result
+		}
+	}
+	return false
+}
+
+func (t *Team) doIsLeader(playerId int64) bool {
 	return t.LeaderId == playerId
 }

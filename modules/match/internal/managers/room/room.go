@@ -1,9 +1,9 @@
 package room
 
 import (
+	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/log"
 	"gameserver/modules/game"
 	"time"
@@ -19,27 +19,37 @@ const (
 // todo 玩家退出房间
 // Room 房间结构
 type Room struct {
-	actor_manager.ActorMessageHandler `bson:"-"`
-	RoomId                            int64         `bson:"_id"`
-	RoomMembers                       []int64       `bson:"room_members"`
-	TeamIds                           []int64       `bson:"team_ids"`
-	CreateTime                        time.Time     `bson:"create_time"`  // 房间创建时间
-	MaxLifetime                       time.Duration `bson:"max_lifetime"` // 房间最大存活时间
+	*actor.TaskHandler `bson:"-"`
+	RoomId             int64         `bson:"_id"`
+	RoomMembers        []int64       `bson:"room_members"`
+	TeamIds            []int64       `bson:"team_ids"`
+	CreateTime         time.Time     `bson:"create_time"`  // 房间创建时间
+	MaxLifetime        time.Duration `bson:"max_lifetime"` // 房间最大存活时间
 }
 
 // CreateRoom 创建房间
 func CreateRoom(playerIds []int64, teamIds []int64) *Room {
 	roomId := generateRoomId()
-	meta, _ := actor_manager.Register(roomId, actor_manager.Room, func(room *Room) {
-		room.RoomMembers = playerIds
-		room.RoomId = roomId
-		room.CreateTime = time.Now()
-		room.MaxLifetime = MaxRoomLifetime
-		room.TeamIds = teamIds
-		log.Debug("房间 %d 创建成功，包含 %d 个玩家，最大存活时间: %v",
-			roomId, len(playerIds), room.MaxLifetime)
-	})
-	return meta.Actor
+	room := &Room{
+		RoomMembers: playerIds,
+		RoomId:      roomId,
+		CreateTime:  time.Now(),
+		MaxLifetime: MaxRoomLifetime,
+		TeamIds:     teamIds,
+	}
+	room.TaskHandler = actor.InitTaskHandler(actor.Room, roomId, room)
+	room.Init()
+	log.Debug("房间 %d 创建成功，包含 %d 个玩家，最大存活时间: %v",
+		roomId, len(playerIds), room.MaxLifetime)
+	return room
+}
+
+func (r *Room) Init() {
+	r.TaskHandler.Start()
+}
+
+func (r *Room) Stop() {
+	r.TaskHandler.Stop()
 }
 
 func (r *Room) GetInterval() int {
@@ -47,14 +57,14 @@ func (r *Room) GetInterval() int {
 }
 
 func (r *Room) OnTimer() {
-	CheckExpiration(r.RoomId)
+	r.CheckExpiration()
 }
 
 // CheckExpiration 检查房间是否过期，如果过期则自动停止
 func (r *Room) CheckExpiration() {
 	if r.IsExpired() {
 		log.Debug("房间 %d 已过期，开始自动停止", r.RoomId)
-		r.Stop()
+		r.StopRoom()
 	}
 }
 
@@ -71,8 +81,8 @@ func (r *Room) cleanup() {
 	log.Debug("房间 %d 资源清理完成", r.RoomId)
 }
 
-// Stop 手动停止房间
-func (r *Room) Stop() {
+// StopRoom 手动停止房间
+func (r *Room) StopRoom() {
 	log.Debug("房间 %d 手动停止", r.RoomId)
 
 	// 通知所有玩家房间关闭（使用日志记录，避免消息类型依赖）
@@ -81,8 +91,8 @@ func (r *Room) Stop() {
 	// 清理资源
 	r.cleanup()
 
-	// 停止Actor
-	actor_manager.StopGroup(actor_manager.Room, r.RoomId)
+	// 停止TaskHandler
+	r.TaskHandler.Stop()
 }
 
 // IsExpired 检查房间是否已过期

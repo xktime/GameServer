@@ -2,14 +2,13 @@ package main
 
 import (
 	"fmt"
-	actor_manager1 "gameserver/common/base/actor"
+	"gameserver/common/base/actor"
 	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/event_dispatcher"
 	"gameserver/common/schedule"
 	"gameserver/common/utils"
 	"gameserver/conf"
-	actor_manager "gameserver/core/actor"
 	lconf "gameserver/core/conf"
 	"gameserver/core/module"
 	"gameserver/core/server"
@@ -80,8 +79,7 @@ func Init() {
 	mongodb.CreateIndexes(conf.MongoIndexConf)
 
 	// 初始化actor
-	actor_manager.Init(conf.Server.Actor.TimeoutMillisecond)
-	actor_manager1.Init(conf.Server.Actor.TimeoutMillisecond)
+	actor.Init(conf.Server.Actor.TimeoutMillisecond)
 
 	// 初始化定时任务
 	schedule.Init()

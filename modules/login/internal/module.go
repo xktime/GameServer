@@ -2,7 +2,7 @@ package internal
 
 import (
 	"gameserver/common"
-	actor_manager "gameserver/core/actor"
+	"gameserver/common/base/actor"
 	"gameserver/core/module"
 )
 
@@ -21,5 +21,5 @@ func (m *Module) OnInit() {
 }
 
 func (m *Module) OnDestroy() {
-	actor_manager.StopAll()
+	actor.StopAll()
 }

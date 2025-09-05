@@ -18,6 +18,15 @@ type Response struct {
 	Error  error         // 添加错误字段
 }
 
+type ActorState int
+
+const (
+	None ActorState = iota
+	ActorStateRunning
+	ActorStateStopping
+	ActorStateStopped
+)
+
 // TaskHandler 提供通用的Actor实现
 type TaskHandler struct {
 	taskQueue chan *TaskQueue
@@ -26,8 +35,10 @@ type TaskHandler struct {
 	wg        sync.WaitGroup
 	id        string
 	actors    map[string]IActor
+	state     ActorState
 }
 
+// todo SetHandler
 // InitTaskHandler
 func InitTaskHandler(ActorGroup ActorGroup, uniqueID interface{}, a IActor) *TaskHandler {
 	id := getUniqueId(ActorGroup, uniqueID)
@@ -50,12 +61,12 @@ func InitTaskHandler(ActorGroup ActorGroup, uniqueID interface{}, a IActor) *Tas
 }
 
 // 获取泛型T对应的collection名称
-func getActorNameByType[T IActor]() string {
+func getActorNameByType[T any]() string {
 	var t T
 	return getActorName(t)
 }
 
-func getActorName(a IActor) string {
+func getActorName(a any) string {
 	typ := reflect.TypeOf(a)
 	if typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
@@ -113,6 +124,10 @@ func (b *TaskHandler) RemoveActor(actorName string) {
 }
 
 func (b *TaskHandler) Start() {
+	if b.state == ActorStateRunning {
+		return
+	}
+	b.state = ActorStateRunning
 	// 注册到Actor管理器
 	if b.id != "" {
 		Register(b.id, b)

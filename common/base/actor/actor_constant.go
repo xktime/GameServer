@@ -11,4 +11,7 @@ const (
 	Room     ActorGroup = "Room"
 	Rank     ActorGroup = "Rank"
 	Match    ActorGroup = "match"
+	// 测试用的ActorGroup
+	Test1 ActorGroup = "test1"
+	Test2 ActorGroup = "test2"
 )
