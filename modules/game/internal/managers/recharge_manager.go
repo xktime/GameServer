@@ -2,10 +2,10 @@ package managers
 
 import (
 	"fmt"
+	"gameserver/common/base/actor"
 	config "gameserver/common/config/generated"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
@@ -17,8 +17,34 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+// RechargeManager 使用TaskHandler实现，确保充值操作按顺序执行
 type RechargeManager struct {
-	actor_manager.ActorMessageHandler `bson:"-"`
+	*actor.TaskHandler
+}
+
+var (
+	rechargeManager     *RechargeManager
+	rechargeManagerOnce sync.Once
+)
+
+func GetRechargeManager() *RechargeManager {
+	rechargeManagerOnce.Do(func() {
+		rechargeManager = &RechargeManager{}
+		rechargeManager.Init()
+	})
+	return rechargeManager
+}
+
+// Init 初始化RechargeManager
+func (m *RechargeManager) Init() {
+	// 初始化TaskHandler
+	m.TaskHandler = actor.InitTaskHandler(actor.Recharge, "1", m)
+	m.TaskHandler.Start()
+}
+
+// Stop 停止RechargeManager
+func (m *RechargeManager) Stop() {
+	m.TaskHandler.Stop()
 }
 
 // 全局缓存
@@ -36,8 +62,28 @@ type RechargeRequest struct {
 	ConfigId  string                  `json:"config_id"`  // 充值配置ID（可选）
 }
 
-// 处理充值请求
+// HandleRechargeRequest 处理充值请求 - 异步执行
 func (m *RechargeManager) HandleRechargeRequest(req *RechargeRequest, agent gate.Agent) *message.S2C_RechargeResponse {
+	response := m.SendTask(func() *actor.Response {
+		result := m.doHandleRechargeRequest(req, agent)
+		return &actor.Response{
+			Result: []interface{}{result},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if result, ok := response.Result[0].(*message.S2C_RechargeResponse); ok {
+			return result
+		}
+	}
+	return &message.S2C_RechargeResponse{
+		Success: false,
+		Message: "处理充值请求失败",
+	}
+}
+
+// doHandleRechargeRequest 处理充值请求的同步实现
+func (m *RechargeManager) doHandleRechargeRequest(req *RechargeRequest, agent gate.Agent) *message.S2C_RechargeResponse {
 	// 1. 验证玩家信息
 	playerInstance := GetUserManager().GetPlayer(req.PlayerId)
 	if playerInstance == nil {
@@ -91,8 +137,25 @@ func (m *RechargeManager) HandleRechargeRequest(req *RechargeRequest, agent gate
 	}
 }
 
-// 处理支付回调
+// HandlePaymentCallback 处理支付回调 - 异步执行
 func (m *RechargeManager) HandlePaymentCallback(orderId, transactionId string, success bool) error {
+	response := m.SendTask(func() *actor.Response {
+		err := m.doHandlePaymentCallback(orderId, transactionId, success)
+		return &actor.Response{
+			Result: []interface{}{err},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if err, ok := response.Result[0].(error); ok {
+			return err
+		}
+	}
+	return nil
+}
+
+// doHandlePaymentCallback 处理支付回调的同步实现
+func (m *RechargeManager) doHandlePaymentCallback(orderId, transactionId string, success bool) error {
 	// 1. 查找充值记录
 	rechargeRecord := m.getRechargeRecord(orderId)
 	if rechargeRecord == nil {
@@ -268,8 +331,25 @@ func (m *RechargeManager) updateRechargeRecordCache(record *recharge.RechargeRec
 	rechargeRecordCache.Store(record.Id, record)
 }
 
-// 获取充值配置列表
+// GetRechargeConfigs 获取充值配置列表 - 异步执行
 func (m *RechargeManager) GetRechargeConfigs() []*config.Recharge {
+	response := m.SendTask(func() *actor.Response {
+		configs := m.doGetRechargeConfigs()
+		return &actor.Response{
+			Result: []interface{}{configs},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if configs, ok := response.Result[0].([]*config.Recharge); ok {
+			return configs
+		}
+	}
+	return nil
+}
+
+// doGetRechargeConfigs 获取充值配置列表的同步实现
+func (m *RechargeManager) doGetRechargeConfigs() []*config.Recharge {
 	// 从配置系统获取所有配置
 	configs, exists := config.GetAllRechargeConfigs()
 	if !exists {
@@ -299,8 +379,25 @@ func (m *RechargeManager) GetRechargeConfigs() []*config.Recharge {
 	return configList
 }
 
-// 获取玩家充值记录
+// GetPlayerRechargeRecords 获取玩家充值记录 - 异步执行
 func (m *RechargeManager) GetPlayerRechargeRecords(playerId int64, limit int) []recharge.RechargeRecord {
+	response := m.SendTask(func() *actor.Response {
+		records := m.doGetPlayerRechargeRecords(playerId, limit)
+		return &actor.Response{
+			Result: []interface{}{records},
+		}
+	})
+
+	if response != nil && len(response.Result) > 0 {
+		if records, ok := response.Result[0].([]recharge.RechargeRecord); ok {
+			return records
+		}
+	}
+	return nil
+}
+
+// doGetPlayerRechargeRecords 获取玩家充值记录的同步实现
+func (m *RechargeManager) doGetPlayerRechargeRecords(playerId int64, limit int) []recharge.RechargeRecord {
 	query := bson.M{"player_id": playerId}
 	recordsResult, err := mongodb.FindAll[recharge.RechargeRecord](query)
 	if err != nil {

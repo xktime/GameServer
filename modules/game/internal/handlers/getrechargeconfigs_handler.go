@@ -24,7 +24,7 @@ func C2S_GetRechargeConfigsHandler(args []interface{}) {
 
 	// 调用充值管理器获取配置
 	rechargeManager := managers.GetRechargeManager()
-	configs := rechargeManager.DirectCaller.GetRechargeConfigs()
+	configs := rechargeManager.GetRechargeConfigs()
 
 	// 转换为protobuf消息
 	var pbConfigs []*message.RechargeConfig
