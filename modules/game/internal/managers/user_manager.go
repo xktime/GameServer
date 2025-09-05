@@ -21,7 +21,6 @@ import (
 
 // UserManager 使用BaseActor实现，确保缓存操作按顺序执行
 type UserManager struct {
-	actor_manager.ActorMessageHandler
 	*actor.TaskHandler
 	memCache        map[string]*models.User  // 用户缓存
 	playerCache     map[int64]*player.Player // 玩家缓存

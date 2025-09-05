@@ -11,7 +11,7 @@ import (
 type MatchExternal struct {
 	Module       *internal.Module
 	ChanRPC      *chanrpc.Server
-	MatchManager *managers.MatchManagerActorProxy
+	MatchManager *managers.MatchManager
 }
 
 var External = &MatchExternal{}

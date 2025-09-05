@@ -1,33 +1,55 @@
 package managers
 
 import (
+	"gameserver/common/base/actor"
 	gconf "gameserver/common/config/generated"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
-	actor_manager "gameserver/core/actor"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game"
 	match_models "gameserver/modules/match/internal/models"
 	"strconv"
+	"sync"
 	"time"
 )
 
 // MatchManager 匹配管理器
 type MatchManager struct {
-	actor_manager.ActorMessageHandler `bson:"-"`
-	matchQueues                       map[int32]*match_models.MatchQueue `bson:"-"`
+	*actor.TaskHandler
+	matchQueues map[int32]*match_models.MatchQueue `bson:"-"`
 }
 
-// OnInit 初始化排行榜管理器
-func (m *MatchManager) OnInitData() {
-	log.Debug("初始化匹配管理器")
+var (
+	matchManager     *MatchManager
+	matchManagerOnce sync.Once
+)
+
+func GetMatchManager() *MatchManager {
+	matchManagerOnce.Do(func() {
+		matchManager = &MatchManager{}
+		matchManager.Init()
+	})
+	return matchManager
+}
+
+// Init 初始化匹配管理器
+func (m *MatchManager) Init() {
 	m.matchQueues = make(map[int32]*match_models.MatchQueue)
 	configs, _ := gconf.GetAllMatchConfigs()
 	for _, config := range configs {
 		m.matchQueues[int32(config.Id)] = match_models.NewMatchQueue()
 	}
+
+	// 初始化TaskHandler
+	m.TaskHandler = actor.InitTaskHandler(actor.Match, "1", m)
+	m.TaskHandler.Start()
+}
+
+// Stop 停止MatchManager
+func (m *MatchManager) Stop() {
+	m.TaskHandler.Stop()
 }
 
 func (m *MatchManager) GetInterval() int {
@@ -35,8 +57,11 @@ func (m *MatchManager) GetInterval() int {
 }
 
 func (m *MatchManager) OnTimer() {
-	GetMatchManager().Matching()
-	GetMatchManager().ProcessTimeoutRequests()
+	m.SendTask(func() *actor.Response {
+		m.Matching()
+		m.ProcessTimeoutRequests()
+		return nil
+	})
 }
 
 // Matching 定时任务，每10秒执行一次匹配
@@ -59,6 +84,14 @@ func (m *MatchManager) Matching() {
 
 // HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
+	m.SendTask(func() *actor.Response {
+		m.doHandleMatch(agent, msg)
+		return nil
+	})
+}
+
+// doHandleMatch 处理队伍开始匹配请求的同步实现
+func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
 	user := agent.UserData().(models.User)
 	player := game.External.UserManager.GetPlayer(user.PlayerId)
 	if player == nil {
@@ -128,6 +161,14 @@ func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch
 
 // HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) {
+	m.SendTask(func() *actor.Response {
+		m.doHandleCancelMatch(agent)
+		return nil
+	})
+}
+
+// doHandleCancelMatch 处理取消匹配请求的同步实现
+func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) {
 	user := agent.UserData().(models.User)
 	player := game.External.UserManager.GetPlayer(user.PlayerId)
 	if player == nil {

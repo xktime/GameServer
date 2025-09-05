@@ -2,7 +2,7 @@ package schedule
 
 import (
 	"fmt"
-	actor_manager "gameserver/core/actor"
+	actor_manager "gameserver/common/base/actor"
 	"gameserver/core/log"
 	"gameserver/core/timer"
 )

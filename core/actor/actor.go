@@ -5,7 +5,6 @@ import (
 	"gameserver/core/log"
 	"reflect"
 	"sync"
-	"time"
 
 	"github.com/asynkron/protoactor-go/actor"
 )
@@ -13,35 +12,6 @@ import (
 // 因为manager的init是用模板生成的，需要加载的数据和初始化需要实现OnInitData
 type ActorInit interface {
 	OnInitData()
-}
-
-type ActorTimer interface {
-	GetInterval() int
-	OnTimer()
-}
-
-func OnTimer() {
-	actorsSnapshot := make(map[string]interface{}, len(actorFactory.actors))
-	actorFactory.mu.RLock()
-	{
-		// 创建副本，同时保存key和meta
-		for key, meta := range actorFactory.actors {
-			actorsSnapshot[key] = meta
-		}
-	}
-	actorFactory.mu.RUnlock()
-	now := time.Now()
-	for _, meta := range actorsSnapshot {
-		a := getActorByReflect(meta)
-		if a == nil {
-			continue
-		}
-		if timer, ok := a.(ActorTimer); ok {
-			if now.Second()%timer.GetInterval() == 0 {
-				timer.OnTimer()
-			}
-		}
-	}
 }
 
 // ActorMeta 用于描述 actor 的元信息

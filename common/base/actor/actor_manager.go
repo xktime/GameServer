@@ -5,6 +5,7 @@ import (
 )
 
 // todo 启动时自动调用Init
+// todo ontimer实现
 type IActor interface {
 	Init()
 	Stop()
