@@ -10,6 +10,7 @@ import (
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
+	"gameserver/modules/game/internal/managers/team"
 	"math/rand"
 	"sync"
 	"time"
@@ -57,7 +58,7 @@ func (m *UserManager) Stop() {
 
 // UserLogin 用户登录 - 异步执行
 func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.doUserLogin(agent, openId, serverId, loginType)
 		return nil
 	})
@@ -159,7 +160,7 @@ func (m *UserManager) doModifyName(playerId int64, name string) message.Result {
 
 // UserOffline 玩家下线处理 - 异步执行
 func (m *UserManager) UserOffline(user models.User) {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.doUserOffline(user)
 		return nil
 	})
@@ -179,12 +180,12 @@ func (m *UserManager) doUserOffline(user models.User) {
 		m.removePlayerCache(user.PlayerId)
 
 		// todo 玩家离线是否需要离开队伍？有可能需要重连房间
-		// teamInfo, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
-		// if !ok {
-		// 	return
-		// }
-		// // 直接调用，避免在TaskHandler上下文中再次调用SendTask造成死锁
-		// teamInfo.doLeaveTeam(p.PlayerId)
+		teamInfo, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
+		if !ok {
+			return
+		}
+
+		teamInfo.LeaveTeam(p.PlayerId)
 
 		p.CloseAgent()
 	}
@@ -352,7 +353,7 @@ func (m *UserManager) GetUsers() []models.User {
 
 // ClearAllCache 强制清理所有缓存（用于维护或重启）
 func (m *UserManager) ClearAllCache() {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.doClearAllCache()
 		return &actor.Response{}
 	})

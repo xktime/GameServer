@@ -58,7 +58,7 @@ func (r RankManager) GetPersistId() interface{} {
 
 // HandleUpdateRankData 更新排行榜数据 - 异步执行
 func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) {
-	r.SendTask(func() *actor.Response {
+	r.SendTaskAsync(func() *actor.Response {
 		r.doHandleUpdateRankData(playerId, req)
 		return nil
 	})
@@ -126,7 +126,7 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 
 // HandleGetRankList 获取排行榜列表 - 异步执行
 func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRankList) {
-	r.SendTask(func() *actor.Response {
+	r.SendTaskAsync(func() *actor.Response {
 		r.doHandleGetRankList(playerId, req)
 		return nil
 	})
@@ -191,7 +191,7 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 
 // HandleGetMyRank 获取我的排名 - 异步执行
 func (r *RankManager) HandleGetMyRank(playerId int64, rankType int32) {
-	r.SendTask(func() *actor.Response {
+	r.SendTaskAsync(func() *actor.Response {
 		r.doHandleGetMyRank(playerId, rankType)
 		return nil
 	})

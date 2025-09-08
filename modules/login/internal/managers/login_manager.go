@@ -43,7 +43,7 @@ func (m *LoginManager) Stop() {
 
 // HandleLogin 处理登录请求 - 异步执行
 func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.doHandleLogin(msg, agent)
 		return nil
 	})

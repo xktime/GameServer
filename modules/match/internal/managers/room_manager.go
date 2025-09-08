@@ -43,7 +43,7 @@ func (m *RoomManager) Stop() {
 
 // HandleRecordOperate 处理游戏操作记录 - 异步执行
 func (r *RoomManager) HandleRecordOperate(msg *message.C2S_RecordGameOperate, agent gate.Agent) {
-	r.SendTask(func() *actor.Response {
+	r.SendTaskAsync(func() *actor.Response {
 		r.doHandleRecordOperate(msg, agent)
 		return nil
 	})

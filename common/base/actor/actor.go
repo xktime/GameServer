@@ -113,6 +113,31 @@ func (b *TaskHandler) SendTask(f func() *Response) *Response {
 	}
 }
 
+// SendTaskAsync 异步发送任务，不等待结果，不阻塞执行
+func (b *TaskHandler) SendTaskAsync(f func() *Response) bool {
+	// 检查是否已停止
+	if b.ctx.Err() != nil {
+		return false
+	}
+
+	task := &TaskQueue{
+		f:        f,
+		response: make(chan *Response, 1),
+	}
+
+	select {
+	case b.taskQueue <- task:
+		// 任务发送成功，不等待结果
+		return true
+	case <-b.ctx.Done():
+		// Actor已停止
+		return false
+	default:
+		// 任务队列已满，不阻塞
+		return false
+	}
+}
+
 // 添加从 TaskHandler 中移除特定 Actor 的方法
 func (b *TaskHandler) RemoveActor(actorName string) {
 	delete(b.actors, actorName)

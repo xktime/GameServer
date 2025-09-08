@@ -61,7 +61,7 @@ func (m *ConnectManager) Stop() {
 
 // UpdateHeartbeat 更新客户端心跳 - 异步执行
 func (cm *ConnectManager) UpdateHeartbeat(agent gate.Agent) {
-	cm.SendTask(func() *actor.Response {
+	cm.SendTaskAsync(func() *actor.Response {
 		cm.doUpdateHeartbeat(agent)
 		return nil
 	})
@@ -81,7 +81,7 @@ func (cm *ConnectManager) doUpdateHeartbeat(agent gate.Agent) {
 
 // RemoveClient 移除客户端 - 异步执行
 func (cm *ConnectManager) RemoveClient(clientID string) {
-	cm.SendTask(func() *actor.Response {
+	cm.SendTaskAsync(func() *actor.Response {
 		cm.doRemoveClient(clientID)
 		return nil
 	})
@@ -97,7 +97,7 @@ func (cm *ConnectManager) doRemoveClient(clientID string) {
 
 // CheckHeartbeats 检查所有客户端的心跳 - 异步执行
 func (cm *ConnectManager) CheckHeartbeats() {
-	cm.SendTask(func() *actor.Response {
+	cm.SendTaskAsync(func() *actor.Response {
 		cm.doCheckHeartbeats()
 		return nil
 	})

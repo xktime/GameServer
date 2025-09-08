@@ -71,7 +71,7 @@ func (t *TeamManager) doGetTeamByPlayerId(playerId int64) *team.Team {
 
 // JoinRoom 加入房间 - 异步执行
 func (t *TeamManager) JoinRoom(playerId int64, roomId int64) {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doJoinRoom(playerId, roomId)
 		return nil
 	})
@@ -92,7 +92,7 @@ func (t *TeamManager) doJoinRoom(playerId int64, roomId int64) {
 
 // LeaveRoom 离开房间 - 异步执行
 func (t *TeamManager) LeaveRoom(teamId int64) {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doLeaveRoom(teamId)
 		return nil
 	})
@@ -109,7 +109,7 @@ func (t *TeamManager) doLeaveRoom(teamId int64) {
 
 // SendMessage 发送消息给队伍 - 异步执行
 func (t *TeamManager) SendMessage(teamId int64, msg proto.Message) {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doSendMessage(teamId, msg)
 		return nil
 	})

@@ -57,7 +57,7 @@ func (m *MatchManager) GetInterval() int {
 }
 
 func (m *MatchManager) OnTimer() {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.Matching()
 		m.ProcessTimeoutRequests()
 		return nil
@@ -84,7 +84,7 @@ func (m *MatchManager) Matching() {
 
 // HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.doHandleMatch(agent, msg)
 		return nil
 	})
@@ -161,7 +161,7 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 
 // HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) {
-	m.SendTask(func() *actor.Response {
+	m.SendTaskAsync(func() *actor.Response {
 		m.doHandleCancelMatch(agent)
 		return nil
 	})

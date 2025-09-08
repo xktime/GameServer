@@ -49,7 +49,7 @@ func (t *Team) Stop() {
 }
 
 func (t *Team) JoinTeam(playerId int64) {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doJoinTeam(playerId)
 		return nil
 	})
@@ -65,7 +65,7 @@ func (t *Team) doJoinTeam(playerId int64) {
 }
 
 func (t *Team) JoinRoom(roomId int64) {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doJoinRoom(roomId)
 		return nil
 	})
@@ -77,7 +77,7 @@ func (t *Team) doJoinRoom(roomId int64) {
 }
 
 func (t *Team) LeaveRoom() {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doLeaveRoom()
 		return nil
 	})
@@ -89,7 +89,7 @@ func (t *Team) doLeaveRoom() {
 }
 
 func (t *Team) LeaveTeam(playerId int64) {
-	t.SendTask(func() *actor.Response {
+	t.SendTaskAsync(func() *actor.Response {
 		t.doLeaveTeam(playerId)
 		return nil
 	})

@@ -121,8 +121,11 @@ func (p *Player) doModifyName(name string) message.Result {
 }
 
 func (p *Player) InitTeam() {
-	// 直接调用，避免在TaskHandler上下文中再次调用SendTask造成死锁
-	p.doInitTeam()
+	// 使用异步调用，避免阻塞
+	p.SendTaskAsync(func() *actor.Response {
+		p.doInitTeam()
+		return nil
+	})
 }
 
 func (p *Player) doInitTeam() {
@@ -138,8 +141,7 @@ func (p *Player) doInitTeam() {
 	}
 	teamInfo := team.InitTeam(p.agent)
 	p.TeamId = teamInfo.TeamId
-	// 直接调用，避免在TaskHandler上下文中再次调用SendTask造成死锁
-	// teamInfo.doJoinTeam(p.PlayerId)
+	teamInfo.JoinTeam(p.PlayerId)
 }
 
 func (p *Player) SendToClient(message proto.Message) {
