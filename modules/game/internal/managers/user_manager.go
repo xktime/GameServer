@@ -55,17 +55,11 @@ func (m *UserManager) Stop() {
 
 // UserLogin 用户登录 - 异步执行
 func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) *message.S2C_Login {
-	response := m.SendTask(func() *actor.Response {
-		return &actor.Response{
-			Result: []interface{}{m.doUserLogin(agent, openId, serverId, loginType)},
-		}
+	response := m.SendTask(func() *message.S2C_Login {
+		return m.doUserLogin(agent, openId, serverId, loginType)
 	})
-	if response != nil && len(response.Result) > 0 {
-		if loginResp, ok := response.Result[0].(*message.S2C_Login); ok {
-			return loginResp
-		}
-	}
-	return nil
+
+	return response.(*message.S2C_Login)
 }
 
 // userLoginSync 用户登录的同步实现
@@ -146,24 +140,12 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 
 // ModifyName 修改名称 - 异步执行
 func (m *UserManager) ModifyName(playerId int64, name string) (message.Result, string) {
-	response := m.SendTask(func() *actor.Response {
-		result, name := m.doModifyName(playerId, name)
-		if result == message.Result_Success {
-			return &actor.Response{
-				Result: []interface{}{result, name},
-			}
-		}
-		return &actor.Response{
-			Result: []interface{}{result},
-		}
+	result := m.SendTask(func() (message.Result, string) {
+		return m.doModifyName(playerId, name)
 	})
 
-	if response != nil && len(response.Result) >= 2 {
-		if result, ok := response.Result[0].(message.Result); ok {
-			if name, ok := response.Result[1].(string); ok {
-				return result, name
-			}
-		}
+	if results, ok := result.([]interface{}); ok {
+		return results[0].(message.Result), results[1].(string)
 	}
 	return message.Result_Fail, ""
 }
@@ -184,9 +166,8 @@ func (m *UserManager) doModifyName(playerId int64, name string) (message.Result,
 
 // UserOffline 玩家下线处理 - 异步执行
 func (m *UserManager) UserOffline(user models.User) {
-	m.SendTaskAsync(func() *actor.Response {
+	m.SendTaskAsync(func() {
 		m.doUserOffline(user)
-		return nil
 	})
 }
 
@@ -222,19 +203,13 @@ func (m *UserManager) doUserOffline(user models.User) {
 
 // CheckName 检查名称 - 异步执行
 func (m *UserManager) CheckName(playerName string) message.Result {
-	response := m.SendTask(func() *actor.Response {
-		result := m.checkNameSync(playerName)
-		return &actor.Response{
-			Result: []interface{}{result},
-		}
+	response := m.SendTask(func() message.Result {
+		return m.checkNameSync(playerName)
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if result, ok := response.Result[0].(message.Result); ok {
-			return result
-		}
+	if _, ok := response.(error); ok {
+		return message.Result_Fail
 	}
-	return message.Result_Fail
+	return response.(message.Result)
 }
 
 // checkNameSync 检查名称的同步实现
@@ -292,19 +267,12 @@ func (m *UserManager) isValidPlayerName(name string) bool {
 
 // GetUserByOpenId 通过openId和serverId获取用户 - 异步执行
 func (m *UserManager) GetUserByOpenId(openId string, serverId int32) (models.User, bool) {
-	response := m.SendTask(func() *actor.Response {
-		user, exists := m.doGetUserByOpenId(openId, serverId)
-		return &actor.Response{
-			Result: []interface{}{user, exists},
-		}
+	response := m.SendTask(func() (models.User, bool) {
+		return m.doGetUserByOpenId(openId, serverId)
 	})
 
-	if response != nil && len(response.Result) >= 2 {
-		if user, ok := response.Result[0].(models.User); ok {
-			if exists, ok := response.Result[1].(bool); ok {
-				return user, exists
-			}
-		}
+	if results, ok := response.([]interface{}); ok {
+		return results[0].(models.User), results[1].(bool)
 	}
 	return models.User{}, false
 }
@@ -339,17 +307,14 @@ func (m *UserManager) doGetUserByOpenId(openId string, serverId int32) (models.U
 
 // GetUser 通过accountId获取用户（仅从缓存获取）
 func (m *UserManager) GetUser(accountId string) (models.User, bool) {
-	response := m.SendTask(func() *actor.Response {
-		user, exists := m.getUserFromCache(accountId)
-		return &actor.Response{
-			Result: []interface{}{user, exists},
-		}
+	response := m.SendTask(func() (*models.User, bool) {
+		return m.getUserFromCache(accountId)
 	})
 
-	if response != nil && len(response.Result) >= 2 {
-		if user, ok := response.Result[0].(models.User); ok {
-			if exists, ok := response.Result[1].(bool); ok {
-				return user, exists
+	if results, ok := response.([]interface{}); ok {
+		if user, ok := results[0].(*models.User); ok {
+			if exists, ok := results[1].(bool); ok {
+				return *user, exists
 			}
 		}
 	}
@@ -358,28 +323,21 @@ func (m *UserManager) GetUser(accountId string) (models.User, bool) {
 }
 
 func (m *UserManager) GetUsers() []models.User {
-	response := m.SendTask(func() *actor.Response {
+	response := m.SendTask(func() []models.User {
 		users := []models.User{}
 		for _, user := range m.memCache {
 			users = append(users, *user)
 		}
-		return &actor.Response{
-			Result: []interface{}{users},
-		}
+		return users
 	})
-	if response != nil && len(response.Result) > 0 {
-		if users, ok := response.Result[0].([]models.User); ok {
-			return users
-		}
-	}
-	return []models.User{}
+
+	return response.([]models.User)
 }
 
 // ClearAllCache 强制清理所有缓存（用于维护或重启）
 func (m *UserManager) ClearAllCache() {
-	m.SendTaskAsync(func() *actor.Response {
+	m.SendTaskAsync(func() {
 		m.doClearAllCache()
-		return &actor.Response{}
 	})
 }
 
@@ -405,18 +363,11 @@ func (m *UserManager) doClearAllCache() {
 
 // IsUserOnline 检查用户是否在线
 func (m *UserManager) IsUserOnline(accountId string) bool {
-	response := m.SendTask(func() *actor.Response {
+	response := m.SendTask(func() bool {
 		_, exists := m.memCache[accountId]
-		return &actor.Response{
-			Result: []interface{}{exists},
-		}
+		return exists
 	})
-	if response != nil && len(response.Result) > 0 {
-		if exists, ok := response.Result[0].(bool); ok {
-			return exists
-		}
-	}
-	return false
+	return response.(bool)
 }
 
 // 更新用户缓存

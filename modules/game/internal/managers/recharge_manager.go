@@ -61,22 +61,17 @@ type RechargeRequest struct {
 
 // HandleRechargeRequest 处理充值请求 - 异步执行
 func (m *RechargeManager) HandleRechargeRequest(req *RechargeRequest, agent gate.Agent) *message.S2C_RechargeResponse {
-	response := m.SendTask(func() *actor.Response {
-		result := m.doHandleRechargeRequest(req, agent)
-		return &actor.Response{
-			Result: []interface{}{result},
-		}
+	response := m.SendTask(func() *message.S2C_RechargeResponse {
+		return m.doHandleRechargeRequest(req, agent)
 	})
 
-	if response != nil && len(response.Result) > 0 {
-		if result, ok := response.Result[0].(*message.S2C_RechargeResponse); ok {
-			return result
+	if _, ok := response.(error); ok {
+		return &message.S2C_RechargeResponse{
+			Success: false,
+			Message: "处理充值请求失败",
 		}
 	}
-	return &message.S2C_RechargeResponse{
-		Success: false,
-		Message: "处理充值请求失败",
-	}
+	return response.(*message.S2C_RechargeResponse)
 }
 
 // doHandleRechargeRequest 处理充值请求的同步实现
@@ -136,17 +131,13 @@ func (m *RechargeManager) doHandleRechargeRequest(req *RechargeRequest, agent ga
 
 // HandlePaymentCallback 处理支付回调 - 异步执行
 func (m *RechargeManager) HandlePaymentCallback(orderId, transactionId string, success bool) error {
-	response := m.SendTask(func() *actor.Response {
-		err := m.doHandlePaymentCallback(orderId, transactionId, success)
-		return &actor.Response{
-			Result: []interface{}{err},
-		}
+	response := m.SendTask(func() error {
+		return m.doHandlePaymentCallback(orderId, transactionId, success)
+
 	})
 
-	if response != nil && len(response.Result) > 0 {
-		if err, ok := response.Result[0].(error); ok {
-			return err
-		}
+	if err, ok := response.(error); ok {
+		return err
 	}
 	return nil
 }
@@ -330,19 +321,10 @@ func (m *RechargeManager) updateRechargeRecordCache(record *recharge.RechargeRec
 
 // GetRechargeConfigs 获取充值配置列表 - 异步执行
 func (m *RechargeManager) GetRechargeConfigs() []*config.Recharge {
-	response := m.SendTask(func() *actor.Response {
-		configs := m.doGetRechargeConfigs()
-		return &actor.Response{
-			Result: []interface{}{configs},
-		}
+	response := m.SendTask(func() []*config.Recharge {
+		return m.doGetRechargeConfigs()
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if configs, ok := response.Result[0].([]*config.Recharge); ok {
-			return configs
-		}
-	}
-	return nil
+	return response.([]*config.Recharge)
 }
 
 // doGetRechargeConfigs 获取充值配置列表的同步实现
@@ -378,19 +360,11 @@ func (m *RechargeManager) doGetRechargeConfigs() []*config.Recharge {
 
 // GetPlayerRechargeRecords 获取玩家充值记录 - 异步执行
 func (m *RechargeManager) GetPlayerRechargeRecords(playerId int64, limit int) []recharge.RechargeRecord {
-	response := m.SendTask(func() *actor.Response {
+	response := m.SendTask(func() []recharge.RechargeRecord {
 		records := m.doGetPlayerRechargeRecords(playerId, limit)
-		return &actor.Response{
-			Result: []interface{}{records},
-		}
+		return records
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if records, ok := response.Result[0].([]recharge.RechargeRecord); ok {
-			return records
-		}
-	}
-	return nil
+	return response.([]recharge.RechargeRecord)
 }
 
 // doGetPlayerRechargeRecords 获取玩家充值记录的同步实现

@@ -86,9 +86,7 @@ func (p *Player) Init(args ...any) {
 func (p *Player) InitModules() {
 	// 自己的actor里面可以放队列里初始化
 	// 其他actor需要同步初始化，避免快速请求还未加载完成
-	p.SendTaskAsync(func() *actor.Response {
-
-		return nil
+	p.SendTaskAsync(func() {
 	})
 	p.InitTeam()
 }
@@ -134,19 +132,14 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*Player, erro
 }
 
 func (p *Player) ModifyName(name string) message.Result {
-	response := p.SendTask(func() *actor.Response {
-		result := p.doModifyName(name)
-		return &actor.Response{
-			Result: []interface{}{result},
-		}
+	response := p.SendTask(func() message.Result {
+		return p.doModifyName(name)
 	})
 
-	if response != nil && len(response.Result) > 0 {
-		if result, ok := response.Result[0].(message.Result); ok {
-			return result
-		}
+	if _, ok := response.(error); ok {
+		return message.Result_Fail
 	}
-	return message.Result_Fail
+	return response.(message.Result)
 }
 
 func (p *Player) doModifyName(name string) message.Result {
@@ -190,9 +183,8 @@ func (p *Player) SendToClient(message proto.Message) {
 }
 
 func (p *Player) SendToClientSeq(message proto.Message, seq uint32) {
-	p.SendTaskAsync(func() *actor.Response {
+	p.SendTaskAsync(func() {
 		p.agent.WriteMsgWithSeq(message, seq)
-		return nil
 	})
 }
 

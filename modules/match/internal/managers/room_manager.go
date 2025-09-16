@@ -39,15 +39,13 @@ func (m *RoomManager) Stop() {
 
 // HandleRecordOperate 处理游戏操作记录 - 异步执行
 func (r *RoomManager) HandleRecordOperate(msg *message.C2S_RecordGameOperate, agent gate.Agent) (int64, *message.S2C_RecordGameOperate) {
-	response := r.SendTask(func() *actor.Response {
+	response := r.SendTask(func() (int64, *message.S2C_RecordGameOperate) {
 		teamId, recordOperateResp := r.doHandleRecordOperate(msg, agent)
-		return &actor.Response{
-			Result: []interface{}{teamId, recordOperateResp},
-		}
+		return teamId, recordOperateResp
 	})
-	if response != nil && len(response.Result) > 0 {
-		if teamId, ok := response.Result[0].(int64); ok {
-			if recordOperateResp, ok := response.Result[1].(*message.S2C_RecordGameOperate); ok {
+	if results, ok := response.([]interface{}); ok {
+		if teamId, ok := results[0].(int64); ok {
+			if recordOperateResp, ok := results[1].(*message.S2C_RecordGameOperate); ok {
 				return teamId, recordOperateResp
 			}
 		}

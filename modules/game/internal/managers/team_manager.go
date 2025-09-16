@@ -38,19 +38,11 @@ func (m *TeamManager) Stop() {
 
 // GetTeamByPlayerId 通过玩家ID获取队伍 - 异步执行
 func (t *TeamManager) GetTeamByPlayerId(playerId int64) *team.Team {
-	response := t.SendTask(func() *actor.Response {
-		team := t.doGetTeamByPlayerId(playerId)
-		return &actor.Response{
-			Result: []interface{}{team},
-		}
+	response := t.SendTask(func() *team.Team {
+		return t.doGetTeamByPlayerId(playerId)
 	})
 
-	if response != nil && len(response.Result) > 0 {
-		if team, ok := response.Result[0].(*team.Team); ok {
-			return team
-		}
-	}
-	return nil
+	return response.(*team.Team)
 }
 
 // doGetTeamByPlayerId 通过玩家ID获取队伍的同步实现
@@ -68,9 +60,8 @@ func (t *TeamManager) doGetTeamByPlayerId(playerId int64) *team.Team {
 
 // JoinRoom 加入房间 - 异步执行
 func (t *TeamManager) JoinRoom(playerId int64, roomId int64) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doJoinRoom(playerId, roomId)
-		return nil
 	})
 }
 
@@ -89,9 +80,8 @@ func (t *TeamManager) doJoinRoom(playerId int64, roomId int64) {
 
 // LeaveRoom 离开房间 - 异步执行
 func (t *TeamManager) LeaveRoom(teamId int64) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doLeaveRoom(teamId)
-		return nil
 	})
 }
 
@@ -106,16 +96,14 @@ func (t *TeamManager) doLeaveRoom(teamId int64) {
 
 // SendMessage 发送消息给队伍 - 异步执行
 func (t *TeamManager) SendMessage(teamId int64, msg proto.Message) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doSendMessage(teamId, msg)
-		return nil
 	})
 }
 
 func (t *TeamManager) SendMessageExceptSelf(teamId int64, msg proto.Message, selfId int64) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doSendMessageExceptSelf(teamId, msg, selfId)
-		return nil
 	})
 }
 

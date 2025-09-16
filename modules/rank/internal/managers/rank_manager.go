@@ -53,18 +53,10 @@ func (r RankManager) GetPersistId() interface{} {
 
 // HandleUpdateRankData 更新排行榜数据 - 异步执行
 func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) *message.S2C_UpdateRankData {
-	response := r.SendTask(func() *actor.Response {
-		r.doHandleUpdateRankData(playerId, req)
-		return &actor.Response{
-			Result: []interface{}{r.doHandleUpdateRankData(playerId, req)},
-		}
+	response := r.SendTask(func() *message.S2C_UpdateRankData {
+		return r.doHandleUpdateRankData(playerId, req)
 	})
-	if response != nil && len(response.Result) > 0 {
-		if updateRankDataResp, ok := response.Result[0].(*message.S2C_UpdateRankData); ok {
-			return updateRankDataResp
-		}
-	}
-	return nil
+	return response.(*message.S2C_UpdateRankData)
 }
 
 // doHandleUpdateRankData 更新排行榜数据的同步实现
@@ -129,18 +121,11 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 
 // HandleGetRankList 获取排行榜列表 - 异步执行
 func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRankList) *message.S2C_GetRankList {
-	response := r.SendTask(func() *actor.Response {
-		response := r.doHandleGetRankList(playerId, req)
-		return &actor.Response{
-			Result: []interface{}{response},
-		}
+	response := r.SendTask(func() *message.S2C_GetRankList {
+		return r.doHandleGetRankList(playerId, req)
 	})
-	if response != nil && len(response.Result) > 0 {
-		if getRankListResp, ok := response.Result[0].(*message.S2C_GetRankList); ok {
-			return getRankListResp
-		}
-	}
-	return nil
+
+	return response.(*message.S2C_GetRankList)
 }
 
 // doHandleGetRankList 获取排行榜列表的同步实现
@@ -202,17 +187,11 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 
 // HandleGetMyRank 获取我的排名 - 异步执行
 func (r *RankManager) HandleGetMyRank(playerId int64, rankType int32) *message.S2C_GetMyRank {
-	response := r.SendTask(func() *actor.Response {
-		return &actor.Response{
-			Result: []interface{}{r.doHandleGetMyRank(playerId, rankType)},
-		}
+	response := r.SendTask(func() *message.S2C_GetMyRank {
+		return r.doHandleGetMyRank(playerId, rankType)
 	})
-	if response != nil && len(response.Result) > 0 {
-		if getMyRankResp, ok := response.Result[0].(*message.S2C_GetMyRank); ok {
-			return getMyRankResp
-		}
-	}
-	return nil
+
+	return response.(*message.S2C_GetMyRank)
 }
 
 // doHandleGetMyRank 获取我的排名的同步实现

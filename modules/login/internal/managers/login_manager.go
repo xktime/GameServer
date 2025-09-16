@@ -40,17 +40,10 @@ func (m *LoginManager) Stop() {
 
 // HandleLogin 处理登录请求 - 异步执行
 func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
-	response := m.SendTask(func() *actor.Response {
-		return &actor.Response{
-			Result: []interface{}{m.doHandleLogin(msg, agent)},
-		}
+	response := m.SendTask(func() *message.S2C_Login {
+		return m.doHandleLogin(msg, agent)
 	})
-	if response != nil && len(response.Result) > 0 {
-		if loginResp, ok := response.Result[0].(*message.S2C_Login); ok {
-			return loginResp
-		}
-	}
-	return nil
+	return response.(*message.S2C_Login)
 }
 
 // doHandleLogin 处理登录请求的同步实现

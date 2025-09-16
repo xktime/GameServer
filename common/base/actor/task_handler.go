@@ -180,8 +180,9 @@ func getGoroutineID() int64 {
 	return id
 }
 
+// todo 方法返回值
 // SendTask 发送任务到队列，支持超时机制
-func (b *TaskHandler) SendTask(f func() *Response) *Response {
+func (b *TaskHandler) sendTask(f func() *Response) *Response {
 	// 检查是否已停止或正在停止
 	state := b.GetState()
 	if state != ActorStateRunning {
@@ -244,8 +245,77 @@ func (b *TaskHandler) SendTask(f func() *Response) *Response {
 	}
 }
 
+// SendTaskAuto 发送任务并等待结果（简化版本）
+// 自动处理Response构造和结果提取，支持任意返回值
+func (b *TaskHandler) SendTask(f interface{}) interface{} {
+	// 使用反射调用函数并自动处理结果
+	fn := reflect.ValueOf(f)
+	fnType := fn.Type()
+
+	// 检查函数签名
+	if fnType.Kind() != reflect.Func {
+		panic("SendTaskAuto: 参数必须是函数")
+	}
+
+	// 调用原版SendTask，但自动构造Response
+	response := b.sendTask(func() *Response {
+		// 调用传入的函数
+		results := fn.Call([]reflect.Value{})
+
+		// 自动构造Response
+		response := &Response{}
+
+		// 处理返回值
+		if len(results) == 0 {
+			// 无返回值
+			return response
+		} else if len(results) == 1 {
+			// 单个返回值
+			if err, ok := results[0].Interface().(error); ok {
+				// 返回error
+				response.Error = err
+			} else {
+				// 返回普通值
+				response.Result = []interface{}{results[0].Interface()}
+			}
+		} else {
+			// 多个返回值，最后一个可能是error
+			lastResult := results[len(results)-1]
+			if err, ok := lastResult.Interface().(error); ok && err != nil {
+				// 最后一个值是error且不为nil
+				response.Error = err
+				response.Result = make([]interface{}, len(results)-1)
+				for i := 0; i < len(results)-1; i++ {
+					response.Result[i] = results[i].Interface()
+				}
+			} else {
+				// 所有值都是普通返回值
+				response.Result = make([]interface{}, len(results))
+				for i, result := range results {
+					response.Result[i] = result.Interface()
+				}
+			}
+		}
+
+		return response
+	})
+
+	// 自动提取结果
+	if response.Error != nil {
+		return response.Error
+	}
+
+	if len(response.Result) == 0 {
+		return nil
+	} else if len(response.Result) == 1 {
+		return response.Result[0]
+	} else {
+		return response.Result
+	}
+}
+
 // SendTaskAsync 异步发送任务，不等待结果，不阻塞执行
-func (b *TaskHandler) SendTaskAsync(f func() *Response) bool {
+func (b *TaskHandler) SendTaskAsync(f func()) bool {
 	// 检查是否已停止或正在停止
 	state := b.GetState()
 	if state != ActorStateRunning {
@@ -258,7 +328,7 @@ func (b *TaskHandler) SendTaskAsync(f func() *Response) bool {
 	}
 
 	task := &TaskQueue{
-		f:        f,
+		f:        func() *Response { f(); return nil },
 		response: make(chan *Response, 1),
 	}
 
@@ -362,6 +432,7 @@ func (b *TaskHandler) Processor() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error("Processor panic: %v", r)
+			b.printCallStack("Processor panic")
 			// 通知所有等待的任务执行失败
 			b.notifyAllTasksFailed(fmt.Errorf("processor panic: %v", r))
 		}
@@ -494,6 +565,7 @@ func (b *TaskHandler) processTask(task *TaskQueue) {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Error("Task execution panic: %v", r)
+				b.printCallStack("Task execution panic")
 				result = &Response{
 					Result: nil,
 					Error:  fmt.Errorf("task execution panic: %v", r),

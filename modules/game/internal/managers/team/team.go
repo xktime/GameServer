@@ -47,9 +47,8 @@ func (t *Team) Stop() {
 }
 
 func (t *Team) JoinTeam(playerId int64) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doJoinTeam(playerId)
-		return nil
 	})
 }
 
@@ -63,9 +62,8 @@ func (t *Team) doJoinTeam(playerId int64) {
 }
 
 func (t *Team) JoinRoom(roomId int64) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doJoinRoom(roomId)
-		return nil
 	})
 }
 
@@ -75,9 +73,8 @@ func (t *Team) doJoinRoom(roomId int64) {
 }
 
 func (t *Team) LeaveRoom() {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doLeaveRoom()
-		return nil
 	})
 }
 
@@ -87,9 +84,8 @@ func (t *Team) doLeaveRoom() {
 }
 
 func (t *Team) LeaveTeam(playerId int64) {
-	t.SendTaskAsync(func() *actor.Response {
+	t.SendTaskAsync(func() {
 		t.doLeaveTeam(playerId)
-		return nil
 	})
 }
 
@@ -130,18 +126,10 @@ func (t *Team) doLeaveTeam(playerId int64) {
 
 // IsMember 检查玩家是否是队伍成员
 func (t *Team) IsMember(playerId int64) bool {
-	response := t.SendTask(func() *actor.Response {
-		return &actor.Response{
-			Result: []interface{}{t.doIsMember(playerId)},
-		}
+	response := t.SendTask(func() bool {
+		return t.doIsMember(playerId)
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if result, ok := response.Result[0].(bool); ok {
-			return result
-		}
-	}
-	return false
+	return response.(bool)
 }
 
 func (t *Team) doIsMember(playerId int64) bool {
@@ -150,18 +138,10 @@ func (t *Team) doIsMember(playerId int64) bool {
 
 // IsLeader 检查玩家是否是队长
 func (t *Team) IsLeader(playerId int64) bool {
-	response := t.SendTask(func() *actor.Response {
-		return &actor.Response{
-			Result: []interface{}{t.doIsLeader(playerId)},
-		}
+	response := t.SendTask(func() bool {
+		return t.doIsLeader(playerId)
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if result, ok := response.Result[0].(bool); ok {
-			return result
-		}
-	}
-	return false
+	return response.(bool)
 }
 
 func (t *Team) doIsLeader(playerId int64) bool {

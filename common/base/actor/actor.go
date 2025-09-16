@@ -23,16 +23,16 @@ func (b *BaseActor) GetTaskHandler() *TaskHandler {
 	return b.TaskHandler
 }
 
-// SendTask 发送任务并等待结果
-func (b *BaseActor) SendTask(f func() *Response) *Response {
+// SendTaskAuto 发送任务并等待结果（简化版本）
+func (b *BaseActor) SendTask(f interface{}) interface{} {
 	if b.TaskHandler == nil {
-		return &Response{Error: fmt.Errorf("TaskHandler is nil")}
+		return fmt.Errorf("TaskHandler is nil")
 	}
 	return b.TaskHandler.SendTask(f)
 }
 
 // SendTaskAsync 异步发送任务，不等待结果
-func (b *BaseActor) SendTaskAsync(f func() *Response) bool {
+func (b *BaseActor) SendTaskAsync(f func()) bool {
 	if b.TaskHandler == nil {
 		return false
 	}

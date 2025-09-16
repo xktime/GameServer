@@ -56,9 +56,8 @@ func (m *ConnectManager) Stop() {
 
 // UpdateHeartbeat 更新客户端心跳 - 异步执行
 func (cm *ConnectManager) UpdateHeartbeat(agent gate.Agent) {
-	cm.SendTaskAsync(func() *actor.Response {
+	cm.SendTaskAsync(func() {
 		cm.doUpdateHeartbeat(agent)
-		return nil
 	})
 }
 
@@ -76,9 +75,8 @@ func (cm *ConnectManager) doUpdateHeartbeat(agent gate.Agent) {
 
 // RemoveClient 移除客户端 - 异步执行
 func (cm *ConnectManager) RemoveClient(clientID string) {
-	cm.SendTaskAsync(func() *actor.Response {
+	cm.SendTaskAsync(func() {
 		cm.doRemoveClient(clientID)
-		return nil
 	})
 }
 
@@ -92,9 +90,8 @@ func (cm *ConnectManager) doRemoveClient(clientID string) {
 
 // CheckHeartbeats 检查所有客户端的心跳 - 异步执行
 func (cm *ConnectManager) CheckHeartbeats() {
-	cm.SendTaskAsync(func() *actor.Response {
+	cm.SendTaskAsync(func() {
 		cm.doCheckHeartbeats()
-		return nil
 	})
 }
 
@@ -134,37 +131,21 @@ func (cm *ConnectManager) doCheckHeartbeats() {
 
 // GetActiveClients 获取活跃客户端数量 - 异步执行
 func (cm *ConnectManager) GetActiveClients() int {
-	response := cm.SendTask(func() *actor.Response {
-		return &actor.Response{
-			Result: []interface{}{len(cm.clients)},
-		}
+	response := cm.SendTask(func() int {
+		return len(cm.clients)
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if count, ok := response.Result[0].(int); ok {
-			return count
-		}
-	}
-	return 0
+	return response.(int)
 }
 
 // GetAllClients 获取所有客户端信息（用于调试）- 异步执行
 func (cm *ConnectManager) GetAllClients() map[string]*ClientHeartbeat {
-	response := cm.SendTask(func() *actor.Response {
+	response := cm.SendTask(func() map[string]*ClientHeartbeat {
 		// 返回副本，避免外部修改
 		result := make(map[string]*ClientHeartbeat)
 		for k, v := range cm.clients {
 			result[k] = v
 		}
-		return &actor.Response{
-			Result: []interface{}{result},
-		}
+		return result
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if clients, ok := response.Result[0].(map[string]*ClientHeartbeat); ok {
-			return clients
-		}
-	}
-	return make(map[string]*ClientHeartbeat)
+	return response.(map[string]*ClientHeartbeat)
 }

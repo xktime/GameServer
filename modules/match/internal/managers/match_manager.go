@@ -51,10 +51,9 @@ func (m *MatchManager) GetInterval() int {
 }
 
 func (m *MatchManager) OnTimer() {
-	m.SendTaskAsync(func() *actor.Response {
+	m.SendTask(func() {
 		m.Matching()
 		m.ProcessTimeoutRequests()
-		return nil
 	})
 }
 
@@ -78,15 +77,13 @@ func (m *MatchManager) Matching() {
 
 // HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
-	response := m.SendTask(func() *actor.Response {
+	response := m.SendTask(func() (int64, *message.S2C_StartMatch) {
 		teamId, item := m.doHandleMatch(agent, msg)
-		return &actor.Response{
-			Result: []interface{}{teamId, item},
-		}
+		return teamId, item
 	})
-	if response != nil && len(response.Result) > 0 {
-		if teamId, ok := response.Result[0].(int64); ok {
-			if item, ok := response.Result[1].(*message.S2C_StartMatch); ok {
+	if results, ok := response.([]interface{}); ok {
+		if teamId, ok := results[0].(int64); ok {
+			if item, ok := results[1].(*message.S2C_StartMatch); ok {
 				return teamId, item
 			}
 		}
@@ -162,16 +159,13 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 
 // HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
-	response := m.SendTask(func() *actor.Response {
+	response := m.SendTask(func() (int64, *message.S2C_CancelMatch) {
 		itemId, item := m.doHandleCancelMatch(agent)
-		return &actor.Response{
-			Result: []interface{}{itemId, item},
-		}
+		return itemId, item
 	})
-
-	if response != nil && len(response.Result) > 0 {
-		if itemId, ok := response.Result[0].(int64); ok {
-			if item, ok := response.Result[1].(*message.S2C_CancelMatch); ok {
+	if results, ok := response.([]interface{}); ok {
+		if itemId, ok := results[0].(int64); ok {
+			if item, ok := results[1].(*message.S2C_CancelMatch); ok {
 				return itemId, item
 			}
 		}
