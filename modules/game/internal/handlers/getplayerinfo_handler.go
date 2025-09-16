@@ -10,7 +10,7 @@ import (
 
 // C2S_GetPlayerInfoHandler 处理C2S_GetPlayerInfo消息
 func C2S_GetPlayerInfoHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_GetPlayerInfoHandler: 参数不足")
 		return
 	}
@@ -28,9 +28,9 @@ func C2S_GetPlayerInfoHandler(args []interface{}) {
 	}
 	var playerInfo *message.PlayerInfo
 	defer func() {
-		agent.WriteMsg(&message.S2C_GetPlayerInfo{
+		agent.WriteMsgWithSeq(&message.S2C_GetPlayerInfo{
 			PlayerInfo: playerInfo,
-		})
+		}, args[2].(uint32))
 	}()
 
 	log.Debug("收到C2S_GetPlayerInfo消息: %v, agent: %v", msg, agent)
@@ -39,13 +39,13 @@ func C2S_GetPlayerInfoHandler(args []interface{}) {
 	p := managers.GetUserManager().GetPlayer(playerId)
 
 	if p != nil {
-		playerInfo = p.PlayerInfo.ToMsgPlayerInfo()
+		playerInfo = p.PlayerInfo.ToMsg()
 	} else {
 		// 如果玩家不在线
 		existingPlayer := userManager.GetOfflinePlayer(playerId)
 		if existingPlayer == nil {
 			return
 		}
-		playerInfo = existingPlayer.PlayerInfo.ToMsgPlayerInfo()
+		playerInfo = existingPlayer.PlayerInfo.ToMsg()
 	}
 }

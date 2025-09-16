@@ -10,7 +10,7 @@ import (
 
 // C2S_ModifyNameHandler 处理C2S_ModifyName消息
 func C2S_ModifyNameHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_ModifyNameHandler: 参数不足")
 		return
 	}
@@ -34,17 +34,20 @@ func C2S_ModifyNameHandler(args []interface{}) {
 	resultMsg := &message.S2C_ModifyName{
 		Result: message.Result_Success,
 	}
-	defer p.SendToClient(resultMsg)
+	defer p.SendToClientSeq(resultMsg, args[2].(uint32))
 	if p == nil {
 		log.Error("C2S_ModifyNameHandler: 玩家不在线")
 		resultMsg.Result = message.Result_Fail
+		resultMsg.Name = ""
 		return
 	}
 	result := userManager.CheckName(msg.Name)
 	if result != message.Result_Success {
 		resultMsg.Result = result
+		resultMsg.Name = ""
 		return
 	}
-	resultMsg.Result = userManager.ModifyName(playerId, msg.Name)
-	p.SendToClient(resultMsg)
+	result, name := userManager.ModifyName(playerId, msg.Name)
+	resultMsg.Result = result
+	resultMsg.Name = name
 }

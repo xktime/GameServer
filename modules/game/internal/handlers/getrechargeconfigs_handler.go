@@ -9,7 +9,7 @@ import (
 
 // C2S_GetRechargeConfigsHandler 处理获取充值配置请求
 func C2S_GetRechargeConfigsHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_GetRechargeConfigsHandler: 参数不足")
 		return
 	}
@@ -43,9 +43,9 @@ func C2S_GetRechargeConfigsHandler(args []interface{}) {
 	}
 
 	// 发送响应给客户端
-	agent.WriteMsg(&message.S2C_GetRechargeConfigs{
+	agent.WriteMsgWithSeq(&message.S2C_GetRechargeConfigs{
 		Configs: pbConfigs,
-	})
+	}, args[2].(uint32))
 
 	log.Debug("充值配置获取成功，返回 %d 个配置", len(pbConfigs))
 }

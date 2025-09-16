@@ -30,5 +30,8 @@ func C2S_UpdateRankDataHandler(args []interface{}) {
 	log.Debug("收到C2S_UpdateRankData消息: %v, agent: %v", msg, agent)
 
 	playerId := agent.UserData().(models.User).PlayerId
-	managers.GetRankManager().HandleUpdateRankData(playerId, msg)
+	response := managers.GetRankManager().HandleUpdateRankData(playerId, msg)
+	if response != nil {
+		agent.WriteMsgWithSeq(response, args[2].(uint32))
+	}
 }

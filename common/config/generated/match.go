@@ -7,25 +7,37 @@ import (
 	"sync"
 )
 
-// Match match.json配置结构体
-type Match struct {
-	Id float64 `json:"id"` // id
+// MatchData match.json配置数据结构体（自动生成，请勿手动修改）
+type MatchData struct {
+	Id int32 `json:"id"` // id
 	Name string `json:"name"` // name
-	Room float64 `json:"room_size"` // room_size
+	Room int32 `json:"room_size"` // room_size
+}
+
+// Match match.json配置结构体（可添加自定义方法）
+type Match struct {
+	*MatchData
+}
+
+// NewMatch 创建新的Match实例
+func NewMatch(data *MatchData) *Match {
+	return &Match{
+		MatchData: data,
+	}
 }
 
 // MatchCache match.json配置缓存
 type MatchCache struct {
-	cache map[string]*Match
+	cache map[int32]*MatchData
 	mu    sync.RWMutex
 }
 
 var MatchCacheInstance = &MatchCache{
-	cache: make(map[string]*Match),
+	cache: make(map[int32]*MatchData),
 }
 
 // getMatchFromCache 从缓存获取配置
-func (c *MatchCache) getMatchFromCache(id string) (*Match, bool) {
+func (c *MatchCache) getMatchFromCache(id int32) (*MatchData, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	
@@ -36,7 +48,7 @@ func (c *MatchCache) getMatchFromCache(id string) (*Match, bool) {
 }
 
 // setMatchToCache 设置配置到缓存
-func (c *MatchCache) setMatchToCache(id string, item *Match) {
+func (c *MatchCache) setMatchToCache(id int32, item *MatchData) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	
@@ -48,13 +60,13 @@ func (c *MatchCache) clearMatchCache() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	
-	c.cache = make(map[string]*Match)
+	c.cache = make(map[int32]*MatchData)
 }
 
-// convertToMatch 将原始配置转换为Match结构体
-func convertToMatch(config interface{}) (*Match, bool) {
+// convertToMatch 将原始配置转换为MatchData结构体
+func convertToMatch(config interface{}) (*MatchData, bool) {
 	if configMap, ok := config.(map[string]interface{}); ok {
-		result := &Match{}
+		result := &MatchData{}
 		
 		// 使用反射设置字段值
 		configValue := reflect.ValueOf(result).Elem()
@@ -86,8 +98,10 @@ func convertToMatch(config interface{}) (*Match, bool) {
 					}
 				case reflect.Slice:
 					if slice, ok := value.([]interface{}); ok {
-						// 处理字符串切片
-						if field.Type().Elem().Kind() == reflect.String {
+						// 处理不同类型的切片
+						elemType := field.Type().Elem()
+						switch elemType.Kind() {
+						case reflect.String:
 							strSlice := make([]string, len(slice))
 							for j, item := range slice {
 								if str, ok := item.(string); ok {
@@ -95,6 +109,84 @@ func convertToMatch(config interface{}) (*Match, bool) {
 								}
 							}
 							field.Set(reflect.ValueOf(strSlice))
+						case reflect.Int32:
+							intSlice := make([]int32, len(slice))
+							for j, item := range slice {
+								if num, ok := item.(float64); ok {
+									intSlice[j] = int32(num)
+								}
+							}
+							field.Set(reflect.ValueOf(intSlice))
+						case reflect.Float64:
+							floatSlice := make([]float64, len(slice))
+							for j, item := range slice {
+								if num, ok := item.(float64); ok {
+									floatSlice[j] = num
+								}
+							}
+							field.Set(reflect.ValueOf(floatSlice))
+						case reflect.Bool:
+							boolSlice := make([]bool, len(slice))
+							for j, item := range slice {
+								if b, ok := item.(bool); ok {
+									boolSlice[j] = b
+								}
+							}
+							field.Set(reflect.ValueOf(boolSlice))
+						case reflect.Slice:
+							// 处理二维数组
+							if elemType.Elem().Kind() == reflect.String {
+								// [][]string
+								str2DSlice := make([][]string, len(slice))
+								for i, outerItem := range slice {
+									if outerSlice, ok := outerItem.([]interface{}); ok {
+										strSlice := make([]string, len(outerSlice))
+										for j, innerItem := range outerSlice {
+											if str, ok := innerItem.(string); ok {
+												strSlice[j] = str
+											}
+										}
+										str2DSlice[i] = strSlice
+									}
+								}
+								field.Set(reflect.ValueOf(str2DSlice))
+							} else if elemType.Elem().Kind() == reflect.Int32 {
+								// [][]int32
+								int2DSlice := make([][]int32, len(slice))
+								for i, outerItem := range slice {
+									if outerSlice, ok := outerItem.([]interface{}); ok {
+										intSlice := make([]int32, len(outerSlice))
+										for j, innerItem := range outerSlice {
+											if num, ok := innerItem.(float64); ok {
+												intSlice[j] = int32(num)
+											}
+										}
+										int2DSlice[i] = intSlice
+									}
+								}
+								field.Set(reflect.ValueOf(int2DSlice))
+							} else if elemType.Elem().Kind() == reflect.Float64 {
+								// [][]float64
+								float2DSlice := make([][]float64, len(slice))
+								for i, outerItem := range slice {
+									if outerSlice, ok := outerItem.([]interface{}); ok {
+										floatSlice := make([]float64, len(outerSlice))
+										for j, innerItem := range outerSlice {
+											if num, ok := innerItem.(float64); ok {
+												floatSlice[j] = num
+											}
+										}
+										float2DSlice[i] = floatSlice
+									}
+								}
+								field.Set(reflect.ValueOf(float2DSlice))
+							} else {
+								// 其他二维数组类型，使用interface{}
+								field.Set(reflect.ValueOf(slice))
+							}
+						default:
+							// 对于复杂类型，直接设置为 interface{}
+							field.Set(reflect.ValueOf(slice))
 						}
 					}
 				}
@@ -108,10 +200,10 @@ func convertToMatch(config interface{}) (*Match, bool) {
 }
 
 // GetMatchConfig 获取match.json配置（带缓存）
-func GetMatchConfig(id string) (*Match, bool) {
+func GetMatchConfig(id int32) (*Match, bool) {
 	// 先从缓存获取
-	if item, exists := MatchCacheInstance.getMatchFromCache(id); exists {
-		return item, true
+	if itemData, exists := MatchCacheInstance.getMatchFromCache(id); exists {
+		return NewMatch(itemData), true
 	}
 	
 	// 缓存未命中，从原始配置获取
@@ -121,38 +213,41 @@ func GetMatchConfig(id string) (*Match, bool) {
 	}
 
 	// 转换为结构体
-	if item, ok := convertToMatch(config); ok {
+	if itemData, ok := convertToMatch(config); ok {
 		// 设置到缓存
-		MatchCacheInstance.setMatchToCache(id, item)
-		return item, true
+		MatchCacheInstance.setMatchToCache(id, itemData)
+		return NewMatch(itemData), true
 	}
 
 	return nil, false
 }
 
 // GetAllMatchConfigs 获取所有match.json配置（带缓存）
-func GetAllMatchConfigs() (map[string]*Match, bool) {
+func GetAllMatchConfigs() (map[int32]*Match, bool) {
 	configs, exists := config.GetAllConfigs("match.json")
 	if !exists {
 		return nil, false
 	}
 
-	result := make(map[string]*Match)
-	for id := range configs {
+	result := make(map[int32]*Match)
+	for idInterface := range configs {
+		// 类型转换 - 现在ID已经是正确的类型了
+		var id int32
+		var ok bool
+		
+		id, ok = idInterface.(int32)
+		
+		
+		if !ok {
+			continue // 类型转换失败，跳过
+		}
+		
 		if item, ok := GetMatchConfig(id); ok {
 			result[id] = item
 		}
 	}
 
 	return result, true
-}
-
-// GetMatchName 获取match.json名称
-func GetMatchName(id string) (string, bool) {
-	if item, exists := GetMatchConfig(id); exists {
-		return item.Name, true
-	}
-	return "", false
 }
 
 // ReloadMatchConfig 重新加载match.json配置并清空缓存
@@ -165,9 +260,9 @@ func ReloadMatchConfig() error {
 }
 
 // ValidateMatchConfig 验证match.json配置
-func ValidateMatchConfig(id string) error {
+func ValidateMatchConfig(id int32) error {
 	if _, exists := GetMatchConfig(id); !exists {
-		return fmt.Errorf("配置不存在: %s", id)
+		return fmt.Errorf("配置不存在: %v", id)
 	}
 	return nil
 }

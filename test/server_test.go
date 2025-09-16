@@ -32,13 +32,15 @@ func TestServer_TcpServer(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		// len + id+ data
-		m := make([]byte, 4+4+len(data))
+		// len + 1(是否是回复消息) + 4(序列号) + 4(消息ID) + data
+		m := make([]byte, 4+1+4+4+len(data))
 
 		// 大端序
-		binary.BigEndian.PutUint32(m[0:], uint32(4+len(data)))
-		binary.BigEndian.PutUint32(m[4:], getId(pbData)) // id
-		copy(m[8:], data)
+		binary.BigEndian.PutUint32(m[0:], uint32(1+4+4+len(data))) // 长度
+		m[4] = 0                                                   // 不是回复消息
+		binary.BigEndian.PutUint32(m[5:9], 0)                      // 序列号为0
+		binary.BigEndian.PutUint32(m[9:13], getId(pbData))         // 消息ID
+		copy(m[13:], data)
 
 		// 发送消息
 		conn.Write(m)
@@ -49,11 +51,11 @@ func TestServer_TcpServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("读取服务器返回数据失败: %v", err)
 		}
-		if n < 8 {
+		if n < 13 { // 4(长度) + 1(是否是回复消息) + 4(序列号) + 4(消息ID) = 13
 			t.Fatalf("返回数据长度不足: %d", n)
 		}
-		// 跳过前8字节（长度+消息ID），取后面为protobuf数据
-		respData := respBuf[8:n]
+		// 跳过前13字节，取后面为protobuf数据
+		respData := respBuf[13:n]
 		s2cLogin := &message.S2C_Login{}
 		if err := proto.Unmarshal(respData, s2cLogin); err != nil {
 			t.Fatalf("解析S2C_Login失败: %v", err)
@@ -65,7 +67,7 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	const total = 100000
+	const total = 1000000
 	const batchSize = 1000
 
 	for batchStart := 0; batchStart < total; batchStart += batchSize {
@@ -90,18 +92,17 @@ func TestServer_WebSocket(t *testing.T) {
 				defer func(j int) {
 					if conn != nil {
 						// 发送关闭消息
-						conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-						conn.Close()
+						// conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+						// conn.Close()
 					}
-					fmt.Printf("WebSocket第 %d 次连接关闭\n", j)
+					// fmt.Printf("WebSocket第 %d 次连接关闭\n", j)
 				}(k + 1)
 
 				// 1. 发送登录请求
 				fmt.Println("发送登录请求...")
 				loginMsg := &message.C2S_Login{
 					LoginType: message.LoginType_WeChat,
-					Code:      "123456",
-					ServerId:  1,
+					Code:      "1112345dsada6769",
 				}
 
 				if err := sendMessage(conn, loginMsg); err != nil {
@@ -131,6 +132,7 @@ func TestServer_WebSocket(t *testing.T) {
 				startMatchMsg := &message.C2S_StartMatch{
 					Type: int32(rand.Intn(3) + 1), // 随机匹配类型1、2、3
 				}
+				// startMatchMsg := &message.C2S_GetPlayerInfo{}
 
 				if err := sendMessage(conn, startMatchMsg); err != nil {
 					t.Logf("发送匹配请求失败: %v", err)
@@ -147,6 +149,7 @@ func TestServer_WebSocket(t *testing.T) {
 				}
 
 				s2cStartMatch := &message.S2C_StartMatch{}
+				// s2cStartMatch := &message.S2C_GetPlayerInfo{}
 				if err := parseMessage(resp, s2cStartMatch); err != nil {
 					t.Logf("解析匹配开始响应失败: %v", err)
 					fmt.Printf("=== 第 %d 次测试跳过 ===\n\n", k+1)
@@ -234,7 +237,7 @@ func TestServer_WebSocket(t *testing.T) {
 				}
 
 				// 等待一段时间后关闭连接
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(40000 * time.Millisecond)
 				fmt.Printf("=== 第 %d 次测试完成 ===\n\n", k+1)
 			}(batchStart + i)
 		}
@@ -440,10 +443,12 @@ func sendMessage(conn *websocket.Conn, msg proto.Message) error {
 		return fmt.Errorf("序列化消息失败: %v", err)
 	}
 
-	// 构建消息格式: 消息ID + protobuf数据
-	m := make([]byte, 4+len(data))
-	binary.BigEndian.PutUint32(m[0:], getId(msg)) // 消息ID
-	copy(m[4:], data)                             // protobuf数据
+	// 构建消息格式: 1(是否是回复消息) + 4(序列号) + 4(消息ID) + protobuf数据
+	m := make([]byte, 1+4+4+len(data))
+	m[0] = 0                                       // 不是回复消息
+	binary.BigEndian.PutUint32(m[1:5], 0)          // 序列号为0
+	binary.BigEndian.PutUint32(m[5:9], getId(msg)) // 消息ID
+	copy(m[9:], data)                              // protobuf数据
 
 	// 发送消息
 	return conn.WriteMessage(websocket.BinaryMessage, m)
@@ -474,7 +479,7 @@ func receiveMessage(conn *websocket.Conn) ([]byte, error) {
 		return nil, fmt.Errorf("读取消息失败: %v", err)
 	}
 
-	if len(resp) < 4 {
+	if len(resp) < 9 { // 1(是否是回复消息) + 4(序列号) + 4(消息ID) = 9
 		return nil, fmt.Errorf("返回数据长度不足: %d", len(resp))
 	}
 	return resp, nil
@@ -493,7 +498,7 @@ func isConnectionHealthy(conn *websocket.Conn) bool {
 
 // parseMessage 解析接收到的消息
 func parseMessage(resp []byte, msg proto.Message) error {
-	// 跳过前4字节（消息ID），取后面为protobuf数据
-	respData := resp[4:]
+	// 跳过前9字节（1(是否是回复消息) + 4(序列号) + 4(消息ID)），取后面为protobuf数据
+	respData := resp[9:]
 	return proto.Unmarshal(respData, msg)
 }

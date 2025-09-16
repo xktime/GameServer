@@ -7,6 +7,7 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/chanrpc"
 	"gameserver/core/log"
+	"gameserver/core/network/models"
 	"math"
 	"reflect"
 
@@ -23,10 +24,9 @@ type Processor struct {
 }
 
 type MsgInfo struct {
-	msgType       reflect.Type
-	msgRouter     *chanrpc.Server
-	msgHandler    MsgHandler
-	msgRawHandler MsgHandler
+	msgType    reflect.Type
+	msgRouter  *chanrpc.Server
+	msgHandler MsgHandler
 }
 
 type MsgHandler func([]interface{})
@@ -94,25 +94,21 @@ func (p *Processor) SetHandler(msg proto.Message, msgHandler MsgHandler) {
 	p.msgInfo[id].msgHandler = msgHandler
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
-func (p *Processor) SetRawHandler(id uint32, msgRawHandler MsgHandler) {
-	if p.msgInfo[id] == nil {
-		log.Fatal("message id %v not registered", id)
+// goroutine safe
+func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error {
+	// 处理带序列号的消息
+	msg := msgSeq.MsgData
+	if msgWithSeq, ok := msg.(*models.MsgWithSeq); ok {
+		if msgWithSeq.MsgID >= uint32(len(p.msgInfo)) {
+			return fmt.Errorf("message id %v not registered", msgWithSeq.MsgID)
+		}
+		return nil
 	}
 
-	p.msgInfo[id].msgRawHandler = msgRawHandler
-}
-
-// goroutine safe
-func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	// raw
 	if msgRaw, ok := msg.(MsgRaw); ok {
 		if msgRaw.msgID >= uint32(len(p.msgInfo)) {
 			return fmt.Errorf("message id %v not registered", msgRaw.msgID)
-		}
-		i := p.msgInfo[msgRaw.msgID]
-		if i.msgRawHandler != nil {
-			i.msgRawHandler([]interface{}{msgRaw.msgID, msgRaw.msgRawData, userData})
 		}
 		return nil
 	}
@@ -125,56 +121,94 @@ func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	}
 	i := p.msgInfo[id]
 	if i.msgHandler != nil {
-		i.msgHandler([]interface{}{msg, userData})
+		i.msgHandler([]interface{}{msg, userData, msgSeq.Seq})
 	}
 	if i.msgRouter != nil {
-		i.msgRouter.Go(msgType, msg, userData)
+		i.msgRouter.Go(msgType, msg, userData, msgSeq.Seq)
 	}
 	return nil
 }
 
+// 1(是否是回复消息) + 4(序列号) + 4(消息ID) + data
 // goroutine safe
-func (p *Processor) Unmarshal(data []byte) (interface{}, error) {
-	if len(data) < 4 {
+func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
+	if len(data) < 9 { // 1 + 4 + 4 = 9 bytes minimum
 		return nil, errors.New("protobuf data too short")
 	}
 
-	// id
+	// 解析消息格式: 1(是否是回复消息) + 4(序列号) + 4(消息ID) + data
+	isReply := data[0] != 0
+
+	var seq uint32
 	var id uint32
+
 	if p.littleEndian {
-		id = binary.LittleEndian.Uint32(data)
+		seq = binary.LittleEndian.Uint32(data[1:5])
+		id = binary.LittleEndian.Uint32(data[5:9])
 	} else {
-		id = binary.BigEndian.Uint32(data)
+		seq = binary.BigEndian.Uint32(data[1:5])
+		id = binary.BigEndian.Uint32(data[5:9])
 	}
+
 	if p.msgInfo[id] == nil {
 		return nil, fmt.Errorf("message id %v not registered", id)
 	}
 
 	// msg
 	i := p.msgInfo[id]
-	if i.msgRawHandler != nil {
-		return MsgRaw{id, data[4:]}, nil
-	} else {
-		msg := reflect.New(i.msgType.Elem()).Interface()
-		return msg, proto.Unmarshal(data[4:], msg.(proto.Message))
+
+	msg := reflect.New(i.msgType.Elem()).Interface()
+	err := proto.Unmarshal(data[9:], msg.(proto.Message))
+	if err != nil {
+		return nil, err
 	}
+	// 返回带序列号信息的消息结构
+	return &models.MsgWithSeq{
+		IsReply: isReply,
+		Seq: func() uint32 {
+			if isReply {
+				return seq
+			} else {
+				return 0
+			}
+		}(),
+		MsgID:   id,
+		MsgData: msg,
+	}, nil
 }
 
 // goroutine safe
-func (p *Processor) Marshal(msg interface{}) ([][]byte, error) {
+func (p *Processor) Marshal(msg interface{}, seq uint32) ([][]byte, error) {
 	pbMsg := msg.(proto.Message)
 	_id := getId(pbMsg)
 
-	id := make([]byte, 4)
-	if p.littleEndian {
-		binary.LittleEndian.PutUint32(id, _id)
+	// 构建新的消息格式: 1(是否是回复消息) + 4(序列号) + 4(消息ID) + data
+	header := make([]byte, 9)
+
+	// 1. 是否是回复消息
+	isReply := seq != 0
+	if isReply {
+		header[0] = 1
 	} else {
-		binary.BigEndian.PutUint32(id, _id)
+		header[0] = 0
 	}
 
-	// data
+	// 2. 序列号
+	if p.littleEndian {
+		binary.LittleEndian.PutUint32(header[1:5], seq)
+		binary.LittleEndian.PutUint32(header[5:9], _id)
+	} else {
+		binary.BigEndian.PutUint32(header[1:5], seq)
+		binary.BigEndian.PutUint32(header[5:9], _id)
+	}
+
+	// 3. protobuf数据
 	data, err := proto.Marshal(pbMsg)
-	return [][]byte{id, data}, err
+	if err != nil {
+		return nil, err
+	}
+
+	return [][]byte{header, data}, nil
 }
 
 // goroutine safe

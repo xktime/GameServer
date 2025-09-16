@@ -13,7 +13,7 @@ import (
 
 // LoginManager 使用TaskHandler实现，确保登录操作按顺序执行
 type LoginManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 }
 
 var (
@@ -23,50 +23,54 @@ var (
 
 func GetLoginManager() *LoginManager {
 	loginManagerOnce.Do(func() {
-		loginManager = &LoginManager{}
-		loginManager.Init()
+		loginManager = actor.RegisterActor[*LoginManager](actor.Login, "1")
 	})
 	return loginManager
 }
 
 // Init 初始化LoginManager
-func (m *LoginManager) Init() {
-	// 初始化TaskHandler
-	m.TaskHandler = actor.InitTaskHandler(actor.Login, "1", m)
-	m.TaskHandler.Start()
+func (m *LoginManager) Init(args ...any) {
+	// 初始化逻辑
 }
 
 // Stop 停止LoginManager
 func (m *LoginManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 // HandleLogin 处理登录请求 - 异步执行
-func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) {
-	m.SendTaskAsync(func() *actor.Response {
-		m.doHandleLogin(msg, agent)
-		return nil
+func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
+	response := m.SendTask(func() *actor.Response {
+		return &actor.Response{
+			Result: []interface{}{m.doHandleLogin(msg, agent)},
+		}
 	})
+	if response != nil && len(response.Result) > 0 {
+		if loginResp, ok := response.Result[0].(*message.S2C_Login); ok {
+			return loginResp
+		}
+	}
+	return nil
 }
 
 // doHandleLogin 处理登录请求的同步实现
-func (m *LoginManager) doHandleLogin(msg *message.C2S_Login, agent gate.Agent) {
+func (m *LoginManager) doHandleLogin(msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
 	loginProcessor := getLoginProcessor(msg.LoginType)
 	if loginProcessor == nil {
 		log.Error("loginProcessor is nil")
-		return
+		return &message.S2C_Login{
+			LoginResult: -1,
+		}
 	}
-	loginResp := loginProcessor.ReqLogin(context.Background(), msg)
+	loginResp := loginProcessor.ReqLogin(agent, context.Background(), msg)
 	log.Debug("loginResp %v", loginResp)
 	if loginResp.ErrCode != 0 {
 		log.Error("login failed %v", loginResp)
-		agent.WriteMsg(&message.S2C_Login{
+		return &message.S2C_Login{
 			LoginResult: -1,
-		})
-		agent.Close()
-		return
+		}
 	}
-	game.External.UserManager.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
+	return game.External.UserManager.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {
@@ -76,6 +80,6 @@ func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor
 	case message.LoginType_WeChat:
 		return processor.NewWechatLoginProcessor()
 	default:
-		return nil
+		return processor.NewDefaultLoginProcessor()
 	}
 }

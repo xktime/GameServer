@@ -12,6 +12,8 @@ type User struct {
 	Platform        message.LoginType `bson:"Platform" default:"0"`
 	LastOfflineTime int64             `bson:"LastOfflineTime" default:"0"`
 	LoginTime       int64             `bson:"LoginTime" default:"0"`
+	// todo 实现总登录天数
+	TotalLoginDays int32 `bson:"TotalLoginDays" default:"0"`
 }
 
 func (u User) GetPersistId() interface{} {

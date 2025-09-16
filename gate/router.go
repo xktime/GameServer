@@ -11,7 +11,6 @@ import (
 
 func InitRouter() {
 	// 模块间使用 ChanRPC 通讯，消息路由也不例外
-	msg.Processor.SetRouter(&message.C2S_Login{}, login.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_GetRechargeRecords{}, game.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_GetRechargeConfigs{}, game.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_RechargeRequest{}, game.External.ChanRPC)
@@ -24,5 +23,6 @@ func InitRouter() {
 	msg.Processor.SetRouter(&message.C2S_RecordGameOperate{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_CancelMatch{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_StartMatch{}, match.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_Login{}, login.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Heart{}, login.External.ChanRPC)
 }

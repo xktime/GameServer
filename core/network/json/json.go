@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"gameserver/core/chanrpc"
 	"gameserver/core/log"
+	"gameserver/core/network/models"
 	"reflect"
 )
 
@@ -14,10 +15,9 @@ type Processor struct {
 }
 
 type MsgInfo struct {
-	msgType       reflect.Type
-	msgRouter     *chanrpc.Server
-	msgHandler    MsgHandler
-	msgRawHandler MsgHandler
+	msgType    reflect.Type
+	msgRouter  *chanrpc.Server
+	msgHandler MsgHandler
 }
 
 type MsgHandler func([]interface{})
@@ -83,27 +83,23 @@ func (p *Processor) SetHandler(msg interface{}, msgHandler MsgHandler) {
 	i.msgHandler = msgHandler
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
-func (p *Processor) SetRawHandler(msgID string, msgRawHandler MsgHandler) {
-	i, ok := p.msgInfo[msgID]
-	if !ok {
-		log.Fatal("message %v not registered", msgID)
+// goroutine safe
+func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error {
+	// 处理带序列号的消息
+	msg := msgSeq.MsgData
+	if _, ok := msg.(*models.MsgWithSeq); ok {
+		// JSON消息的MsgID为0，需要通过MsgData来获取实际的msgID
+		// 这里简化处理，直接返回nil表示处理完成
+		return nil
 	}
 
-	i.msgRawHandler = msgRawHandler
-}
-
-// goroutine safe
-func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	// raw
 	if msgRaw, ok := msg.(MsgRaw); ok {
-		i, ok := p.msgInfo[msgRaw.msgID]
+		_, ok := p.msgInfo[msgRaw.msgID]
 		if !ok {
 			return fmt.Errorf("message %v not registered", msgRaw.msgID)
 		}
-		if i.msgRawHandler != nil {
-			i.msgRawHandler([]interface{}{msgRaw.msgID, msgRaw.msgRawData, userData})
-		}
+
 		return nil
 	}
 
@@ -118,45 +114,53 @@ func (p *Processor) Route(msg interface{}, userData interface{}) error {
 		return fmt.Errorf("message %v not registered", msgID)
 	}
 	if i.msgHandler != nil {
-		i.msgHandler([]interface{}{msg, userData})
+		i.msgHandler([]interface{}{msg, userData, msgSeq.Seq})
 	}
 	if i.msgRouter != nil {
-		i.msgRouter.Go(msgType, msg, userData)
+		i.msgRouter.Go(msgType, msg, userData, msgSeq.Seq)
 	}
 	return nil
 }
 
 // goroutine safe
-func (p *Processor) Unmarshal(data []byte) (interface{}, error) {
-	var m map[string]json.RawMessage
-	err := json.Unmarshal(data, &m)
+func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
+	// 解析JSON消息格式: {"isReply": bool, "seq": number, "msgID": string, "data": {...}}
+	var msgWithSeq struct {
+		IsReply bool            `json:"isReply"`
+		Seq     uint32          `json:"seq"`
+		MsgID   string          `json:"msgID"`
+		Data    json.RawMessage `json:"data"`
+	}
+
+	err := json.Unmarshal(data, &msgWithSeq)
 	if err != nil {
 		return nil, err
 	}
-	if len(m) != 1 {
-		return nil, errors.New("invalid json data")
+
+	// 检查消息是否已注册
+	i, ok := p.msgInfo[msgWithSeq.MsgID]
+	if !ok {
+		return nil, fmt.Errorf("message %v not registered", msgWithSeq.MsgID)
 	}
 
-	for msgID, data := range m {
-		i, ok := p.msgInfo[msgID]
-		if !ok {
-			return nil, fmt.Errorf("message %v not registered", msgID)
-		}
-
-		// msg
-		if i.msgRawHandler != nil {
-			return MsgRaw{msgID, data}, nil
-		} else {
-			msg := reflect.New(i.msgType.Elem()).Interface()
-			return msg, json.Unmarshal(data, msg)
-		}
+	// 解析消息数据
+	msg := reflect.New(i.msgType.Elem()).Interface()
+	err = json.Unmarshal(msgWithSeq.Data, msg)
+	if err != nil {
+		return nil, err
 	}
 
-	panic("bug")
+	// 返回带序列号信息的消息结构
+	return &models.MsgWithSeq{
+		IsReply: msgWithSeq.IsReply,
+		Seq:     msgWithSeq.Seq,
+		MsgID:   uint32(0), // JSON消息使用字符串ID，这里设为0
+		MsgData: msg,
+	}, nil
 }
 
 // goroutine safe
-func (p *Processor) Marshal(msg interface{}) ([][]byte, error) {
+func (p *Processor) Marshal(msg interface{}, seq uint32) ([][]byte, error) {
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {
 		return nil, errors.New("json message pointer required")
@@ -166,8 +170,39 @@ func (p *Processor) Marshal(msg interface{}) ([][]byte, error) {
 		return nil, fmt.Errorf("message %v not registered", msgID)
 	}
 
-	// data
-	m := map[string]interface{}{msgID: msg}
-	data, err := json.Marshal(m)
+	// 构建新的消息格式: {"isReply": bool, "seq": number, "msgID": string, "data": {...}}
+	msgWithSeq := map[string]interface{}{
+		"isReply": seq != 0,
+		"seq":     seq,
+		"msgID":   msgID,
+		"data":    msg,
+	}
+
+	data, err := json.Marshal(msgWithSeq)
+	return [][]byte{data}, err
+}
+
+// MarshalWithSeq 序列化带序列号的消息
+// isReply: 是否是回复消息
+// seq: 序列号，如果是回复消息则使用客户端发送的序列号，否则为0
+func (p *Processor) MarshalWithSeq(msg interface{}, isReply bool, seq uint32) ([][]byte, error) {
+	msgType := reflect.TypeOf(msg)
+	if msgType == nil || msgType.Kind() != reflect.Ptr {
+		return nil, errors.New("json message pointer required")
+	}
+	msgID := msgType.Elem().Name()
+	if _, ok := p.msgInfo[msgID]; !ok {
+		return nil, fmt.Errorf("message %v not registered", msgID)
+	}
+
+	// 构建新的消息格式: {"isReply": bool, "seq": number, "msgID": string, "data": {...}}
+	msgWithSeq := map[string]interface{}{
+		"isReply": isReply,
+		"seq":     seq,
+		"msgID":   msgID,
+		"data":    msg,
+	}
+
+	data, err := json.Marshal(msgWithSeq)
 	return [][]byte{data}, err
 }

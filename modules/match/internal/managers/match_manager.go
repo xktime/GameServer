@@ -10,14 +10,13 @@ import (
 	"gameserver/core/log"
 	"gameserver/modules/game"
 	match_models "gameserver/modules/match/internal/models"
-	"strconv"
 	"sync"
 	"time"
 )
 
 // MatchManager 匹配管理器
 type MatchManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 	matchQueues map[int32]*match_models.MatchQueue `bson:"-"`
 }
 
@@ -28,28 +27,23 @@ var (
 
 func GetMatchManager() *MatchManager {
 	matchManagerOnce.Do(func() {
-		matchManager = &MatchManager{}
-		matchManager.Init()
+		matchManager = actor.RegisterActor[*MatchManager](actor.Match, "1")
 	})
 	return matchManager
 }
 
 // Init 初始化匹配管理器
-func (m *MatchManager) Init() {
+func (m *MatchManager) Init(args ...any) {
 	m.matchQueues = make(map[int32]*match_models.MatchQueue)
 	configs, _ := gconf.GetAllMatchConfigs()
 	for _, config := range configs {
 		m.matchQueues[int32(config.Id)] = match_models.NewMatchQueue()
 	}
-
-	// 初始化TaskHandler
-	m.TaskHandler = actor.InitTaskHandler(actor.Match, "1", m)
-	m.TaskHandler.Start()
 }
 
 // Stop 停止MatchManager
 func (m *MatchManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 func (m *MatchManager) GetInterval() int {
@@ -83,57 +77,65 @@ func (m *MatchManager) Matching() {
 }
 
 // HandleMatch 处理队伍开始匹配请求
-func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
-	m.SendTaskAsync(func() *actor.Response {
-		m.doHandleMatch(agent, msg)
-		return nil
+func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
+	response := m.SendTask(func() *actor.Response {
+		teamId, item := m.doHandleMatch(agent, msg)
+		return &actor.Response{
+			Result: []interface{}{teamId, item},
+		}
 	})
+	if response != nil && len(response.Result) > 0 {
+		if teamId, ok := response.Result[0].(int64); ok {
+			if item, ok := response.Result[1].(*message.S2C_StartMatch); ok {
+				return teamId, item
+			}
+		}
+	}
+	return 0, nil
 }
 
 // doHandleMatch 处理队伍开始匹配请求的同步实现
-func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) {
+func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
 	user := agent.UserData().(models.User)
 	player := game.External.UserManager.GetPlayer(user.PlayerId)
 	if player == nil {
 		log.Error("玩家不存在: %d", user.PlayerId)
-		return
+		return 0, &message.S2C_StartMatch{
+			Result: false,
+		}
 	}
 
 	// 检查玩家是否有队伍
 	if player.TeamId == 0 {
 		log.Error("玩家 %d 没有队伍，无法开始匹配", user.PlayerId)
-		player.SendToClient(&message.S2C_StartMatch{
+		return 0, &message.S2C_StartMatch{
 			Result: false,
-		})
-		return
+		}
 	}
 
 	q := m.matchQueues[msg.Type]
 	if q == nil {
 		log.Error("匹配队列不合法: %d", msg.Type)
-		player.SendToClient(&message.S2C_StartMatch{
+		return 0, &message.S2C_StartMatch{
 			Result: false,
-		})
-		return
+		}
 	}
 
 	// 检查队伍是否已经在该类型匹配队列中
 	if q.IsTeamInQueue(player.TeamId) {
 		log.Debug("队伍 %d 已经在匹配队列中", player.TeamId)
-		player.SendToClient(&message.S2C_StartMatch{
+		return 0, &message.S2C_StartMatch{
 			Result: false,
-		})
-		return
+		}
 	}
 
 	// 获取队伍信息
 	team := game.External.TeamManager.GetTeamByPlayerId(user.PlayerId)
 	if team == nil {
 		log.Error("无法获取玩家 %d 的队伍信息", user.PlayerId)
-		player.SendToClient(&message.S2C_StartMatch{
+		return 0, &message.S2C_StartMatch{
 			Result: false,
-		})
-		return
+		}
 	}
 
 	// 创建队伍匹配请求
@@ -153,33 +155,48 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 	log.Debug("队伍 %d 已加入匹配队列(类型:%d)，包含 %d 个玩家，当前队列大小: %d",
 		teamId, msg.Type, len(team.TeamMembers), q.GetQueueSize())
 
-	// 通知队伍中的所有玩家匹配已开始
-	game.External.TeamManager.SendMessage(teamId, &message.S2C_StartMatch{
+	return teamId, &message.S2C_StartMatch{
 		Result: true,
-	})
+	}
 }
 
 // HandleCancelMatch 处理取消匹配请求
-func (m *MatchManager) HandleCancelMatch(agent gate.Agent) {
-	m.SendTaskAsync(func() *actor.Response {
-		m.doHandleCancelMatch(agent)
-		return nil
+func (m *MatchManager) HandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
+	response := m.SendTask(func() *actor.Response {
+		itemId, item := m.doHandleCancelMatch(agent)
+		return &actor.Response{
+			Result: []interface{}{itemId, item},
+		}
 	})
+
+	if response != nil && len(response.Result) > 0 {
+		if itemId, ok := response.Result[0].(int64); ok {
+			if item, ok := response.Result[1].(*message.S2C_CancelMatch); ok {
+				return itemId, item
+			}
+		}
+	}
+	return 0, nil
+
 }
 
 // doHandleCancelMatch 处理取消匹配请求的同步实现
-func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) {
+func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
 	user := agent.UserData().(models.User)
 	player := game.External.UserManager.GetPlayer(user.PlayerId)
 	if player == nil {
 		log.Error("玩家不存在: %d", user.PlayerId)
-		return
+		return 0, &message.S2C_CancelMatch{
+			Result: false,
+		}
 	}
 
 	// 检查玩家是否有队伍
 	if player.TeamId == 0 {
 		log.Error("玩家 %d 没有队伍，无法取消匹配", user.PlayerId)
-		return
+		return 0, &message.S2C_CancelMatch{
+			Result: false,
+		}
 	}
 
 	// 从所有类型的匹配队列中尝试移除该队伍
@@ -193,17 +210,20 @@ func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) {
 
 	if removed {
 		log.Debug("队伍 %d 已从匹配队列中移除", player.TeamId)
-		game.External.TeamManager.SendMessage(player.TeamId, &message.S2C_CancelMatch{
+		return player.TeamId, &message.S2C_CancelMatch{
 			Result: true,
-		})
+		}
 	} else {
 		log.Debug("队伍 %d 不在任何匹配队列中", player.TeamId)
+		return 0, &message.S2C_CancelMatch{
+			Result: false,
+		}
 	}
 }
 
 // 根据匹配类型获取目标房间人数
 func getTargetRoomSize(matchType int32) int {
-	cfg, ok := gconf.GetMatchConfig(strconv.Itoa(int(matchType)))
+	cfg, ok := gconf.GetMatchConfig(matchType)
 	if ok && cfg != nil {
 		return int(cfg.Room)
 	}

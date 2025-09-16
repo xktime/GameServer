@@ -13,6 +13,7 @@ import (
 	"gameserver/core/module"
 	"gameserver/core/server"
 	"gameserver/gate"
+	gamehttp "gameserver/http"
 	"gameserver/modules/game"
 	"gameserver/modules/login"
 	"gameserver/modules/match"
@@ -83,4 +84,7 @@ func Init() {
 
 	// 初始化定时任务
 	schedule.Init()
+
+	// 初始化http
+	gamehttp.Start()
 }

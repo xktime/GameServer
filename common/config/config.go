@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"gameserver/core/log"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,17 +11,29 @@ import (
 
 // ConfigManager 配置管理器
 type ConfigManager struct {
-	configs map[string]map[string]interface{} // 文件名 -> {ID -> 配置数据}
-	mu      sync.RWMutex
-	baseDir string
+	configs     map[string]map[interface{}]interface{} // 文件名 -> {ID -> 配置数据}
+	mu          sync.RWMutex
+	baseDir     string
+	initialized bool
 }
 
 // NewConfigManager 创建新的配置管理器
 func NewConfigManager(baseDir string) *ConfigManager {
 	return &ConfigManager{
-		configs: make(map[string]map[string]interface{}),
+		configs: make(map[string]map[interface{}]interface{}),
 		baseDir: baseDir,
 	}
+}
+
+func (cm *ConfigManager) IsInitialized() bool {
+	if cm == nil {
+		return false
+	}
+	return cm.initialized
+}
+
+func (cm *ConfigManager) SetInitialized() {
+	cm.initialized = true
 }
 
 // LoadConfig 加载指定JSON配置文件
@@ -33,23 +44,38 @@ func (cm *ConfigManager) LoadConfig(filename string) error {
 	filePath := filepath.Join(cm.baseDir, filename)
 
 	// 读取文件
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("读取配置文件失败 %s: %v", filePath, err)
 	}
 
-	// 解析JSON数组
+	// 特殊处理GameConst.json文件
+	if filename == "GameConst.json" {
+		return cm.loadGameConstConfig(data, filename)
+	}
+
+	// 尝试解析为新的配置格式（最外层key是配置ID）
+	var configObj map[string]interface{}
+	if err := json.Unmarshal(data, &configObj); err == nil {
+		// 检查是否是新的配置格式：最外层key是配置ID，value是配置对象
+		if cm.isNewConfigFormat(configObj) {
+			return cm.loadNewFormatConfig(configObj, filename)
+		}
+	}
+
+	// 尝试解析为旧的JSON数组格式
 	var configArray []map[string]interface{}
 	if err := json.Unmarshal(data, &configArray); err != nil {
 		return fmt.Errorf("解析JSON失败 %s: %v", filePath, err)
 	}
 
 	// 创建ID到配置的映射
-	configMap := make(map[string]interface{})
+	configMap := make(map[interface{}]interface{})
 	for _, item := range configArray {
 		if id, ok := item["id"]; ok {
-			idStr := fmt.Sprintf("%v", id)
-			configMap[idStr] = item
+			// 对ID进行类型转换：整数使用int32，小数使用float64
+			convertedID := convertIDType(id)
+			configMap[convertedID] = item
 		} else {
 			log.Error("配置文件 %s 缺少ID字段", filePath)
 		}
@@ -59,8 +85,58 @@ func (cm *ConfigManager) LoadConfig(filename string) error {
 	return nil
 }
 
+// loadGameConstConfig 加载GameConst.json配置文件（特殊格式处理）
+func (cm *ConfigManager) loadGameConstConfig(data []byte, filename string) error {
+	// 解析JSON对象
+	var configObj map[string]interface{}
+	if err := json.Unmarshal(data, &configObj); err != nil {
+		return fmt.Errorf("解析GameConst.json失败: %v", err)
+	}
+
+	// 创建配置映射，使用"default"作为默认ID
+	configMap := make(map[interface{}]interface{})
+	configMap["default"] = configObj
+
+	cm.configs[filename] = configMap
+	return nil
+}
+
+// isNewConfigFormat 检查是否是新的配置格式（最外层key是配置ID）
+func (cm *ConfigManager) isNewConfigFormat(configObj map[string]interface{}) bool {
+	// 如果map为空，不是新格式
+	if len(configObj) == 0 {
+		return false
+	}
+
+	// 检查第一个值是否是对象，且包含id字段
+	for _, value := range configObj {
+		if _, ok := value.(map[string]interface{}); ok {
+			return true
+		}
+		break // 只检查第一个值
+	}
+
+	return false
+}
+
+// loadNewFormatConfig 加载新格式的配置文件
+func (cm *ConfigManager) loadNewFormatConfig(configObj map[string]interface{}, filename string) error {
+	configMap := make(map[interface{}]interface{})
+
+	for keyStr, value := range configObj {
+		if configItem, ok := value.(map[string]interface{}); ok {
+			// 对key进行类型转换
+			convertedKey := convertIDType(keyStr)
+			configMap[convertedKey] = configItem
+		}
+	}
+
+	cm.configs[filename] = configMap
+	return nil
+}
+
 // GetConfig 根据文件名和ID获取配置
-func (cm *ConfigManager) GetConfig(filename, id string) (interface{}, bool) {
+func (cm *ConfigManager) GetConfig(filename string, id interface{}) (interface{}, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -69,12 +145,34 @@ func (cm *ConfigManager) GetConfig(filename, id string) (interface{}, bool) {
 		return nil, false
 	}
 
+	// 特殊处理GameConst.json：如果没有指定ID或ID为nil，返回默认配置
+	if filename == "GameConst.json" {
+		if id == nil {
+			config, exists := configMap["default"]
+			return config, exists
+		}
+	}
+
 	config, exists := configMap[id]
 	return config, exists
 }
 
+// GetGameConstConfig 获取GameConst配置（便捷方法）
+func (cm *ConfigManager) GetGameConstConfig() (map[string]interface{}, bool) {
+	config, exists := cm.GetConfig("GameConst.json", nil)
+	if !exists {
+		return nil, false
+	}
+
+	if configMap, ok := config.(map[string]interface{}); ok {
+		return configMap, true
+	}
+
+	return nil, false
+}
+
 // GetConfigByID 根据ID获取配置（自动查找所有已加载的文件）
-func (cm *ConfigManager) GetConfigByID(id string) (string, interface{}, bool) {
+func (cm *ConfigManager) GetConfigByID(id interface{}) (string, interface{}, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -88,7 +186,7 @@ func (cm *ConfigManager) GetConfigByID(id string) (string, interface{}, bool) {
 }
 
 // GetAllConfigs 获取指定文件的所有配置
-func (cm *ConfigManager) GetAllConfigs(filename string) (map[string]interface{}, bool) {
+func (cm *ConfigManager) GetAllConfigs(filename string) (map[interface{}]interface{}, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -178,14 +276,35 @@ func (cm *ConfigManager) LoadAllConfigs() error {
 		if !info.IsDir() && filepath.Ext(path) == ".json" {
 			relPath, err := filepath.Rel(cm.baseDir, path)
 			if err != nil {
-				return err
-			}
-
-			if err := cm.LoadConfig(relPath); err != nil {
-				return fmt.Errorf("加载配置文件失败 %s: %v", relPath, err)
+				log.Error("加载配置文件失败 %s: %v", relPath, err)
+			} else if err := cm.LoadConfig(relPath); err != nil {
+				log.Error("加载配置文件失败 %s: %v", relPath, err)
 			}
 		}
 
 		return nil
 	})
+}
+
+// convertIDType 转换ID类型：整数使用int32，小数使用float64
+func convertIDType(id interface{}) interface{} {
+	switch v := id.(type) {
+	case float64:
+		// 如果值是整数（没有小数点），使用int32
+		if v == float64(int64(v)) {
+			return int32(v)
+		}
+		// 只有真正有小数点的数值才使用float64
+		return v
+	case int:
+		return int32(v)
+	case int32:
+		return v
+	case int64:
+		return int32(v)
+	case string:
+		return v
+	default:
+		return v
+	}
 }

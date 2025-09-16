@@ -11,11 +11,11 @@ import (
 )
 
 type Team struct {
-	*actor.TaskHandler `bson:"-"`
-	TeamId             int64   `bson:"_id"`
-	LeaderId           int64   `bson:"leader_id"`
-	TeamMembers        []int64 `bson:"team_members"`
-	RoomId             int64   `bson:"room_id"`
+	actor.BaseActor `bson:"-"`
+	TeamId          int64   `bson:"_id"`
+	LeaderId        int64   `bson:"leader_id"`
+	TeamMembers     []int64 `bson:"team_members"`
+	RoomId          int64   `bson:"room_id"`
 }
 
 func (t Team) GetPersistId() interface{} {
@@ -30,22 +30,20 @@ func InitTeam(agent gate.Agent) *Team {
 	teamId := utils.FlakeId()
 	log.Debug("开始初始化队伍，玩家ID: %d, 队伍ID: %d", playerId, teamId)
 
-	team := &Team{
-		TeamId:   teamId,
-		LeaderId: playerId,
-	}
-	// 注册Actor
-	team.TaskHandler = actor.InitTaskHandler(actor.Team, teamId, team)
-	team.Init()
-	return team
+	return actor.RegisterActor[*Team](actor.Team, teamId, teamId, playerId)
 }
 
-func (t *Team) Init() {
-	t.TaskHandler.Start()
+func (t *Team) Init(args ...any) {
+	if teamId, ok := args[0].(int64); ok {
+		t.TeamId = teamId
+	}
+	if leaderId, ok := args[1].(int64); ok {
+		t.LeaderId = leaderId
+	}
 }
 
 func (t *Team) Stop() {
-	t.TaskHandler.Stop()
+	t.RemoveActor(t)
 }
 
 func (t *Team) JoinTeam(playerId int64) {

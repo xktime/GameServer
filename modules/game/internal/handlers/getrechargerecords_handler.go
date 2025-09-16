@@ -10,7 +10,7 @@ import (
 
 // C2S_GetRechargeRecordsHandler 处理获取充值记录请求
 func C2S_GetRechargeRecordsHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_GetRechargeRecordsHandler: 参数不足")
 		return
 	}
@@ -82,9 +82,9 @@ func C2S_GetRechargeRecordsHandler(args []interface{}) {
 	}
 
 	// 发送响应给客户端
-	agent.WriteMsg(&message.S2C_GetRechargeRecords{
+	agent.WriteMsgWithSeq(&message.S2C_GetRechargeRecords{
 		Records: pbRecords,
-	})
+	}, args[2].(uint32))
 
 	log.Debug("充值记录获取成功: PlayerId=%d, 返回 %d 条记录", user.PlayerId, len(pbRecords))
 }

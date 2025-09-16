@@ -35,7 +35,7 @@ echo Docker镜像构建成功！
 
 echo.
 echo 正在启动新容器...
-docker run -p 3653:3653 -p 3563:3563 --network my-network --name gameserver gameserver:latest
+docker run -p 3653:3653 -p 3563:3563 -p 8080:8080 --network my-network --name gameserver gameserver:latest
 
 if %errorlevel% neq 0 (
     echo 错误: 容器启动失败

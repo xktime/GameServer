@@ -22,7 +22,7 @@ type RechargeRecord struct {
 	Id            string                  `bson:"_id"`            // 充值订单ID
 	PlayerId      int64                   `bson:"player_id"`      // 玩家ID
 	AccountId     string                  `bson:"account_id"`     // 账户ID
-	Amount        int64                   `bson:"amount"`         // 充值金额（分）
+	Amount        int32                   `bson:"amount"`         // 充值金额（分）
 	Currency      string                  `bson:"currency"`       // 货币类型（CNY）
 	Platform      message.PaymentPlatform `bson:"platform"`       // 支付平台
 	Status        RechargeStatus          `bson:"status"`         // 充值状态
@@ -42,7 +42,7 @@ func (r RechargeRecord) GetPersistId() interface{} {
 }
 
 // 创建新的充值记录
-func NewRechargeRecord(playerId int64, accountId string, amount int64, platform message.PaymentPlatform, configId string) *RechargeRecord {
+func NewRechargeRecord(playerId int64, accountId string, amount int32, platform message.PaymentPlatform, configId string) *RechargeRecord {
 	now := time.Now().Unix()
 	return &RechargeRecord{
 		Id:          generateOrderId(),

@@ -6,6 +6,7 @@ import (
 
 type Agent interface {
 	WriteMsg(msg interface{})
+	WriteMsgWithSeq(msg interface{}, seq uint32)
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
 	Close()

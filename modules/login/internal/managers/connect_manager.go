@@ -19,7 +19,7 @@ type ClientHeartbeat struct {
 
 // ConnectManager 使用TaskHandler实现，确保连接管理操作按顺序执行
 type ConnectManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 	clients map[string]*ClientHeartbeat // clientID -> 心跳信息
 }
 
@@ -30,18 +30,13 @@ var (
 
 func GetConnectManager() *ConnectManager {
 	connectManagerOnce.Do(func() {
-		connectManager = &ConnectManager{}
-		connectManager.Init()
+		connectManager = actor.RegisterActor[*ConnectManager](actor.Login, "connect")
 	})
 	return connectManager
 }
 
 // Init 初始化ConnectManager
-func (m *ConnectManager) Init() {
-	// 初始化TaskHandler
-	m.TaskHandler = actor.InitTaskHandler(actor.Login, "connect", m)
-	m.TaskHandler.Start()
-
+func (m *ConnectManager) Init(args ...any) {
 	// 初始化客户端映射
 	m.clients = make(map[string]*ClientHeartbeat)
 }
@@ -56,7 +51,7 @@ func (m *ConnectManager) GetInterval() int {
 
 // Stop 停止ConnectManager
 func (m *ConnectManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 // UpdateHeartbeat 更新客户端心跳 - 异步执行

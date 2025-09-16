@@ -6,6 +6,7 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
 	"gameserver/conf"
+	"gameserver/core/gate"
 	"gameserver/modules/login/internal/models"
 )
 
@@ -23,7 +24,7 @@ func NewDouyinLoginProcessor() *DouyinLoginProcessor {
 	return &DouyinLoginProcessor{}
 }
 
-func (p *DouyinLoginProcessor) ReqLogin(context context.Context, req *message.C2S_Login) *models.LoginResponse {
+func (p *DouyinLoginProcessor) ReqLogin(agent gate.Agent, context context.Context, req *message.C2S_Login) *models.LoginResponse {
 	code2SessionReq := &models.Code2SessionRequest{
 		AppId:  conf.Server.DouYinInfo.Appid,
 		Secret: conf.Server.DouYinInfo.Secret,

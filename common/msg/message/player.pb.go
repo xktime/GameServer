@@ -81,6 +81,7 @@ type PlayerInfo struct {
 	PlayerName    string                 `protobuf:"bytes,2,opt,name=player_name,json=playerName,proto3" json:"player_name,omitempty"`
 	Avatar        string                 `protobuf:"bytes,3,opt,name=avatar,proto3" json:"avatar,omitempty"`
 	Level         int64                  `protobuf:"varint,4,opt,name=level,proto3" json:"level,omitempty"`
+	PlayerId      int64                  `protobuf:"varint,5,opt,name=playerId,proto3" json:"playerId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,9 +144,16 @@ func (x *PlayerInfo) GetLevel() int64 {
 	return 0
 }
 
+func (x *PlayerInfo) GetPlayerId() int64 {
+	if x != nil {
+		return x.PlayerId
+	}
+	return 0
+}
+
+// 获取玩家信息请求
 type C2S_GetPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          int32                  `protobuf:"varint,1,opt,name=type,proto3" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,13 +188,7 @@ func (*C2S_GetPlayerInfo) Descriptor() ([]byte, []int) {
 	return file_game_player_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *C2S_GetPlayerInfo) GetType() int32 {
-	if x != nil {
-		return x.Type
-	}
-	return 0
-}
-
+// 获取玩家信息响应
 type S2C_GetPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PlayerInfo    *PlayerInfo            `protobuf:"bytes,1,opt,name=playerInfo,proto3" json:"playerInfo,omitempty"`
@@ -231,6 +233,7 @@ func (x *S2C_GetPlayerInfo) GetPlayerInfo() *PlayerInfo {
 	return nil
 }
 
+// 检验玩家名是否合法
 type C2S_CheckName struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -319,6 +322,7 @@ func (x *S2C_CheckName) GetResult() Result {
 	return Result_Success
 }
 
+// 修改玩家名
 type C2S_ModifyName struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -366,6 +370,7 @@ func (x *C2S_ModifyName) GetName() string {
 type S2C_ModifyName struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Result        Result                 `protobuf:"varint,1,opt,name=result,proto3,enum=Result" json:"result,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -407,20 +412,27 @@ func (x *S2C_ModifyName) GetResult() Result {
 	return Result_Success
 }
 
+func (x *S2C_ModifyName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 var File_game_player_proto protoreflect.FileDescriptor
 
 const file_game_player_proto_rawDesc = "" +
 	"\n" +
-	"\x11game/player.proto\x1a\x10message_id.proto\"x\n" +
+	"\x11game/player.proto\x1a\x10message_id.proto\"\x94\x01\n" +
 	"\n" +
 	"PlayerInfo\x12\x1b\n" +
 	"\tserver_id\x18\x01 \x01(\x05R\bserverId\x12\x1f\n" +
 	"\vplayer_name\x18\x02 \x01(\tR\n" +
 	"playerName\x12\x16\n" +
 	"\x06avatar\x18\x03 \x01(\tR\x06avatar\x12\x14\n" +
-	"\x05level\x18\x04 \x01(\x03R\x05level\".\n" +
-	"\x11C2S_GetPlayerInfo\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\x05R\x04type:\x05\x80\xb5\x18\xa1\x06\"G\n" +
+	"\x05level\x18\x04 \x01(\x03R\x05level\x12\x1a\n" +
+	"\bplayerId\x18\x05 \x01(\x03R\bplayerId\"\x1a\n" +
+	"\x11C2S_GetPlayerInfo:\x05\x80\xb5\x18\xa1\x06\"G\n" +
 	"\x11S2C_GetPlayerInfo\x12+\n" +
 	"\n" +
 	"playerInfo\x18\x01 \x01(\v2\v.PlayerInfoR\n" +
@@ -430,9 +442,10 @@ const file_game_player_proto_rawDesc = "" +
 	"\rS2C_CheckName\x12\x1f\n" +
 	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result:\x05\x80\xb5\x18\x86\a\"+\n" +
 	"\x0eC2S_ModifyName\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name:\x05\x80\xb5\x18\xa3\x06\"8\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name:\x05\x80\xb5\x18\xa3\x06\"L\n" +
 	"\x0eS2C_ModifyName\x12\x1f\n" +
-	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result:\x05\x80\xb5\x18\x87\a*;\n" +
+	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name:\x05\x80\xb5\x18\x87\a*;\n" +
 	"\x06Result\x12\v\n" +
 	"\aSuccess\x10\x00\x12\b\n" +
 	"\x04Fail\x10\x01\x12\r\n" +

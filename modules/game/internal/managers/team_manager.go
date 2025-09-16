@@ -11,7 +11,7 @@ import (
 
 // TeamManager 使用TaskHandler实现，确保队伍操作按顺序执行
 type TeamManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 }
 
 var (
@@ -21,22 +21,19 @@ var (
 
 func GetTeamManager() *TeamManager {
 	teamManagerOnce.Do(func() {
-		teamManager = &TeamManager{}
-		teamManager.Init()
+		teamManager = actor.RegisterActor[*TeamManager](actor.Team, "1")
 	})
 	return teamManager
 }
 
 // Init 初始化TeamManager
-func (m *TeamManager) Init() {
-	// 初始化TaskHandler
-	m.TaskHandler = actor.InitTaskHandler(actor.Team, "1", m)
-	m.TaskHandler.Start()
+func (m *TeamManager) Init(args ...any) {
+	// 初始化逻辑
 }
 
 // Stop 停止TeamManager
 func (m *TeamManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 // GetTeamByPlayerId 通过玩家ID获取队伍 - 异步执行
@@ -113,6 +110,31 @@ func (t *TeamManager) SendMessage(teamId int64, msg proto.Message) {
 		t.doSendMessage(teamId, msg)
 		return nil
 	})
+}
+
+func (t *TeamManager) SendMessageExceptSelf(teamId int64, msg proto.Message, selfId int64) {
+	t.SendTaskAsync(func() *actor.Response {
+		t.doSendMessageExceptSelf(teamId, msg, selfId)
+		return nil
+	})
+}
+
+func (t *TeamManager) doSendMessageExceptSelf(teamId int64, msg proto.Message, selfId int64) {
+	team, ok := actor.GetActor[team.Team](actor.Team, teamId)
+	if !ok {
+		return
+	}
+	for _, member := range team.TeamMembers {
+		if member == selfId {
+			continue
+		}
+		p := GetUserManager().GetPlayer(member)
+		if p == nil {
+			log.Debug("玩家 %d 不在线", member)
+			continue
+		}
+		p.SendToClient(msg)
+	}
 }
 
 // doSendMessage 发送消息给队伍的同步实现

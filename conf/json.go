@@ -37,7 +37,8 @@ var Server struct {
 		Enabled bool
 		Port    int
 	}
-	Actor struct {
+	HttpPort int32
+	Actor    struct {
 		TimeoutMillisecond int
 	}
 	DouYinInfo struct {

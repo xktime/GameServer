@@ -47,6 +47,7 @@ func StartActorSaver(interval int) {
 		interval = 60 // 默认60秒
 	}
 
+	// todo 会导致部分数据丢失，需要排查之后放开
 	RegisterIntervalSchedule(interval, actor_manager.SaveAllActorData)
 	log.Release("Actor自动保存任务已启动，间隔%d秒", interval)
 }

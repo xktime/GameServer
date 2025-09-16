@@ -9,7 +9,7 @@ import (
 
 // C2S_CheckNameHandler 处理C2S_CheckName消息
 func C2S_CheckNameHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_CheckNameHandler: 参数不足")
 		return
 	}
@@ -29,7 +29,7 @@ func C2S_CheckNameHandler(args []interface{}) {
 	log.Debug("收到C2S_CheckName消息: %v, agent: %v", msg, agent)
 	playerName := msg.Name
 	result := managers.GetUserManager().CheckName(playerName)
-	agent.WriteMsg(&message.S2C_CheckName{
+	agent.WriteMsgWithSeq(&message.S2C_CheckName{
 		Result: result,
-	})
+	}, args[2].(uint32))
 }

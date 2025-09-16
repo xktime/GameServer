@@ -14,7 +14,12 @@ func InitGlobalConfig(baseDir string) {
 	once.Do(func() {
 		globalManager = NewConfigManager(baseDir)
 		globalManager.LoadAllConfigs()
+		globalManager.SetInitialized()
 	})
+}
+
+func IsInitialized() bool {
+	return globalManager.IsInitialized()
 }
 
 // LoadConfig 全局加载配置文件
@@ -23,17 +28,17 @@ func LoadConfig(filename string) error {
 }
 
 // GetConfig 全局获取配置
-func GetConfig(filename, id string) (interface{}, bool) {
+func GetConfig(filename string, id interface{}) (interface{}, bool) {
 	return globalManager.GetConfig(filename, id)
 }
 
 // GetConfigByID 全局根据ID获取配置
-func GetConfigByID(id string) (string, interface{}, bool) {
+func GetConfigByID(id interface{}) (string, interface{}, bool) {
 	return globalManager.GetConfigByID(id)
 }
 
 // GetAllConfigs 全局获取所有配置
-func GetAllConfigs(filename string) (map[string]interface{}, bool) {
+func GetAllConfigs(filename string) (map[interface{}]interface{}, bool) {
 	return globalManager.GetAllConfigs(filename)
 }
 

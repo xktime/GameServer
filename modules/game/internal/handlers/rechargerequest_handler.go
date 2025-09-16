@@ -10,7 +10,7 @@ import (
 
 // C2S_RechargeRequestHandler 处理充值请求
 func C2S_RechargeRequestHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_RechargeRequestHandler: 参数不足")
 		return
 	}
@@ -82,7 +82,7 @@ func C2S_RechargeRequestHandler(args []interface{}) {
 	// 调用充值管理器处理
 	rechargeManager := managers.GetRechargeManager()
 	response := rechargeManager.HandleRechargeRequest(rechargeReq, agent)
-	agent.WriteMsg(response)
+	agent.WriteMsgWithSeq(response, args[2].(uint32))
 	if response.Success {
 		log.Debug("充值请求处理成功: PlayerId=%d, Amount=%d, OrderId=%s",
 			user.PlayerId, msg.Amount, response.OrderId)

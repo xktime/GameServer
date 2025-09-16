@@ -158,7 +158,6 @@ func BulkSave(docs []PersistData) (*mongo.BulkWriteResult, error) {
 		model := mongo.NewReplaceOneModel().
 			SetFilter(bson.M{"_id": doc.GetPersistId()}).
 			SetReplacement(doc).SetUpsert(true)
-
 		models = append(models, model)
 	}
 

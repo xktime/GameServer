@@ -35,6 +35,9 @@ func C2S_GetMyRankHandler(args []interface{}) {
 	playerId := agent.UserData().(models.User).PlayerId
 
 	// 获取我的排名
-	rankManager.HandleGetMyRank(playerId, msg.RankType)
+	response := rankManager.HandleGetMyRank(playerId, msg.RankType)
+	if response != nil {
+		agent.WriteMsgWithSeq(response, args[2].(uint32))
+	}
 
 }

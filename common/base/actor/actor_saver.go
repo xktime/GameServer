@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/core/log"
+	"math/rand"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -12,16 +13,14 @@ import (
 
 // TypeCache 类型缓存结构，提供线程安全的类型缓存
 type TypeCache struct {
-	cache     sync.Map
-	size      int64
-	maxSize   int64
-	mu        sync.RWMutex
-	lastClean time.Time
+	cache   sync.Map
+	size    int64
+	maxSize int64
 }
 
 // 全局类型缓存实例
 var globalTypeCache = &TypeCache{
-	maxSize: 10000,
+	maxSize: 100000,
 }
 
 // 保存统计信息
@@ -37,27 +36,21 @@ type SaveStats struct {
 var saveStats SaveStats
 var statsMu sync.RWMutex
 
-// 清理间隔
-const cleanupInterval = 5 * time.Minute
-
 // GetType 获取类型，如果不存在则创建并缓存
-func (tc *TypeCache) GetType(key string, data interface{}) reflect.Type {
+func (tc *TypeCache) GetType(name, key string, data interface{}) reflect.Type {
+	uniqueKey := fmt.Sprintf("%s_%s", name, key)
 	// 先尝试从缓存获取
-	if cached, ok := tc.cache.Load(key); ok {
+	if cached, ok := tc.cache.Load(uniqueKey); ok {
 		return cached.(reflect.Type)
 	}
 
 	// 缓存未命中，创建新类型
 	actorType := reflect.TypeOf(data)
-	tc.cache.Store(key, actorType)
-	atomic.AddInt64(&tc.size, 1)
+	tc.cache.Store(uniqueKey, actorType)
+	newSize := atomic.AddInt64(&tc.size, 1)
 
-	// 检查是否需要清理
-	tc.mu.RLock()
-	lastClean := tc.lastClean
-	tc.mu.RUnlock()
-
-	if time.Since(lastClean) > cleanupInterval {
+	// 检查是否需要清理缓存
+	if newSize > tc.maxSize {
 		tc.cleanupIfNeeded()
 	}
 
@@ -66,85 +59,85 @@ func (tc *TypeCache) GetType(key string, data interface{}) reflect.Type {
 
 // cleanupIfNeeded 在需要时清理缓存
 func (tc *TypeCache) cleanupIfNeeded() {
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-
-	// 双重检查
-	if time.Since(tc.lastClean) <= cleanupInterval {
-		return
-	}
-
 	currentSize := atomic.LoadInt64(&tc.size)
 	if currentSize <= tc.maxSize {
-		tc.lastClean = time.Now()
 		return
 	}
 
 	log.Debug("开始清理类型缓存，当前大小: %d, 阈值: %d", currentSize, tc.maxSize)
 
-	// 获取活跃的Actor keys
-	activeKeys := make(map[string]bool)
-	globalActorManager.mu.RLock()
-	for key := range globalActorManager.taskHandlers {
-		activeKeys[key] = true
-	}
-	globalActorManager.mu.RUnlock()
-
-	// 清理不活跃的缓存
-	deleteCount := 0
+	// 计算需要清理的数量（清理一半）
 	targetSize := tc.maxSize / 2
+	cleanupCount := int(currentSize - targetSize)
 
+	// 收集所有缓存的键
+	var keys []interface{}
 	tc.cache.Range(func(key, value interface{}) bool {
-		if deleteCount >= (int(currentSize) - int(targetSize)) {
-			return false
-		}
-
-		keyStr, ok := key.(string)
-		if ok && !activeKeys[keyStr] {
-			tc.cache.Delete(key)
-			atomic.AddInt64(&tc.size, -1)
-			deleteCount++
-		}
+		keys = append(keys, key)
 		return true
 	})
 
-	tc.lastClean = time.Now()
-	log.Debug("已清理 %d 个缓存条目，目标大小: %d", deleteCount, targetSize)
+	// 如果键的数量少于需要清理的数量，清理所有
+	if len(keys) <= cleanupCount {
+		cleanupCount = len(keys)
+	}
+
+	// 随机选择要清理的键
+	rand.Shuffle(len(keys), func(i, j int) {
+		keys[i], keys[j] = keys[j], keys[i]
+	})
+
+	// 删除选中的键
+	deletedCount := 0
+	for i := 0; i < cleanupCount; i++ {
+		// 检查键是否存在，然后删除
+		if _, exists := tc.cache.Load(keys[i]); exists {
+			tc.cache.Delete(keys[i])
+			deletedCount++
+		}
+	}
+
+	// 更新大小计数器
+	atomic.AddInt64(&tc.size, -int64(deletedCount))
+
+	log.Debug("类型缓存清理完成: 删除了 %d 个条目，目标大小: %d", deletedCount, targetSize)
 }
 
 // ForceCleanupTypeCache 强制清理类型缓存，清理所有不活跃的Actor类型缓存
 func ForceCleanupTypeCache() {
 	log.Debug("强制清理类型缓存")
 
-	// 获取当前活跃的Actor keys
-	activeKeys := make(map[string]bool)
-	globalActorManager.mu.RLock()
-	for key := range globalActorManager.taskHandlers {
-		activeKeys[key] = true
-	}
-	globalActorManager.mu.RUnlock()
-
-	// 清理所有不活跃的缓存
-	deleteCount := 0
-	globalTypeCache.cache.Range(func(key, _ interface{}) bool {
-		keyStr, ok := key.(string)
-		if ok && !activeKeys[keyStr] {
-			globalTypeCache.cache.Delete(key)
-			atomic.AddInt64(&globalTypeCache.size, -1)
-			deleteCount++
-			log.Debug("强制清理不活跃的Actor类型缓存: %s", keyStr)
-		}
+	// 收集所有缓存的键
+	var keys []interface{}
+	globalTypeCache.cache.Range(func(key, value interface{}) bool {
+		keys = append(keys, key)
 		return true
 	})
 
-	log.Debug("强制清理完成，共清理 %d 个不活跃的缓存条目", deleteCount)
-}
+	// 随机选择一半进行清理
+	cleanupCount := len(keys) / 2
+	if cleanupCount == 0 && len(keys) > 0 {
+		cleanupCount = 1
+	}
 
-// cleanupActorTypeCache 清理指定Actor的类型缓存
-func cleanupActorTypeCache(actorKey string) {
-	globalTypeCache.cache.Delete(actorKey)
-	atomic.AddInt64(&globalTypeCache.size, -1)
-	log.Debug("已清理Actor类型缓存: %s", actorKey)
+	// 随机打乱键的顺序
+	rand.Shuffle(len(keys), func(i, j int) {
+		keys[i], keys[j] = keys[j], keys[i]
+	})
+
+	// 删除选中的键
+	deletedCount := 0
+	for i := 0; i < cleanupCount; i++ {
+		if _, exists := globalTypeCache.cache.Load(keys[i]); exists {
+			globalTypeCache.cache.Delete(keys[i])
+			deletedCount++
+		}
+	}
+
+	// 更新大小计数器
+	atomic.AddInt64(&globalTypeCache.size, -int64(deletedCount))
+
+	log.Debug("强制清理完成，共清理 %d 个缓存条目", deletedCount)
 }
 
 // GetSaveStats 获取保存统计信息
@@ -183,7 +176,7 @@ func SaveAllActorData() {
 
 	// 在快照上进行遍历，无需加锁
 	for cacheKey, taskHandler := range actorsSnapshot {
-		for _, a := range taskHandler.actors {
+		for name, a := range taskHandler.actors {
 			// 检查是否实现了persistData接口
 			persistData, ok := a.(mongodb.PersistData)
 			if !ok {
@@ -191,7 +184,7 @@ func SaveAllActorData() {
 			}
 
 			// 使用优化的类型缓存
-			actorType := globalTypeCache.GetType(cacheKey, persistData)
+			actorType := globalTypeCache.GetType(name, cacheKey, persistData)
 
 			// 将ActorData实例添加到对应类型的组中
 			typeGroup[actorType] = append(typeGroup[actorType], persistData)

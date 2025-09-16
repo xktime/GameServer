@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/game"
 	"gameserver/modules/match/internal/managers"
 )
 
@@ -27,5 +29,9 @@ func C2S_StartMatchHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_StartMatch消息: %v, agent: %v", msg, agent)
-	managers.GetMatchManager().HandleMatch(agent, msg)
+	teamId, response := managers.GetMatchManager().HandleMatch(agent, msg)
+	if response.Result {
+		game.External.TeamManager.SendMessageExceptSelf(teamId, response, agent.UserData().(models.User).PlayerId)
+	}
+	agent.WriteMsgWithSeq(response, args[2].(uint32))
 }

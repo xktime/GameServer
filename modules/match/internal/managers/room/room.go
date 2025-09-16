@@ -19,37 +19,39 @@ const (
 // todo 玩家退出房间
 // Room 房间结构
 type Room struct {
-	*actor.TaskHandler `bson:"-"`
-	RoomId             int64         `bson:"_id"`
-	RoomMembers        []int64       `bson:"room_members"`
-	TeamIds            []int64       `bson:"team_ids"`
-	CreateTime         time.Time     `bson:"create_time"`  // 房间创建时间
-	MaxLifetime        time.Duration `bson:"max_lifetime"` // 房间最大存活时间
+	actor.BaseActor `bson:"-"`
+	RoomId          int64         `bson:"_id"`
+	RoomMembers     []int64       `bson:"room_members"`
+	TeamIds         []int64       `bson:"team_ids"`
+	CreateTime      time.Time     `bson:"create_time"`  // 房间创建时间
+	MaxLifetime     time.Duration `bson:"max_lifetime"` // 房间最大存活时间
 }
 
 // CreateRoom 创建房间
 func CreateRoom(playerIds []int64, teamIds []int64) *Room {
 	roomId := generateRoomId()
-	room := &Room{
-		RoomMembers: playerIds,
-		RoomId:      roomId,
-		CreateTime:  time.Now(),
-		MaxLifetime: MaxRoomLifetime,
-		TeamIds:     teamIds,
-	}
-	room.TaskHandler = actor.InitTaskHandler(actor.Room, roomId, room)
-	room.Init()
+	room := actor.RegisterActor[*Room](actor.Room, roomId, roomId, playerIds, teamIds)
 	log.Debug("房间 %d 创建成功，包含 %d 个玩家，最大存活时间: %v",
 		roomId, len(playerIds), room.MaxLifetime)
 	return room
 }
 
-func (r *Room) Init() {
-	r.TaskHandler.Start()
+func (r *Room) Init(args ...any) {
+	r.CreateTime = time.Now()
+	r.MaxLifetime = MaxRoomLifetime
+	if roomId, ok := args[0].(int64); ok {
+		r.RoomId = roomId
+	}
+	if playerIds, ok := args[1].([]int64); ok {
+		r.RoomMembers = playerIds
+	}
+	if teamIds, ok := args[2].([]int64); ok {
+		r.TeamIds = teamIds
+	}
 }
 
 func (r *Room) Stop() {
-	r.TaskHandler.Stop()
+	r.RemoveActor(r)
 }
 
 func (r *Room) GetInterval() int {
@@ -92,7 +94,7 @@ func (r *Room) StopRoom() {
 	r.cleanup()
 
 	// 停止TaskHandler
-	r.TaskHandler.Stop()
+	r.RemoveActor(r)
 }
 
 // IsExpired 检查房间是否已过期

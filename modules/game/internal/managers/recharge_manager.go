@@ -19,7 +19,7 @@ import (
 
 // RechargeManager 使用TaskHandler实现，确保充值操作按顺序执行
 type RechargeManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 }
 
 var (
@@ -29,22 +29,19 @@ var (
 
 func GetRechargeManager() *RechargeManager {
 	rechargeManagerOnce.Do(func() {
-		rechargeManager = &RechargeManager{}
-		rechargeManager.Init()
+		rechargeManager = actor.RegisterActor[*RechargeManager](actor.Recharge, "1")
 	})
 	return rechargeManager
 }
 
 // Init 初始化RechargeManager
-func (m *RechargeManager) Init() {
-	// 初始化TaskHandler
-	m.TaskHandler = actor.InitTaskHandler(actor.Recharge, "1", m)
-	m.TaskHandler.Start()
+func (m *RechargeManager) Init(args ...any) {
+	// 初始化逻辑
 }
 
 // Stop 停止RechargeManager
 func (m *RechargeManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 // 全局缓存
@@ -57,7 +54,7 @@ var (
 type RechargeRequest struct {
 	PlayerId  int64                   `json:"player_id"`
 	AccountId string                  `json:"account_id"` // 账户ID
-	Amount    int64                   `json:"amount"`     // 充值金额（分）
+	Amount    int32                   `json:"amount"`     // 充值金额（分）
 	Platform  message.PaymentPlatform `json:"platform"`   // 支付平台
 	ConfigId  string                  `json:"config_id"`  // 充值配置ID（可选）
 }
@@ -211,12 +208,12 @@ func (m *RechargeManager) updatePlayerBalance(rechargeRecord *recharge.RechargeR
 	// 2. 计算充值金额（包含赠送）
 	totalAmount := rechargeRecord.Amount
 	if config := m.getRechargeConfig(rechargeRecord.ConfigId); config != nil {
-		totalAmount += int64(config.Bonus)
+		totalAmount += config.Bonus
 	}
 
 	// 3. 更新玩家数据
-	playerInstance.PlayerInfo.Balance += totalAmount
-	playerInstance.PlayerInfo.TotalRecharge += rechargeRecord.Amount
+	playerInstance.PlayerInfo.Balance += int64(totalAmount)
+	playerInstance.PlayerInfo.TotalRecharge += int64(rechargeRecord.Amount)
 
 	// 4. 计算VIP等级
 	m.updateVipLevel(playerInstance)

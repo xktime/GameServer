@@ -20,7 +20,7 @@ import (
 
 // UserManager 使用BaseActor实现，确保缓存操作按顺序执行
 type UserManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 	memCache        map[string]*models.User  // 用户缓存
 	playerCache     map[int64]*player.Player // 玩家缓存
 	nameCache       map[string]bool          // 名称缓存，key: playerName, value: bool (true表示已存在)
@@ -34,38 +34,42 @@ var (
 
 func GetUserManager() *UserManager {
 	userManagerOnce.Do(func() {
-		userManager = &UserManager{}
-		userManager.Init()
+		userManager = actor.RegisterActor[*UserManager](actor.User, "1")
 	})
 	return userManager
 }
 
-func (m *UserManager) Init() {
+func (m *UserManager) Init(args ...any) {
 	m.memCache = make(map[string]*models.User)
 	m.playerCache = make(map[int64]*player.Player)
 	m.nameCache = make(map[string]bool)
-	m.TaskHandler = actor.InitTaskHandler(actor.User, "1", m)
 	// 假设最多支持100万个名称，误判率控制在1%以内
 	m.nameBloomFilter = utils.NewBloomFilter(1000000, 7)
-	m.TaskHandler.Start()
 	m.PreloadNames()
 }
 
 // Stop 停止UserManager
 func (m *UserManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 // UserLogin 用户登录 - 异步执行
-func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
-	m.SendTaskAsync(func() *actor.Response {
-		m.doUserLogin(agent, openId, serverId, loginType)
-		return nil
+func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) *message.S2C_Login {
+	response := m.SendTask(func() *actor.Response {
+		return &actor.Response{
+			Result: []interface{}{m.doUserLogin(agent, openId, serverId, loginType)},
+		}
 	})
+	if response != nil && len(response.Result) > 0 {
+		if loginResp, ok := response.Result[0].(*message.S2C_Login); ok {
+			return loginResp
+		}
+	}
+	return nil
 }
 
 // userLoginSync 用户登录的同步实现
-func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) {
+func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) *message.S2C_Login {
 	// 1. 优先从缓存查找用户（检测顶号操作）
 	accountId := fmt.Sprintf("%d_%s", serverId, openId)
 	if existingUser, exists := m.getUserFromCache(accountId); exists {
@@ -73,12 +77,21 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 		// 处理顶号逻辑：先让旧用户下线
 		m.doUserOffline(*existingUser)
 	}
+	if _, exists := m.getUserFromCache(accountId); exists {
+		log.Debug("UserLogin: user already online (顶号操作): %s", accountId)
+		// 处理顶号逻辑：先让旧用户下线
+		return &message.S2C_Login{
+			LoginResult: -1,
+		}
+	}
 
 	// 2. 从数据库查询用户
 	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openId, "ServerId": serverId})
 	if err != nil {
 		log.Error("UserLogin find user failed: %v", err)
-		return
+		return &message.S2C_Login{
+			LoginResult: -1,
+		}
 	}
 
 	isNew := user == nil
@@ -93,7 +106,9 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 		}
 		if _, err := mongodb.Save(user); err != nil {
 			log.Error("Failed to save new user [openId: %s, serverId: %d]: %v", openId, serverId, err)
-			return
+			return &message.S2C_Login{
+				LoginResult: -1,
+			}
 		}
 		log.Debug("UserLogin new user: %v", user)
 	} else {
@@ -111,51 +126,60 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 	m.updateUserCache(user)
 
 	// 调用玩家登录
-	p := player.Login(agent, isNew)
+	p := player.DoPlayerLogin(agent, isNew)
 	if p == nil {
-		agent.WriteMsg(&message.S2C_Login{
+		return &message.S2C_Login{
 			LoginResult: -1,
-		})
-		agent.Close()
-		log.Debug("UserLogin failed: %v", p)
-		return
+		}
 	}
 	m.updatePlayerCache(p)
-	p.SendToClient(&message.S2C_Login{
+	return &message.S2C_Login{
 		LoginResult: 1,
-		PlayerInfo:  p.PlayerInfo.ToMsgPlayerInfo(),
-	})
+		LoginInfo: &message.LoginInfo{
+			OpenId:        user.OpenId,
+			LastLoginTime: user.LastOfflineTime,
+			TotalDays:     user.TotalLoginDays,
+			IsAccept:      false,
+		},
+	}
 }
 
 // ModifyName 修改名称 - 异步执行
-func (m *UserManager) ModifyName(playerId int64, name string) message.Result {
+func (m *UserManager) ModifyName(playerId int64, name string) (message.Result, string) {
 	response := m.SendTask(func() *actor.Response {
-		result := m.doModifyName(playerId, name)
+		result, name := m.doModifyName(playerId, name)
+		if result == message.Result_Success {
+			return &actor.Response{
+				Result: []interface{}{result, name},
+			}
+		}
 		return &actor.Response{
 			Result: []interface{}{result},
 		}
 	})
 
-	if response != nil && len(response.Result) > 0 {
+	if response != nil && len(response.Result) >= 2 {
 		if result, ok := response.Result[0].(message.Result); ok {
-			return result
+			if name, ok := response.Result[1].(string); ok {
+				return result, name
+			}
 		}
 	}
-	return message.Result_Fail
+	return message.Result_Fail, ""
 }
 
 // modifyNameSync 修改名称的同步实现
-func (m *UserManager) doModifyName(playerId int64, name string) message.Result {
+func (m *UserManager) doModifyName(playerId int64, name string) (message.Result, string) {
 	p := m.getPlayerFromCache(playerId)
 	if p != nil {
 		result := p.ModifyName(name)
 		if result == message.Result_Success {
 			m.AddNameToCache(name)
-			return message.Result_Success
+			return message.Result_Success, name
 		}
-		return result
+		return result, p.PlayerInfo.PlayerName
 	}
-	return message.Result_Illegal
+	return message.Result_Illegal, ""
 }
 
 // UserOffline 玩家下线处理 - 异步执行
@@ -480,7 +504,7 @@ func (m *UserManager) GetPlayer(playerId int64) *player.Player {
 	}
 
 	// 缓存中没有，从Actor获取
-	if actorPlayer, ok := actor.GetActor[player.Player](actor.Player, playerId); ok {
+	if actorPlayer := player.GetPlayerActor(playerId); actorPlayer != nil {
 		// 获取到后更新缓存
 		m.updatePlayerCache(actorPlayer)
 		return actorPlayer

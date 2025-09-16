@@ -16,7 +16,7 @@ var maxCacheSize = 1000
 
 // RankManager 使用TaskHandler实现，确保排行榜操作按顺序执行
 type RankManager struct {
-	*actor.TaskHandler
+	actor.BaseActor
 
 	// 内存缓存
 	PersistId int64                                `bson:"_id"`
@@ -30,25 +30,20 @@ var (
 
 func GetRankManager() *RankManager {
 	rankManagerOnce.Do(func() {
-		rankManager = &RankManager{}
-		rankManager.Init()
+		rankManager = actor.RegisterActor[*RankManager](actor.Rank, "1")
 	})
 	return rankManager
 }
 
 // Init 初始化RankManager
-func (m *RankManager) Init() {
-	// 初始化TaskHandler
-	m.TaskHandler = actor.InitTaskHandler(actor.Rank, "1", m)
-	m.TaskHandler.Start()
-
+func (m *RankManager) Init(args ...any) {
 	// 从数据库加载排行榜数据
 	m.loadRankDataFromDB()
 }
 
 // Stop 停止RankManager
 func (m *RankManager) Stop() {
-	m.TaskHandler.Stop()
+	m.RemoveActor(m)
 }
 
 // GetPersistId 获取持久化ID
@@ -57,21 +52,28 @@ func (r RankManager) GetPersistId() interface{} {
 }
 
 // HandleUpdateRankData 更新排行榜数据 - 异步执行
-func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) {
-	r.SendTaskAsync(func() *actor.Response {
+func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) *message.S2C_UpdateRankData {
+	response := r.SendTask(func() *actor.Response {
 		r.doHandleUpdateRankData(playerId, req)
-		return nil
+		return &actor.Response{
+			Result: []interface{}{r.doHandleUpdateRankData(playerId, req)},
+		}
 	})
+	if response != nil && len(response.Result) > 0 {
+		if updateRankDataResp, ok := response.Result[0].(*message.S2C_UpdateRankData); ok {
+			return updateRankDataResp
+		}
+	}
+	return nil
 }
 
 // doHandleUpdateRankData 更新排行榜数据的同步实现
-func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) {
+func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) *message.S2C_UpdateRankData {
 	player := game.External.UserManager.GetPlayer(playerId)
 	if player == nil {
-		return
+		return &message.S2C_UpdateRankData{Success: false}
 	}
 	response := &message.S2C_UpdateRankData{Success: true}
-	defer player.SendToClient(response)
 	rankType := models.RankType(req.RankType)
 	rankData, exists := r.RankCache[rankType]
 
@@ -122,21 +124,30 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 	rankData.UpdateTime = time.Now()
 
 	log.Debug("排行榜数据已更新: 类型=%d, 玩家=%d, 分数=%d", rankType, playerId, req.Score)
+	return response
 }
 
 // HandleGetRankList 获取排行榜列表 - 异步执行
-func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRankList) {
-	r.SendTaskAsync(func() *actor.Response {
-		r.doHandleGetRankList(playerId, req)
-		return nil
+func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRankList) *message.S2C_GetRankList {
+	response := r.SendTask(func() *actor.Response {
+		response := r.doHandleGetRankList(playerId, req)
+		return &actor.Response{
+			Result: []interface{}{response},
+		}
 	})
+	if response != nil && len(response.Result) > 0 {
+		if getRankListResp, ok := response.Result[0].(*message.S2C_GetRankList); ok {
+			return getRankListResp
+		}
+	}
+	return nil
 }
 
 // doHandleGetRankList 获取排行榜列表的同步实现
-func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRankList) {
+func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRankList) *message.S2C_GetRankList {
 	player := game.External.UserManager.GetPlayer(playerId)
 	if player == nil {
-		return
+		return nil
 	}
 	// 参数验证
 	if req.Page <= 0 {
@@ -151,10 +162,9 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 		TotalCount:  0,
 		CurrentPage: req.Page,
 	}
-	defer player.SendToClient(response)
 	rankData, exists := r.RankCache[models.RankType(req.RankType)]
 	if !exists {
-		return
+		return nil
 	}
 
 	totalCount := int32(len(rankData.Items))
@@ -167,7 +177,7 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 		response.RankItems = make([]*message.RankItem, 0)
 		response.TotalCount = totalCount
 		response.CurrentPage = req.Page
-		return
+		return response
 	}
 
 	if end > totalCount {
@@ -187,27 +197,34 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 			Level:      item.Level,
 		})
 	}
+	return response
 }
 
 // HandleGetMyRank 获取我的排名 - 异步执行
-func (r *RankManager) HandleGetMyRank(playerId int64, rankType int32) {
-	r.SendTaskAsync(func() *actor.Response {
-		r.doHandleGetMyRank(playerId, rankType)
-		return nil
+func (r *RankManager) HandleGetMyRank(playerId int64, rankType int32) *message.S2C_GetMyRank {
+	response := r.SendTask(func() *actor.Response {
+		return &actor.Response{
+			Result: []interface{}{r.doHandleGetMyRank(playerId, rankType)},
+		}
 	})
+	if response != nil && len(response.Result) > 0 {
+		if getMyRankResp, ok := response.Result[0].(*message.S2C_GetMyRank); ok {
+			return getMyRankResp
+		}
+	}
+	return nil
 }
 
 // doHandleGetMyRank 获取我的排名的同步实现
-func (r *RankManager) doHandleGetMyRank(playerId int64, rankType int32) {
+func (r *RankManager) doHandleGetMyRank(playerId int64, rankType int32) *message.S2C_GetMyRank {
 	player := game.External.UserManager.GetPlayer(playerId)
-	if player == nil {
-		return
-	}
 	response := &message.S2C_GetMyRank{RankType: rankType}
-	defer player.SendToClient(response)
+	if player == nil {
+		return response
+	}
 	rankData, exists := r.RankCache[models.RankType(rankType)]
 	if !exists {
-		return
+		return response
 	}
 
 	// 查找玩家排名
@@ -215,11 +232,10 @@ func (r *RankManager) doHandleGetMyRank(playerId int64, rankType int32) {
 		if item.PlayerId == playerId {
 			response.MyRank = int32(i + 1)
 			response.MyScore = item.Score
-			response.TotalCount = int32(len(rankData.Items))
-			return
 		}
 	}
 	response.TotalCount = int32(len(rankData.Items))
+	return response
 }
 
 // sortRankData 对排行榜数据进行排序

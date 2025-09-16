@@ -9,6 +9,7 @@
         "Enabled": true,
         "Port": 6060
     },
+    "HttpPort": 8080,
     "Actor": {
         "TimeoutMillisecond": 2000
     },

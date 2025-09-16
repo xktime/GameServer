@@ -1,21 +1,14 @@
 package actor
 
 import (
-	"reflect"
 	"sync"
 )
-
-// todo 启动时自动调用Init
-// todo ontimer实现
-type IActor interface {
-	Init()
-	Stop()
-}
 
 // ActorManager 统一管理所有TaskHandler实例
 type ActorManager struct {
 	taskHandlers map[string]*TaskHandler
 	mu           sync.RWMutex
+	taskTimeout  int // 任务超时时间（毫秒）
 }
 
 var (
@@ -24,12 +17,13 @@ var (
 
 // Init 初始化全局Actor管理器实例
 func Init(milliseconds int) {
-	globalActorManager = NewActorManager()
+	globalActorManager = NewActorManager(milliseconds)
 }
 
-func NewActorManager() *ActorManager {
+func NewActorManager(milliseconds int) *ActorManager {
 	return &ActorManager{
 		taskHandlers: make(map[string]*TaskHandler),
+		taskTimeout:  milliseconds,
 	}
 }
 
@@ -59,43 +53,8 @@ func Unregister(name string) bool {
 	return false
 }
 
-func GetActor[T any](actorGroup ActorGroup, uniqueID interface{}) (*T, bool) {
-	id := getUniqueId(actorGroup, uniqueID)
-	handler, exists := GetHandler(id)
-	if !exists {
-		return nil, false
-	}
-
-	// 安全的类型断言
-	name := getActorNameByType[T]()
-	if actor, ok := handler.actors[name]; ok {
-		// 使用反射进行类型转换
-		actorValue := reflect.ValueOf(actor)
-		var zero T
-		zeroType := reflect.TypeOf(zero)
-
-		// 如果存储的是指针类型
-		if actorValue.Kind() == reflect.Ptr {
-			// 检查指针指向的类型是否匹配
-			if actorValue.Type().Elem() == zeroType {
-				// 使用反射进行安全的类型转换
-				result := reflect.New(zeroType)
-				result.Elem().Set(actorValue.Elem())
-				return result.Interface().(*T), true
-			}
-		}
-
-		// 如果存储的是值类型
-		if actorValue.Type() == zeroType {
-			// 创建指针并返回
-			ptr := reflect.New(zeroType)
-			ptr.Elem().Set(actorValue)
-			return ptr.Interface().(*T), true
-		}
-	}
-
-	return nil, false
-}
+// GetActor 函数已移动到 task_handler.go 中，这里保留向后兼容的别名
+// 建议使用 task_handler.go 中的新版本
 
 // GetHandler 获取指定名称的TaskHandler
 func GetHandler(name string) (*TaskHandler, bool) {
@@ -154,4 +113,11 @@ func (am *ActorManager) IsTaskHandlerRegistered(name string) bool {
 
 	_, exists := am.taskHandlers[name]
 	return exists
+}
+
+// GetTaskTimeout 获取任务超时时间（毫秒）
+func GetTaskTimeout() int {
+	globalActorManager.mu.RLock()
+	defer globalActorManager.mu.RUnlock()
+	return globalActorManager.taskTimeout
 }

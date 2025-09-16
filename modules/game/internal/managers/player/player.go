@@ -15,24 +15,40 @@ import (
 )
 
 type Player struct {
-	*actor.TaskHandler `bson:"-"`
-	PlayerId           int64              `bson:"_id"`
-	PlayerInfo         *player.PlayerInfo `bson:"player_info"`
-	TeamId             int64              `bson:"team_id"`
-	agent              gate.Agent         `bson:"-"`
+	actor.BaseActor `bson:"-"`
+	PlayerId        int64              `bson:"_id"`
+	PlayerInfo      *player.PlayerInfo `bson:"player_info"`
+	TeamId          int64              `bson:"team_id"`
+	TowerLevel      int32              `bson:"tower_level"`
+	agent           gate.Agent         `bson:"-"`
 }
 
 func (p Player) GetPersistId() interface{} {
 	return p.PlayerId
 }
 
+func DoPlayerLogin(agent gate.Agent, isNew bool) *Player {
+	p := initPlayer(agent, isNew)
+	if p == nil {
+		agent.WriteMsg(&message.S2C_Login{
+			LoginResult: -1,
+		})
+		agent.Close()
+		log.Debug("UserLogin failed: %v", p)
+		return nil
+	}
+	p.InitModules()
+	return p
+}
+
 // 玩家模块
-func InitPlayer(agent gate.Agent, isNew bool) *Player {
+func initPlayer(agent gate.Agent, isNew bool) *Player {
 	user := agent.UserData().(models.User)
 	playerId := user.PlayerId
 
 	// 检查是否已存在Actor
-	if existingPlayer, ok := actor.GetActor[Player](actor.Player, playerId); ok {
+	// todo 登录频繁可能会导致登录不上
+	if existingPlayer := GetPlayerActor(playerId); existingPlayer != nil {
 		log.Error("玩家Actor已存在，可能是离线未正常清理: %v", playerId)
 		// 异步停止旧的Actor，避免在TaskHandler上下文中调用Stop造成死锁
 		go func() {
@@ -47,18 +63,34 @@ func InitPlayer(agent gate.Agent, isNew bool) *Player {
 		return nil
 	}
 
-	p.TaskHandler = actor.InitTaskHandler(actor.Player, playerId, p)
-	p.agent = agent
-	p.Init()
-	return p
+	return actor.RegisterActor[*Player](actor.Player, playerId, agent, p)
 }
 
-func (p *Player) Init() {
-	p.TaskHandler.Start()
+func (p *Player) Init(args ...any) {
+	if agent, ok := args[0].(gate.Agent); ok {
+		p.agent = agent
+	} else {
+		log.Error("初始化玩家数据失败: %v", args[0])
+	}
+	if p1, ok := args[1].(*Player); ok {
+		p.PlayerInfo = p1.PlayerInfo
+		p.TeamId = p1.TeamId
+		p.TowerLevel = p1.TowerLevel
+		p.PlayerId = p1.PlayerId
+	} else {
+		log.Error("初始化玩家数据失败: %v", args[1])
+	}
 }
 
-func (p *Player) Stop() {
-	p.TaskHandler.Stop()
+// InitModules 初始化玩家模块（装备、背包等）
+func (p *Player) InitModules() {
+	// 自己的actor里面可以放队列里初始化
+	// 其他actor需要同步初始化，避免快速请求还未加载完成
+	p.SendTaskAsync(func() *actor.Response {
+
+		return nil
+	})
+	p.InitTeam()
 }
 
 // initPlayerData 初始化玩家数据
@@ -66,19 +98,27 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*Player, erro
 	if isNew {
 		// 新玩家：创建初始数据
 		playerInfo := &player.PlayerInfo{
-			ServerId: user.ServerId,
+			PlayerId:      playerId,
+			ServerId:      user.ServerId,
+			PlayerName:    user.OpenId,
+			Level:         1,
+			Balance:       0,
+			TotalRecharge: 0,
+			VipLevel:      0,
 		}
 
-		// 保存新玩家数据
-		player := &Player{
+		// 创建新玩家数据
+		newPlayer := &Player{
 			PlayerId:   playerId,
 			PlayerInfo: playerInfo,
 		}
-		if _, err := mongodb.Save(player); err != nil {
+
+		// 保存新玩家数据
+		if _, err := mongodb.Save(newPlayer); err != nil {
 			return nil, err
 		}
 
-		return player, nil
+		return newPlayer, nil
 	} else {
 		// 老玩家：从数据库加载数据
 		existingPlayer, err := mongodb.FindOneById[Player](playerId)
@@ -113,29 +153,19 @@ func (p *Player) doModifyName(name string) message.Result {
 	if len(name) < 2 || len(name) > 20 {
 		return message.Result_Illegal
 	}
-	if len(name) < 2 || len(name) > 20 {
-		return message.Result_Illegal
-	}
 	p.PlayerInfo.PlayerName = name
 	return message.Result_Success
 }
 
 func (p *Player) InitTeam() {
-	// 使用异步调用，避免阻塞
-	p.SendTaskAsync(func() *actor.Response {
-		p.doInitTeam()
-		return nil
-	})
-}
-
-func (p *Player) doInitTeam() {
 	if p.TeamId != 0 {
 		teamActor, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
-		if !ok {
-			return
-		}
-		// todo 重连房间
-		if teamActor.RoomId > 0 {
+		// team还存在
+		if ok {
+			if teamActor.RoomId > 0 {
+				// todo 重连逻辑
+				return
+			}
 			return
 		}
 	}
@@ -144,7 +174,29 @@ func (p *Player) doInitTeam() {
 	teamInfo.JoinTeam(p.PlayerId)
 }
 
+func SendToClient(playerId int64, message proto.Message) {
+	player := GetPlayerActor(playerId)
+	if player == nil {
+		return
+	}
+	player.SendToClient(message)
+}
+
 func (p *Player) SendToClient(message proto.Message) {
+	p.SendTask(func() *actor.Response {
+		p.DoSendToClient(message)
+		return nil
+	})
+}
+
+func (p *Player) SendToClientSeq(message proto.Message, seq uint32) {
+	p.SendTaskAsync(func() *actor.Response {
+		p.agent.WriteMsgWithSeq(message, seq)
+		return nil
+	})
+}
+
+func (p *Player) DoSendToClient(message proto.Message) {
 	p.agent.WriteMsg(message)
 }
 

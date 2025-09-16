@@ -1,234 +1,54 @@
 package actor
 
-import (
-	"context"
-	"fmt"
-	"gameserver/core/log"
-	"reflect"
-	"sync"
-)
+import "fmt"
 
-type TaskQueue struct {
-	f        func() *Response
-	response chan *Response
+type IActor interface {
+	Init(args ...any)
+	Stop()
+	SetTaskHandler(handler *TaskHandler)
 }
 
-type Response struct {
-	Result []interface{} // 改为具体类型，避免使用 interface{} 指针
-	Error  error         // 添加错误字段
+// BaseActor 提供通用的Actor基础实现
+type BaseActor struct {
+	TaskHandler *TaskHandler
 }
 
-type ActorState int
-
-const (
-	None ActorState = iota
-	ActorStateRunning
-	ActorStateStopping
-	ActorStateStopped
-)
-
-// TaskHandler 提供通用的Actor实现
-type TaskHandler struct {
-	taskQueue chan *TaskQueue
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	id        string
-	actors    map[string]IActor
-	state     ActorState
+// SetTaskHandler 设置TaskHandler，所有嵌入BaseActor的结构体都会自动获得此方法
+func (b *BaseActor) SetTaskHandler(handler *TaskHandler) {
+	b.TaskHandler = handler
 }
 
-// todo SetHandler
-// InitTaskHandler
-func InitTaskHandler(ActorGroup ActorGroup, uniqueID interface{}, a IActor) *TaskHandler {
-	id := getUniqueId(ActorGroup, uniqueID)
-	actorName := getActorName(a)
-	if taskHandler, ok := GetHandler(id); ok {
-		taskHandler.actors[actorName] = a
-		return taskHandler
-	} else {
-		ctx, cancel := context.WithCancel(context.Background())
-		h := &TaskHandler{
-			taskQueue: make(chan *TaskQueue, 10000),
-			ctx:       ctx,
-			cancel:    cancel,
-			id:        id,
-			actors:    make(map[string]IActor),
-		}
-		h.actors[actorName] = a
-		return h
+// GetTaskHandler 获取TaskHandler
+func (b *BaseActor) GetTaskHandler() *TaskHandler {
+	return b.TaskHandler
+}
+
+// SendTask 发送任务并等待结果
+func (b *BaseActor) SendTask(f func() *Response) *Response {
+	if b.TaskHandler == nil {
+		return &Response{Error: fmt.Errorf("TaskHandler is nil")}
 	}
+	return b.TaskHandler.SendTask(f)
 }
 
-// 获取泛型T对应的collection名称
-func getActorNameByType[T any]() string {
-	var t T
-	return getActorName(t)
-}
-
-func getActorName(a any) string {
-	typ := reflect.TypeOf(a)
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
-	return typ.Name()
-}
-
-func getUniqueId(ActorGroup ActorGroup, uniqueID interface{}) string {
-	return fmt.Sprintf("%s_%v", ActorGroup, uniqueID)
-}
-
-func (b *TaskHandler) SendTask(f func() *Response) *Response {
-	// 检查是否已停止
-	if b.ctx.Err() != nil {
-		return &Response{
-			Result: nil,
-			Error:  b.ctx.Err(),
-		}
-	}
-
-	task := &TaskQueue{
-		f:        f,
-		response: make(chan *Response, 1),
-	}
-
-	select {
-	case b.taskQueue <- task:
-		// 任务发送成功
-		select {
-		case result := <-task.response:
-			return result
-		case <-b.ctx.Done():
-			return &Response{
-				Result: nil,
-				Error:  b.ctx.Err(),
-			}
-		}
-	case <-b.ctx.Done():
-		// Actor已停止
-		return &Response{
-			Result: nil,
-			Error:  b.ctx.Err(),
-		}
-	}
-}
-
-// SendTaskAsync 异步发送任务，不等待结果，不阻塞执行
-func (b *TaskHandler) SendTaskAsync(f func() *Response) bool {
-	// 检查是否已停止
-	if b.ctx.Err() != nil {
+// SendTaskAsync 异步发送任务，不等待结果
+func (b *BaseActor) SendTaskAsync(f func() *Response) bool {
+	if b.TaskHandler == nil {
 		return false
 	}
+	return b.TaskHandler.SendTaskAsync(f)
+}
 
-	task := &TaskQueue{
-		f:        f,
-		response: make(chan *Response, 1),
-	}
-
-	select {
-	case b.taskQueue <- task:
-		// 任务发送成功，不等待结果
-		return true
-	case <-b.ctx.Done():
-		// Actor已停止
-		return false
-	default:
-		// 任务队列已满，不阻塞
-		return false
+// RemoveActor 从TaskHandler中移除Actor
+func (b *BaseActor) RemoveActor(actor IActor) {
+	if b.TaskHandler != nil {
+		b.TaskHandler.RemoveActor(actor)
 	}
 }
 
-// 添加从 TaskHandler 中移除特定 Actor 的方法
-func (b *TaskHandler) RemoveActor(actorName string) {
-	delete(b.actors, actorName)
-
-	// 如果没有 Actor 了，可以考虑停止 TaskHandler
-	if len(b.actors) == 0 {
-		b.Stop()
+// Stop 停止Actor
+func (b *BaseActor) Stop() {
+	if b.TaskHandler != nil {
+		b.TaskHandler.Stop()
 	}
-}
-
-func (b *TaskHandler) Start() {
-	if b.state == ActorStateRunning {
-		return
-	}
-	b.state = ActorStateRunning
-	// 注册到Actor管理器
-	if b.id != "" {
-		Register(b.id, b)
-	}
-
-	b.wg.Add(1)
-	go b.Processor()
-}
-
-func (b *TaskHandler) Stop() {
-	b.cancel()
-	b.wg.Wait()
-
-	// 清理所有 Actor 引用
-	b.actors = make(map[string]IActor)
-
-	// 从Actor管理器注销
-	if b.id != "" {
-		Unregister(b.id)
-	}
-}
-
-func (b *TaskHandler) Processor() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("Processor panic: %v", r)
-		}
-		b.wg.Done()
-	}()
-
-	for {
-		select {
-		case task := <-b.taskQueue:
-			if task != nil {
-				result := task.f()
-				select {
-				case task.response <- result:
-				case <-b.ctx.Done():
-					return
-				}
-			}
-		case <-b.ctx.Done():
-			return
-		}
-	}
-}
-
-// 添加优雅关闭方法
-func (b *TaskHandler) GracefulStop() {
-	// 先停止处理
-	b.Stop()
-
-	// 等待所有任务处理完成
-	select {
-	case <-b.ctx.Done():
-		// 已经停止，直接关闭
-	default:
-		// 等待任务队列清空
-		for len(b.taskQueue) > 0 {
-			select {
-			case task := <-b.taskQueue:
-				if task != nil {
-					// 处理剩余任务
-					result := task.f()
-					select {
-					case task.response <- result:
-					default:
-						// 如果响应通道已满，丢弃结果
-					}
-				}
-			default:
-				break
-			}
-		}
-	}
-
-	// 关闭任务队列
-	close(b.taskQueue)
 }

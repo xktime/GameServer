@@ -79,8 +79,8 @@ type RechargeConfig struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                 // 配置ID
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                             // 充值包名称
-	Amount        int64                  `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`                        // 充值金额（分）
-	Bonus         int64                  `protobuf:"varint,4,opt,name=bonus,proto3" json:"bonus,omitempty"`                          // 赠送金额（分）
+	Amount        int32                  `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`                        // 充值金额（分）
+	Bonus         int32                  `protobuf:"varint,4,opt,name=bonus,proto3" json:"bonus,omitempty"`                          // 赠送金额（分）
 	Currency      string                 `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`                     // 货币类型
 	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`               // 描述
 	IsActive      bool                   `protobuf:"varint,7,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`    // 是否激活
@@ -133,14 +133,14 @@ func (x *RechargeConfig) GetName() string {
 	return ""
 }
 
-func (x *RechargeConfig) GetAmount() int64 {
+func (x *RechargeConfig) GetAmount() int32 {
 	if x != nil {
 		return x.Amount
 	}
 	return 0
 }
 
-func (x *RechargeConfig) GetBonus() int64 {
+func (x *RechargeConfig) GetBonus() int32 {
 	if x != nil {
 		return x.Bonus
 	}
@@ -181,7 +181,7 @@ type RechargeRecord struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                            // 充值订单ID
 	PlayerId      int64                  `protobuf:"varint,2,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`               // 玩家ID
 	AccountId     string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`             // 账户ID
-	Amount        int64                  `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`                                   // 充值金额（分）
+	Amount        int32                  `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`                                   // 充值金额（分）
 	Currency      string                 `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`                                // 货币类型
 	Platform      int32                  `protobuf:"varint,6,opt,name=platform,proto3" json:"platform,omitempty"`                               // 支付平台
 	Status        int32                  `protobuf:"varint,7,opt,name=status,proto3" json:"status,omitempty"`                                   // 充值状态 0:待处理 1:成功 2:失败 3:已取消
@@ -246,7 +246,7 @@ func (x *RechargeRecord) GetAccountId() string {
 	return ""
 }
 
-func (x *RechargeRecord) GetAmount() int64 {
+func (x *RechargeRecord) GetAmount() int32 {
 	if x != nil {
 		return x.Amount
 	}
@@ -319,7 +319,7 @@ func (x *RechargeRecord) GetDescription() string {
 // 充值请求
 type C2S_RechargeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Amount        int64                  `protobuf:"varint,1,opt,name=amount,proto3" json:"amount,omitempty"` // 充值金额（分）
+	Amount        int32                  `protobuf:"varint,1,opt,name=amount,proto3" json:"amount,omitempty"` // 充值金额（分）
 	Platform      PaymentPlatform        `protobuf:"varint,2,opt,name=platform,proto3,enum=PaymentPlatform" json:"platform,omitempty"`
 	ConfigId      string                 `protobuf:"bytes,3,opt,name=config_id,json=configId,proto3" json:"config_id,omitempty"` // 充值配置ID（可选）
 	unknownFields protoimpl.UnknownFields
@@ -356,7 +356,7 @@ func (*C2S_RechargeRequest) Descriptor() ([]byte, []int) {
 	return file_game_recharge_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *C2S_RechargeRequest) GetAmount() int64 {
+func (x *C2S_RechargeRequest) GetAmount() int32 {
 	if x != nil {
 		return x.Amount
 	}
@@ -458,9 +458,9 @@ func (x *S2C_RechargeResponse) GetQrCode() string {
 type S2C_RechargeSuccess struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`              // 订单ID
-	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`                              // 充值金额
-	TotalAmount   int64                  `protobuf:"varint,3,opt,name=total_amount,json=totalAmount,proto3" json:"total_amount,omitempty"` // 总金额（含赠送）
-	Balance       int64                  `protobuf:"varint,4,opt,name=balance,proto3" json:"balance,omitempty"`                            // 当前余额
+	Amount        int32                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`                              // 充值金额
+	TotalAmount   int32                  `protobuf:"varint,3,opt,name=total_amount,json=totalAmount,proto3" json:"total_amount,omitempty"` // 总金额（含赠送）
+	Balance       int32                  `protobuf:"varint,4,opt,name=balance,proto3" json:"balance,omitempty"`                            // 当前余额
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -502,21 +502,21 @@ func (x *S2C_RechargeSuccess) GetOrderId() string {
 	return ""
 }
 
-func (x *S2C_RechargeSuccess) GetAmount() int64 {
+func (x *S2C_RechargeSuccess) GetAmount() int32 {
 	if x != nil {
 		return x.Amount
 	}
 	return 0
 }
 
-func (x *S2C_RechargeSuccess) GetTotalAmount() int64 {
+func (x *S2C_RechargeSuccess) GetTotalAmount() int32 {
 	if x != nil {
 		return x.TotalAmount
 	}
 	return 0
 }
 
-func (x *S2C_RechargeSuccess) GetBalance() int64 {
+func (x *S2C_RechargeSuccess) GetBalance() int32 {
 	if x != nil {
 		return x.Balance
 	}
@@ -703,8 +703,8 @@ const file_game_recharge_proto_rawDesc = "" +
 	"\x0eRechargeConfig\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x03R\x06amount\x12\x14\n" +
-	"\x05bonus\x18\x04 \x01(\x03R\x05bonus\x12\x1a\n" +
+	"\x06amount\x18\x03 \x01(\x05R\x06amount\x12\x14\n" +
+	"\x05bonus\x18\x04 \x01(\x05R\x05bonus\x12\x1a\n" +
 	"\bcurrency\x18\x05 \x01(\tR\bcurrency\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x1b\n" +
 	"\tis_active\x18\a \x01(\bR\bisActive\x12\x1d\n" +
@@ -715,7 +715,7 @@ const file_game_recharge_proto_rawDesc = "" +
 	"\tplayer_id\x18\x02 \x01(\x03R\bplayerId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x03 \x01(\tR\taccountId\x12\x16\n" +
-	"\x06amount\x18\x04 \x01(\x03R\x06amount\x12\x1a\n" +
+	"\x06amount\x18\x04 \x01(\x05R\x06amount\x12\x1a\n" +
 	"\bcurrency\x18\x05 \x01(\tR\bcurrency\x12\x1a\n" +
 	"\bplatform\x18\x06 \x01(\x05R\bplatform\x12\x16\n" +
 	"\x06status\x18\a \x01(\x05R\x06status\x12\x19\n" +
@@ -729,7 +729,7 @@ const file_game_recharge_proto_rawDesc = "" +
 	"\rcomplete_time\x18\f \x01(\x03R\fcompleteTime\x12 \n" +
 	"\vdescription\x18\r \x01(\tR\vdescription\"\x7f\n" +
 	"\x13C2S_RechargeRequest\x12\x16\n" +
-	"\x06amount\x18\x01 \x01(\x03R\x06amount\x12,\n" +
+	"\x06amount\x18\x01 \x01(\x05R\x06amount\x12,\n" +
 	"\bplatform\x18\x02 \x01(\x0e2\x10.PaymentPlatformR\bplatform\x12\x1b\n" +
 	"\tconfig_id\x18\x03 \x01(\tR\bconfigId:\x05\x80\xb5\x18\xe9\a\"\xa6\x01\n" +
 	"\x14S2C_RechargeResponse\x12\x18\n" +
@@ -741,9 +741,9 @@ const file_game_recharge_proto_rawDesc = "" +
 	"\aqr_code\x18\x05 \x01(\tR\x06qrCode:\x05\x80\xb5\x18\xcd\b\"\x8c\x01\n" +
 	"\x13S2C_RechargeSuccess\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12!\n" +
-	"\ftotal_amount\x18\x03 \x01(\x03R\vtotalAmount\x12\x18\n" +
-	"\abalance\x18\x04 \x01(\x03R\abalance:\x05\x80\xb5\x18\xce\b\"\x1f\n" +
+	"\x06amount\x18\x02 \x01(\x05R\x06amount\x12!\n" +
+	"\ftotal_amount\x18\x03 \x01(\x05R\vtotalAmount\x12\x18\n" +
+	"\abalance\x18\x04 \x01(\x05R\abalance:\x05\x80\xb5\x18\xce\b\"\x1f\n" +
 	"\x16C2S_GetRechargeConfigs:\x05\x80\xb5\x18\xeb\a\"J\n" +
 	"\x16S2C_GetRechargeConfigs\x12)\n" +
 	"\aconfigs\x18\x01 \x03(\v2\x0f.RechargeConfigR\aconfigs:\x05\x80\xb5\x18\xcf\b\"5\n" +

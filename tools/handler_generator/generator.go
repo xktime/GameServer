@@ -12,9 +12,10 @@ import (
 )
 
 type HandlerGenerator struct {
-	ProtoDir   string
-	OutputDir  string
-	ModulesDir string
+	ProtoDir    string
+	OutputDir   string
+	ModulesDir  string
+	IgnoreFiles []string
 }
 
 type MessageInfo struct {
@@ -23,11 +24,12 @@ type MessageInfo struct {
 	Module string
 }
 
-func NewHandlerGenerator(protoDir, outputDir, modulesDir string) *HandlerGenerator {
+func NewHandlerGenerator(protoDir, outputDir, modulesDir string, ignoreFiles []string) *HandlerGenerator {
 	return &HandlerGenerator{
-		ProtoDir:   protoDir,
-		OutputDir:  outputDir,
-		ModulesDir: modulesDir,
+		ProtoDir:    protoDir,
+		OutputDir:   outputDir,
+		ModulesDir:  modulesDir,
+		IgnoreFiles: ignoreFiles,
 	}
 }
 
@@ -211,7 +213,7 @@ import (
 
 // {{.Name}}Handler 处理{{.Name}}消息
 func {{.Name}}Handler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("{{.Name}}Handler: 参数不足")
 		return
 	}
@@ -228,7 +230,13 @@ func {{.Name}}Handler(args []interface{}) {
 		return
 	}
 
-	log.Debug("收到{{.Name}}消息: %v, agent: %v", msg, agent)
+	seq, ok := args[2].(uint32)
+	if !ok {
+		log.Error("{{.Name}}Handler: Seq类型错误")
+		return
+	}
+
+	log.Debug("收到{{.Name}}消息: %v, agent: %v, seq: %v", msg, agent, seq)
 	// TODO: 实现具体的业务逻辑
 }
 `))
@@ -260,7 +268,7 @@ func (g *HandlerGenerator) runProtoc() error {
 	defer os.Chdir(originalDir) // 恢复原目录
 
 	// 确保输出目录存在
-	outputDir := "../message"
+	outputDir := g.OutputDir
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("创建输出目录失败: %v", err)
 	}
@@ -325,6 +333,13 @@ func (g *HandlerGenerator) scanProtoFiles() ([]string, error) {
 			if err != nil {
 				return err
 			}
+
+			// 检查是否在忽略列表中
+			if g.shouldIgnoreFile(relPath) {
+				fmt.Printf("忽略文件: %s\n", relPath)
+				return nil
+			}
+
 			protoFiles = append(protoFiles, relPath)
 		}
 
@@ -336,6 +351,17 @@ func (g *HandlerGenerator) scanProtoFiles() ([]string, error) {
 	}
 
 	return protoFiles, nil
+}
+
+// 检查文件是否应该被忽略
+func (g *HandlerGenerator) shouldIgnoreFile(filePath string) bool {
+	fileName := filepath.Base(filePath)
+	for _, ignoreFile := range g.IgnoreFiles {
+		if fileName == ignoreFile {
+			return true
+		}
+	}
+	return false
 }
 
 // 根据依赖关系排序proto文件
