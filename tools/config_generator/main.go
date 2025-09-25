@@ -491,6 +491,15 @@ func main() {
 			continue
 		}
 
+		// 生成Wrapper代码（如果不存在）
+		// GameConst.json 不需要生成wrapper
+		if configInfo.FileName != "GameConst.json" {
+			if err := generateWrapperFile(configInfo, outputDir); err != nil {
+				log.Printf("生成Wrapper文件失败 %s: %v", fileName, err)
+				// Wrapper生成失败不影响主流程，继续执行
+			}
+		}
+
 		configInfos = append(configInfos, configInfo)
 		fmt.Printf("成功生成: %s.go\n", configInfo.StructName)
 	}
@@ -905,29 +914,13 @@ func toCamelCase(s string) string {
 		return "Type"
 	}
 
-	// 特殊处理一些常见的字段名
-	switch s {
-	case "auto_regen":
-		return "AutoRegen"
-	case "regen_cnt":
-		return "RegenCnt"
-	case "regen_max":
-		return "RegenMax"
-	case "is_init":
-		return "IsInit"
-	case "init_num":
-		return "InitNum"
-	case "use_script":
-		return "UseScript"
-	}
-
 	parts := strings.Split(s, "_")
 	for i, part := range parts {
-		if i > 0 && len(part) > 0 {
+		if len(part) > 0 {
 			parts[i] = titleCase(part)
 		}
 	}
-	return titleCase(parts[0])
+	return strings.Join(parts, "")
 }
 
 // titleCase 将字符串首字母大写（替代已弃用的 strings.Title）
@@ -1038,4 +1031,172 @@ func init() {
 
 	// 执行模板
 	return tmpl.Execute(file, configInfos)
+}
+
+// Wrapper模板 - 简化版本，提供基础框架
+const wrapperTemplate = `package wrapper
+
+import (
+	"fmt"
+	config "gameserver/common/config/generated"
+	"gameserver/core/log"
+	"sync"
+	"time"
+)
+
+// {{.StructName}}缓存管理
+var (
+	load{{.StructName}}Mutex  sync.RWMutex
+	{{.StructName}}Loaded     bool
+	{{.StructName}}Loading    bool  // 防止重复加载
+	{{.StructName}}LoadError  error // 记录加载错误
+)
+
+// Load{{.StructName}}Cache 加载所有{{.StructName}}到缓存（带重试机制）
+func Load{{.StructName}}Cache() error {
+	load{{.StructName}}Mutex.Lock()
+	defer load{{.StructName}}Mutex.Unlock()
+
+	// 如果已经加载过，直接返回
+	if {{.StructName}}Loaded {
+		return nil
+	}
+
+	// 如果正在加载中，等待加载完成
+	if {{.StructName}}Loading {
+		// 释放锁，等待其他线程完成加载
+		load{{.StructName}}Mutex.Unlock()
+		time.Sleep(10 * time.Millisecond)
+		load{{.StructName}}Mutex.Lock()
+
+		// 再次检查是否已加载
+		if {{.StructName}}Loaded {
+			return nil
+		}
+		if {{.StructName}}LoadError != nil {
+			return {{.StructName}}LoadError
+		}
+	}
+
+	// 标记为正在加载
+	{{.StructName}}Loading = true
+	{{.StructName}}LoadError = nil
+
+	// 重试机制：最多重试3次
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// 获取所有{{.StructName}}配置
+		all{{.StructName}}, exists := config.GetAll{{.StructName}}Configs()
+		if !exists {
+			if attempt < maxRetries-1 {
+				// 等待一段时间后重试
+				time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+				continue
+			}
+			{{.StructName}}Loading = false
+			{{.StructName}}LoadError = fmt.Errorf("无法获取{{.StructName}}配置，已重试%d次", maxRetries)
+			return {{.StructName}}LoadError
+		}
+
+		log.Debug("加载{{.StructName}}配置: %d", len(all{{.StructName}}))
+		// TODO: 在这里添加自定义的缓存处理逻辑
+		// 例如：
+		// - 初始化特定的缓存结构
+		// - 根据业务需求筛选和预处理数据
+		// - 设置特殊的缓存策略
+		// 
+		// 示例代码：
+		// for id, item := range all{{.StructName}} {
+		//     // 自定义处理逻辑
+		//     // 例如：根据特定条件筛选数据
+		//     // 或者：预处理数据格式
+		// }
+
+		// 加载成功
+		{{.StructName}}Loaded = true
+		{{.StructName}}Loading = false
+		{{.StructName}}LoadError = nil
+		return nil
+	}
+
+	// 如果所有重试都失败了
+	{{.StructName}}Loading = false
+	{{.StructName}}LoadError = fmt.Errorf("加载{{.StructName}}失败，已重试%d次", maxRetries)
+	return {{.StructName}}LoadError
+}
+
+// Clear{{.StructName}}Cache 清空{{.StructName}}缓存
+func Clear{{.StructName}}Cache() {
+	load{{.StructName}}Mutex.Lock()
+	defer load{{.StructName}}Mutex.Unlock()
+
+	// TODO: 在这里添加自定义的缓存清理逻辑
+	// 例如：
+	// - 清理特定的缓存结构
+	// - 重置相关的状态变量
+	// - 释放相关资源
+
+	{{.StructName}}Loaded = false
+	{{.StructName}}Loading = false
+	{{.StructName}}LoadError = nil
+}
+
+// Reload{{.StructName}}Cache 重新加载{{.StructName}}缓存
+func Reload{{.StructName}}Cache() error {
+	Clear{{.StructName}}Cache()
+	return Load{{.StructName}}Cache()
+}
+
+// Ensure{{.StructName}}CacheLoaded 确保{{.StructName}}缓存已加载（手动触发加载）
+func Ensure{{.StructName}}CacheLoaded() error {
+	return Load{{.StructName}}Cache()
+}
+
+// Get{{.StructName}}LoadStatus 获取{{.StructName}}加载状态
+func Get{{.StructName}}LoadStatus() (loaded bool, loading bool, err error) {
+	load{{.StructName}}Mutex.RLock()
+	defer load{{.StructName}}Mutex.RUnlock()
+
+	return {{.StructName}}Loaded, {{.StructName}}Loading, {{.StructName}}LoadError
+}
+`
+
+// generateWrapperFile 生成Wrapper文件
+func generateWrapperFile(configInfo *ConfigInfo, outputDir string) error {
+	// 检查是否已经存在wrapper文件
+	wrapperDir := filepath.Join(outputDir, "wrapper")
+	wrapperFileName := strings.ToLower(configInfo.StructName) + "_wrapper.go"
+	wrapperFilePath := filepath.Join(wrapperDir, wrapperFileName)
+
+	// 如果wrapper文件已存在，跳过生成
+	if _, err := os.Stat(wrapperFilePath); err == nil {
+		fmt.Printf("Wrapper文件已存在，跳过生成: %s\n", wrapperFileName)
+		return nil
+	}
+
+	// 创建wrapper目录（如果不存在）
+	if err := os.MkdirAll(wrapperDir, 0755); err != nil {
+		return fmt.Errorf("创建wrapper目录失败: %v", err)
+	}
+
+	// 创建模板
+	tmpl, err := template.New("wrapper").Parse(wrapperTemplate)
+	if err != nil {
+		return err
+	}
+
+	// 创建输出文件
+	file, err := os.Create(wrapperFilePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// 执行模板
+	if err := tmpl.Execute(file, configInfo); err != nil {
+		return err
+	}
+
+	fmt.Printf("成功生成Wrapper: %s\n", wrapperFileName)
+	return nil
 }
