@@ -193,7 +193,6 @@ func getGoroutineID() int64 {
 	return id
 }
 
-// todo 方法返回值
 // SendTask 发送任务到队列，支持超时机制
 func (b *TaskHandler) sendTask(f func() *Response) *Response {
 	// 检查是否已停止或正在停止

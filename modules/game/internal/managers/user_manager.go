@@ -108,21 +108,18 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 	if isNew {
 		// 新注册流程
 		user = &models.User{
-			AccountId: accountId,
-			OpenId:    openId,
-			ServerId:  serverId,
-			PlayerId:  utils.FlakeId(),
-			Platform:  loginType,
+			AccountId:      accountId,
+			OpenId:         openId,
+			ServerId:       serverId,
+			PlayerId:       utils.FlakeId(),
+			Platform:       loginType,
+			TotalLoginDays: 1,
 		}
-		if _, err := mongodb.Save(user); err != nil {
-			log.Error("Failed to save new user [openId: %s, serverId: %d]: %v", openId, serverId, err)
-			return &message.S2C_Login{
-				LoginResult: -1,
-			}
-		}
-		log.Debug("UserLogin new user: %v", user)
 	} else {
 		// 老用户流程
+		if utils.IsCrossDay(user.LastOfflineTime, time.Now().Unix()) {
+			user.TotalLoginDays++
+		}
 		log.Debug("UserLogin old user: %v", user)
 	}
 
@@ -143,6 +140,12 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 		}
 	}
 	m.updatePlayerCache(p)
+	// 手动保存一下user
+	go func() {
+		if _, err := mongodb.Save(user); err != nil {
+			log.Error("Failed to save new user [openId: %s, serverId: %d]: %v", openId, serverId, err)
+		}
+	}()
 	return &message.S2C_Login{
 		LoginResult: 1,
 		LoginInfo: &message.LoginInfo{

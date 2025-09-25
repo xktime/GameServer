@@ -61,7 +61,6 @@ func (m *MatchManager) OnTimer() {
 func (m *MatchManager) Matching() {
 	log.Debug("开始执行匹配任务")
 
-	// todo 队列优化，每个队列互不干扰，队列删除时跟加入队列的冲突
 	for matchType, q := range m.matchQueues {
 		if q.GetQueueSize() == 0 {
 			continue
