@@ -6,21 +6,25 @@ import (
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/utils"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
 	"gameserver/modules/game/internal/models/player"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
 
 type Player struct {
 	actor.BaseActor `bson:"-"`
-	PlayerId        int64              `bson:"_id"`
-	PlayerInfo      *player.PlayerInfo `bson:"player_info"`
-	TeamId          int64              `bson:"team_id"`
-	TowerLevel      int32              `bson:"tower_level"`
-	agent           gate.Agent         `bson:"-"`
+	actor.OnCrossDayTimerImpl
+	PlayerId             int64              `bson:"_id"`
+	PlayerInfo           *player.PlayerInfo `bson:"player_info"`
+	TeamId               int64              `bson:"team_id"`
+	TowerLevel           int32              `bson:"tower_level"`
+	LastOnCrossTimestamp int64              `bson:"last_on_cross_timestamp"`
+	agent                gate.Agent         `bson:"-"`
 }
 
 func (p Player) GetPersistId() interface{} {
@@ -67,6 +71,12 @@ func initPlayer(agent gate.Agent, isNew bool) *Player {
 }
 
 func (p *Player) Init(args ...any) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("初始化玩家数据失败: %v", r)
+			p.PlayerId = 0
+		}
+	}()
 	if agent, ok := args[0].(gate.Agent); ok {
 		p.agent = agent
 	} else {
@@ -77,6 +87,7 @@ func (p *Player) Init(args ...any) {
 		p.TeamId = p1.TeamId
 		p.TowerLevel = p1.TowerLevel
 		p.PlayerId = p1.PlayerId
+		p.OnCrossDayTimerImpl = p1.OnCrossDayTimerImpl
 	} else {
 		log.Error("初始化玩家数据失败: %v", args[1])
 	}
@@ -87,8 +98,17 @@ func (p *Player) InitModules() {
 	// 自己的actor里面可以放队列里初始化
 	// 其他actor需要同步初始化，避免快速请求还未加载完成
 	p.SendTaskAsync(func() {
+		p.OnCrossDay()
 	})
 	p.InitTeam()
+}
+
+func (p *Player) OnCrossDay() {
+	now := time.Now().Unix()
+	if !utils.IsCrossDay(p.GetLastCrossDayTime(), now) {
+		return
+	}
+	p.SetLastCrossDayTime(now)
 }
 
 // initPlayerData 初始化玩家数据

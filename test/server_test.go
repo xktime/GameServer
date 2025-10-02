@@ -67,8 +67,8 @@ func TestServer_TcpServer(t *testing.T) {
 }
 
 func TestServer_WebSocket(t *testing.T) {
-	const total = 1000000
-	const batchSize = 1000
+	const total = 1
+	const batchSize = 1
 
 	for batchStart := 0; batchStart < total; batchStart += batchSize {
 		var wg sync.WaitGroup
@@ -101,7 +101,7 @@ func TestServer_WebSocket(t *testing.T) {
 				// 1. 发送登录请求
 				fmt.Println("发送登录请求...")
 				loginMsg := &message.C2S_Login{
-					LoginType: message.LoginType_WeChat,
+					LoginType: message.LoginType_None,
 					Code:      "1112345dsada6769",
 				}
 

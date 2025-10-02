@@ -86,6 +86,19 @@ func RegisterActor[T IActor](actorGroup ActorGroup, uniqueID interface{}, args .
 	return actor
 }
 
+func GetActors(actorGroup ActorGroup, uniqueID interface{}) []IActor {
+	result := make([]IActor, 0)
+	id := getUniqueId(actorGroup, uniqueID)
+	handler, exists := GetHandler(id)
+	if !exists || handler.IsStopped() {
+		return result
+	}
+	for _, actor := range handler.actors {
+		result = append(result, actor)
+	}
+	return result
+}
+
 // GetActor 获取已存在的Actor对象
 func GetActor[T any](actorGroup ActorGroup, uniqueID interface{}) (*T, bool) {
 	id := getUniqueId(actorGroup, uniqueID)

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"gameserver/common/base/actor"
 	"gameserver/common/models"
 	"gameserver/core/gate"
 	"gameserver/core/log"
@@ -10,6 +11,7 @@ import (
 func init() {
 	skeleton.RegisterChanRPC("NewAgent", rpcNewAgent)
 	skeleton.RegisterChanRPC("CloseAgent", rpcCloseAgent)
+	skeleton.RegisterChanRPC("OnCrossDay", rpcOnCrossDay)
 }
 
 func rpcNewAgent(args []interface{}) {
@@ -25,4 +27,8 @@ func rpcCloseAgent(args []interface{}) {
 		managers.GetUserManager().UserOffline(user.(models.User))
 	}
 	_ = a
+}
+
+func rpcOnCrossDay(args []interface{}) {
+	actor.OnCrossDay()
 }
