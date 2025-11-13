@@ -48,5 +48,6 @@ coverage.txt
 dist/
 
 .idea
+.cursor
 
 **.exe
