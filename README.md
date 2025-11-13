@@ -9,7 +9,6 @@
 - **多协议支持**: 支持WebSocket、TCP等多种网络协议
 - **数据持久化**: 集成MongoDB进行数据存储
 - **实时通信**: 支持实时消息推送和房间管理
-- **充值系统**: 完整的游戏充值功能
 - **排行榜系统**: 实时排行榜功能
 - **匹配系统**: 游戏匹配和房间管理
 - **HTTP API**: 提供GM管理接口
@@ -69,7 +68,6 @@ GameServer/
 
 - **语言**: Go 1.24.5
 - **数据库**: MongoDB
-- **缓存**: Redis
 - **网络**: WebSocket, TCP
 - **序列化**: Protocol Buffers
 - **HTTP框架**: Gin
@@ -80,7 +78,6 @@ GameServer/
 ### 环境要求
 - Go 1.24.5+
 - MongoDB
-- Redis
 - Docker (可选)
 
 ### 安装依赖
@@ -119,21 +116,13 @@ go run main.go
 
 ### 开发工具
 
-#### Actor代理生成器
-项目提供了自动生成Actor代理代码的工具：
-
-```bash
-cd tools/actor_agent_generator
-go run . -source ../../modules/game/internal/managers
-```
-
 #### 配置生成器
 ```bash
 cd tools/config_generator
 go run .
 ```
 
-#### 处理器生成器
+#### proto消息处理生成器
 ```bash
 cd tools/handler_generator
 go run .
@@ -219,12 +208,9 @@ WebSocket消息采用二进制格式，结构如下：
 - 游戏操作消息  
 - 匹配系统消息
 - 排行榜消息
-- 充值系统消息
 
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
 ---
-
-**注意**: 这是一个游戏服务器项目，请确保在合法合规的前提下使用。
