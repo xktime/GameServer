@@ -11,6 +11,7 @@ func init() {
 	skeleton.RegisterChanRPC("NewAgent", rpcNewAgent)
 	skeleton.RegisterChanRPC("CloseAgent", rpcCloseAgent)
 	skeleton.RegisterChanRPC("OnCrossDay", rpcOnCrossDay)
+	skeleton.RegisterChanRPC("OnGetItem", rpcOnGetItem)
 }
 
 func rpcNewAgent(args []interface{}) {
@@ -35,4 +36,13 @@ func rpcOnCrossDay(args []interface{}) {
 		dispatcher.Go("OnCrossDay", timestamp)
 	}
 	_ = timestamp
+}
+
+func rpcOnGetItem(args []interface{}) {
+	playerId := args[0].(int64)
+	itemId := args[1].(int32)
+	count := args[2].(int32)
+	for _, dispatcher := range Dispatchers {
+		dispatcher.Go("OnGetItem", playerId, itemId, count)
+	}
 }

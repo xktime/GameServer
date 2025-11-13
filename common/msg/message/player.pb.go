@@ -75,13 +75,59 @@ func (Result) EnumDescriptor() ([]byte, []int) {
 	return file_game_player_proto_rawDescGZIP(), []int{0}
 }
 
+type UploadType int32
+
+const (
+	UploadType_UploadType_None   UploadType = 0
+	UploadType_UploadType_Avatar UploadType = 1
+)
+
+// Enum value maps for UploadType.
+var (
+	UploadType_name = map[int32]string{
+		0: "UploadType_None",
+		1: "UploadType_Avatar",
+	}
+	UploadType_value = map[string]int32{
+		"UploadType_None":   0,
+		"UploadType_Avatar": 1,
+	}
+)
+
+func (x UploadType) Enum() *UploadType {
+	p := new(UploadType)
+	*p = x
+	return p
+}
+
+func (x UploadType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UploadType) Descriptor() protoreflect.EnumDescriptor {
+	return file_game_player_proto_enumTypes[1].Descriptor()
+}
+
+func (UploadType) Type() protoreflect.EnumType {
+	return &file_game_player_proto_enumTypes[1]
+}
+
+func (x UploadType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UploadType.Descriptor instead.
+func (UploadType) EnumDescriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{1}
+}
+
 type PlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServerId      int32                  `protobuf:"varint,1,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
 	PlayerName    string                 `protobuf:"bytes,2,opt,name=player_name,json=playerName,proto3" json:"player_name,omitempty"`
 	Avatar        string                 `protobuf:"bytes,3,opt,name=avatar,proto3" json:"avatar,omitempty"`
-	Level         int64                  `protobuf:"varint,4,opt,name=level,proto3" json:"level,omitempty"`
-	PlayerId      int64                  `protobuf:"varint,5,opt,name=playerId,proto3" json:"playerId,omitempty"`
+	Level         int32                  `protobuf:"varint,4,opt,name=level,proto3" json:"level,omitempty"`
+	PlayerId      string                 `protobuf:"bytes,5,opt,name=playerId,proto3" json:"playerId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -137,23 +183,24 @@ func (x *PlayerInfo) GetAvatar() string {
 	return ""
 }
 
-func (x *PlayerInfo) GetLevel() int64 {
+func (x *PlayerInfo) GetLevel() int32 {
 	if x != nil {
 		return x.Level
 	}
 	return 0
 }
 
-func (x *PlayerInfo) GetPlayerId() int64 {
+func (x *PlayerInfo) GetPlayerId() string {
 	if x != nil {
 		return x.PlayerId
 	}
-	return 0
+	return ""
 }
 
 // 获取玩家信息请求
 type C2S_GetPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          int32                  `protobuf:"varint,1,opt,name=type,proto3" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,6 +233,13 @@ func (x *C2S_GetPlayerInfo) ProtoReflect() protoreflect.Message {
 // Deprecated: Use C2S_GetPlayerInfo.ProtoReflect.Descriptor instead.
 func (*C2S_GetPlayerInfo) Descriptor() ([]byte, []int) {
 	return file_game_player_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *C2S_GetPlayerInfo) GetType() int32 {
+	if x != nil {
+		return x.Type
+	}
+	return 0
 }
 
 // 获取玩家信息响应
@@ -419,6 +473,200 @@ func (x *S2C_ModifyName) GetName() string {
 	return ""
 }
 
+// 获取上传url
+type C2S_GetUploadUrl struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          UploadType             `protobuf:"varint,1,opt,name=type,proto3,enum=UploadType" json:"type,omitempty"`
+	SuffixName    string                 `protobuf:"bytes,2,opt,name=suffixName,proto3" json:"suffixName,omitempty"` // 文件类型 jpg/png
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_GetUploadUrl) Reset() {
+	*x = C2S_GetUploadUrl{}
+	mi := &file_game_player_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_GetUploadUrl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_GetUploadUrl) ProtoMessage() {}
+
+func (x *C2S_GetUploadUrl) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_GetUploadUrl.ProtoReflect.Descriptor instead.
+func (*C2S_GetUploadUrl) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *C2S_GetUploadUrl) GetType() UploadType {
+	if x != nil {
+		return x.Type
+	}
+	return UploadType_UploadType_None
+}
+
+func (x *C2S_GetUploadUrl) GetSuffixName() string {
+	if x != nil {
+		return x.SuffixName
+	}
+	return ""
+}
+
+type S2C_GetUploadUrl struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_GetUploadUrl) Reset() {
+	*x = S2C_GetUploadUrl{}
+	mi := &file_game_player_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_GetUploadUrl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_GetUploadUrl) ProtoMessage() {}
+
+func (x *S2C_GetUploadUrl) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_GetUploadUrl.ProtoReflect.Descriptor instead.
+func (*S2C_GetUploadUrl) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *S2C_GetUploadUrl) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+// 修改头像路径
+type C2S_ModifyAvatar struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Avatar        string                 `protobuf:"bytes,1,opt,name=avatar,proto3" json:"avatar,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_ModifyAvatar) Reset() {
+	*x = C2S_ModifyAvatar{}
+	mi := &file_game_player_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_ModifyAvatar) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_ModifyAvatar) ProtoMessage() {}
+
+func (x *C2S_ModifyAvatar) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_ModifyAvatar.ProtoReflect.Descriptor instead.
+func (*C2S_ModifyAvatar) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *C2S_ModifyAvatar) GetAvatar() string {
+	if x != nil {
+		return x.Avatar
+	}
+	return ""
+}
+
+type S2C_ModifyAvatar struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Result        Result                 `protobuf:"varint,1,opt,name=result,proto3,enum=Result" json:"result,omitempty"`
+	Avatar        string                 `protobuf:"bytes,2,opt,name=avatar,proto3" json:"avatar,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_ModifyAvatar) Reset() {
+	*x = S2C_ModifyAvatar{}
+	mi := &file_game_player_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_ModifyAvatar) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_ModifyAvatar) ProtoMessage() {}
+
+func (x *S2C_ModifyAvatar) ProtoReflect() protoreflect.Message {
+	mi := &file_game_player_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_ModifyAvatar.ProtoReflect.Descriptor instead.
+func (*S2C_ModifyAvatar) Descriptor() ([]byte, []int) {
+	return file_game_player_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *S2C_ModifyAvatar) GetResult() Result {
+	if x != nil {
+		return x.Result
+	}
+	return Result_Success
+}
+
+func (x *S2C_ModifyAvatar) GetAvatar() string {
+	if x != nil {
+		return x.Avatar
+	}
+	return ""
+}
+
 var File_game_player_proto protoreflect.FileDescriptor
 
 const file_game_player_proto_rawDesc = "" +
@@ -430,9 +678,10 @@ const file_game_player_proto_rawDesc = "" +
 	"\vplayer_name\x18\x02 \x01(\tR\n" +
 	"playerName\x12\x16\n" +
 	"\x06avatar\x18\x03 \x01(\tR\x06avatar\x12\x14\n" +
-	"\x05level\x18\x04 \x01(\x03R\x05level\x12\x1a\n" +
-	"\bplayerId\x18\x05 \x01(\x03R\bplayerId\"\x1a\n" +
-	"\x11C2S_GetPlayerInfo:\x05\x80\xb5\x18\xa1\x06\"G\n" +
+	"\x05level\x18\x04 \x01(\x05R\x05level\x12\x1a\n" +
+	"\bplayerId\x18\x05 \x01(\tR\bplayerId\".\n" +
+	"\x11C2S_GetPlayerInfo\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\x05R\x04type:\x05\x80\xb5\x18\xa1\x06\"G\n" +
 	"\x11S2C_GetPlayerInfo\x12+\n" +
 	"\n" +
 	"playerInfo\x18\x01 \x01(\v2\v.PlayerInfoR\n" +
@@ -445,12 +694,28 @@ const file_game_player_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name:\x05\x80\xb5\x18\xa3\x06\"L\n" +
 	"\x0eS2C_ModifyName\x12\x1f\n" +
 	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name:\x05\x80\xb5\x18\x87\a*;\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name:\x05\x80\xb5\x18\x87\a\"Z\n" +
+	"\x10C2S_GetUploadUrl\x12\x1f\n" +
+	"\x04type\x18\x01 \x01(\x0e2\v.UploadTypeR\x04type\x12\x1e\n" +
+	"\n" +
+	"suffixName\x18\x02 \x01(\tR\n" +
+	"suffixName:\x05\x80\xb5\x18\xa4\x06\"+\n" +
+	"\x10S2C_GetUploadUrl\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url:\x05\x80\xb5\x18\x88\a\"1\n" +
+	"\x10C2S_ModifyAvatar\x12\x16\n" +
+	"\x06avatar\x18\x01 \x01(\tR\x06avatar:\x05\x80\xb5\x18\xa5\x06\"R\n" +
+	"\x10S2C_ModifyAvatar\x12\x1f\n" +
+	"\x06result\x18\x01 \x01(\x0e2\a.ResultR\x06result\x12\x16\n" +
+	"\x06avatar\x18\x02 \x01(\tR\x06avatar:\x05\x80\xb5\x18\x89\a*;\n" +
 	"\x06Result\x12\v\n" +
 	"\aSuccess\x10\x00\x12\b\n" +
 	"\x04Fail\x10\x01\x12\r\n" +
 	"\tDuplicate\x10\x02\x12\v\n" +
-	"\aIllegal\x10\x03B\x0eZ\f./../messageb\x06proto3"
+	"\aIllegal\x10\x03*8\n" +
+	"\n" +
+	"UploadType\x12\x13\n" +
+	"\x0fUploadType_None\x10\x00\x12\x15\n" +
+	"\x11UploadType_Avatar\x10\x01B\x0eZ\f./../messageb\x06proto3"
 
 var (
 	file_game_player_proto_rawDescOnce sync.Once
@@ -464,27 +729,34 @@ func file_game_player_proto_rawDescGZIP() []byte {
 	return file_game_player_proto_rawDescData
 }
 
-var file_game_player_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_game_player_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_game_player_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_game_player_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_game_player_proto_goTypes = []any{
 	(Result)(0),               // 0: Result
-	(*PlayerInfo)(nil),        // 1: PlayerInfo
-	(*C2S_GetPlayerInfo)(nil), // 2: C2S_GetPlayerInfo
-	(*S2C_GetPlayerInfo)(nil), // 3: S2C_GetPlayerInfo
-	(*C2S_CheckName)(nil),     // 4: C2S_CheckName
-	(*S2C_CheckName)(nil),     // 5: S2C_CheckName
-	(*C2S_ModifyName)(nil),    // 6: C2S_ModifyName
-	(*S2C_ModifyName)(nil),    // 7: S2C_ModifyName
+	(UploadType)(0),           // 1: UploadType
+	(*PlayerInfo)(nil),        // 2: PlayerInfo
+	(*C2S_GetPlayerInfo)(nil), // 3: C2S_GetPlayerInfo
+	(*S2C_GetPlayerInfo)(nil), // 4: S2C_GetPlayerInfo
+	(*C2S_CheckName)(nil),     // 5: C2S_CheckName
+	(*S2C_CheckName)(nil),     // 6: S2C_CheckName
+	(*C2S_ModifyName)(nil),    // 7: C2S_ModifyName
+	(*S2C_ModifyName)(nil),    // 8: S2C_ModifyName
+	(*C2S_GetUploadUrl)(nil),  // 9: C2S_GetUploadUrl
+	(*S2C_GetUploadUrl)(nil),  // 10: S2C_GetUploadUrl
+	(*C2S_ModifyAvatar)(nil),  // 11: C2S_ModifyAvatar
+	(*S2C_ModifyAvatar)(nil),  // 12: S2C_ModifyAvatar
 }
 var file_game_player_proto_depIdxs = []int32{
-	1, // 0: S2C_GetPlayerInfo.playerInfo:type_name -> PlayerInfo
+	2, // 0: S2C_GetPlayerInfo.playerInfo:type_name -> PlayerInfo
 	0, // 1: S2C_CheckName.result:type_name -> Result
 	0, // 2: S2C_ModifyName.result:type_name -> Result
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	1, // 3: C2S_GetUploadUrl.type:type_name -> UploadType
+	0, // 4: S2C_ModifyAvatar.result:type_name -> Result
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_game_player_proto_init() }
@@ -498,8 +770,8 @@ func file_game_player_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_game_player_proto_rawDesc), len(file_game_player_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   7,
+			NumEnums:      2,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

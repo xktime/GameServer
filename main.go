@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"gameserver/common/base/actor"
+	"gameserver/common/bucket"
 	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/event_dispatcher"
@@ -78,6 +79,14 @@ func Init() {
 	// 初始化mongodb
 	mongodb.Init(conf.Server.MongoDB.Host, conf.Server.MongoDB.Database, conf.Server.MongoDB.MinPoolSize, conf.Server.MongoDB.MaxPoolSize)
 	mongodb.CreateIndexes(conf.MongoIndexConf)
+
+	// 初始化OSS
+	bucket.GetOSSClient().Init(bucket.OSSConfig{
+		AccessKeyID:     conf.Server.Bucket.AccessKeyID,
+		AccessKeySecret: conf.Server.Bucket.AccessKeySecret,
+		Endpoint:        conf.Server.Bucket.Endpoint,
+		BucketName:      conf.Server.Bucket.BucketName,
+	})
 
 	// 初始化actor
 	actor.Init(conf.Server.Actor.TimeoutMillisecond)

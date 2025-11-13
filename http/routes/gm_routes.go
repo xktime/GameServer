@@ -15,14 +15,14 @@ func SetupBaseRoutes(router *gin.Engine, gmHandler *handlers.GmHandler) {
 	router.Use(middleware.CORS())
 
 	// API路由组
-	api := router.Group("/api/v1")
-	{
-		// CDK相关路由
-		gm := api.Group("/gm")
-		{
-			gm.GET("/addItem", gmHandler.AddItem) // 添加物品
-		}
-	}
+	// api := router.Group("/api/v1")
+	// {
+	// 	// CDK相关路由
+	// 	gm := api.Group("/gm")
+	// 	{
+
+	// 	}
+	// }
 
 	// 根路径
 	router.GET("/", func(c *gin.Context) {

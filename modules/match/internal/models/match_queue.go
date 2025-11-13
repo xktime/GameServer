@@ -5,6 +5,7 @@ import (
 	"gameserver/core/log"
 	"gameserver/modules/game"
 	"gameserver/modules/match/internal/managers/room"
+	"strconv"
 	"time"
 )
 
@@ -135,7 +136,7 @@ func (q *MatchQueue) ProcessTeamMatchResults(matchedGroups [][]*TeamMatchRequest
 			for _, teamReq := range group {
 				for _, playerId := range teamReq.PlayerIds {
 					playerInfos = append(playerInfos, &message.MatchPlayerInfo{
-						PlayerId: playerId,
+						PlayerId: strconv.FormatInt(playerId, 10),
 						IsRobot:  teamReq.IsRobot,
 					})
 				}

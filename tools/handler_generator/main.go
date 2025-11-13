@@ -24,7 +24,9 @@ func main() {
 	var outputDir string
 	var modulesDir string
 	var ingoreFile []string
+	var commonProtoDir string
 
+	flag.StringVar(&commonProtoDir, "common_proto", "", "common_proto文件目录")
 	flag.StringVar(&protoDir, "proto", "", "proto文件目录")
 	flag.StringVar(&outputDir, "output", "", "输出目录")
 	flag.StringVar(&modulesDir, "modules", "", "modules目录")
@@ -52,7 +54,7 @@ func main() {
 	fmt.Printf("输出目录: %s\n", outputDir)
 	fmt.Printf("Modules目录: %s\n", modulesDir)
 
-	generator := NewHandlerGenerator(protoDir, outputDir, modulesDir, ingoreFile)
+	generator := NewHandlerGenerator(commonProtoDir, protoDir, outputDir, modulesDir, ingoreFile)
 	if err := generator.Generate(); err != nil {
 		fmt.Printf("生成失败: %v\n", err)
 		os.Exit(1)

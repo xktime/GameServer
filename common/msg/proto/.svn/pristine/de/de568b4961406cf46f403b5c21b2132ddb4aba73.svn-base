@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+option go_package = "./../message";
+extend google.protobuf.MessageOptions {
+  uint32 message_id = 50000;  // 使用高编号的字段ID（50000-99999）
+}

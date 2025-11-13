@@ -131,21 +131,39 @@ func (cm *ConnectManager) doCheckHeartbeats() {
 
 // GetActiveClients 获取活跃客户端数量 - 异步执行
 func (cm *ConnectManager) GetActiveClients() int {
-	response := cm.SendTask(func() int {
+	result := cm.SendTask(func() int {
 		return len(cm.clients)
 	})
-	return response.(int)
+
+	if err, ok := result.(error); ok {
+		log.Error("获取活跃客户端数量失败: %v", err)
+		return 0
+	}
+
+	if count, ok := result.(int); ok {
+		return count
+	}
+	return 0
 }
 
 // GetAllClients 获取所有客户端信息（用于调试）- 异步执行
 func (cm *ConnectManager) GetAllClients() map[string]*ClientHeartbeat {
-	response := cm.SendTask(func() map[string]*ClientHeartbeat {
+	result := cm.SendTask(func() map[string]*ClientHeartbeat {
 		// 返回副本，避免外部修改
-		result := make(map[string]*ClientHeartbeat)
+		clients := make(map[string]*ClientHeartbeat)
 		for k, v := range cm.clients {
-			result[k] = v
+			clients[k] = v
 		}
-		return result
+		return clients
 	})
-	return response.(map[string]*ClientHeartbeat)
+
+	if err, ok := result.(error); ok {
+		log.Error("获取所有客户端失败: %v", err)
+		return make(map[string]*ClientHeartbeat)
+	}
+
+	if clients, ok := result.(map[string]*ClientHeartbeat); ok {
+		return clients
+	}
+	return make(map[string]*ClientHeartbeat)
 }

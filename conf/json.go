@@ -46,11 +46,22 @@ var Server struct {
 		Secret    string
 		IsSandBox int
 	}
+	WeChatInfo struct {
+		Appid     string
+		Secret    string
+		IsSandBox int
+	}
 	MongoDB struct {
 		Host        string
 		Database    string
 		MinPoolSize uint64
 		MaxPoolSize uint64
+	}
+	Bucket struct {
+		AccessKeyID     string
+		AccessKeySecret string
+		Endpoint        string
+		BucketName      string
 	}
 }
 

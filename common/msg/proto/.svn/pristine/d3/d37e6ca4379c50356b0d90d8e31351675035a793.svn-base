@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+service RpcService{
+	rpc login(C2S_Login) returns (S2C_Login);
+
+	rpc saveData(C2S_SaveData) returns (S2C_SaveData);      //  拉取数据
+    rpc queryData(C2S_QueryData) returns (S2C_QueryData);   //  查询
+
+	rpc getPlayerInfo(C2S_GetPlayerInfo) returns (S2C_GetPlayerInfo);
+	
+	rpc getRankList(C2S_GetRankList) returns (S2C_GetRankList);
+	rpc getMyRank(C2S_GetMyRank) returns (S2C_GetMyRank);
+}

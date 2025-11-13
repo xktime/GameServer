@@ -75,7 +75,7 @@ func (LoginType) EnumDescriptor() ([]byte, []int) {
 type LoginInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OpenId        string                 `protobuf:"bytes,1,opt,name=openId,proto3" json:"openId,omitempty"`
-	LastLoginTime int64                  `protobuf:"varint,2,opt,name=lastLoginTime,proto3" json:"lastLoginTime,omitempty"`
+	LastLoginTime int32                  `protobuf:"varint,2,opt,name=lastLoginTime,proto3" json:"lastLoginTime,omitempty"`
 	TotalDays     int32                  `protobuf:"varint,3,opt,name=totalDays,proto3" json:"totalDays,omitempty"`
 	IsAccept      bool                   `protobuf:"varint,4,opt,name=isAccept,proto3" json:"isAccept,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -119,7 +119,7 @@ func (x *LoginInfo) GetOpenId() string {
 	return ""
 }
 
-func (x *LoginInfo) GetLastLoginTime() int64 {
+func (x *LoginInfo) GetLastLoginTime() int32 {
 	if x != nil {
 		return x.LastLoginTime
 	}
@@ -291,6 +291,7 @@ func (*C2S_Heart) Descriptor() ([]byte, []int) {
 
 type S2C_Heart struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Timestamp     int32                  `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -325,14 +326,57 @@ func (*S2C_Heart) Descriptor() ([]byte, []int) {
 	return file_login_login_proto_rawDescGZIP(), []int{4}
 }
 
+func (x *S2C_Heart) GetTimestamp() int32 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
+type S2C_Logout struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_Logout) Reset() {
+	*x = S2C_Logout{}
+	mi := &file_login_login_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_Logout) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_Logout) ProtoMessage() {}
+
+func (x *S2C_Logout) ProtoReflect() protoreflect.Message {
+	mi := &file_login_login_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_Logout.ProtoReflect.Descriptor instead.
+func (*S2C_Logout) Descriptor() ([]byte, []int) {
+	return file_login_login_proto_rawDescGZIP(), []int{5}
+}
+
 var File_login_login_proto protoreflect.FileDescriptor
 
 const file_login_login_proto_rawDesc = "" +
 	"\n" +
-	"\x11login/login.proto\x1a\x10message_id.proto\x1a\x11game/player.proto\"\x83\x01\n" +
+	"\x11login/login.proto\x1a\x10message_id.proto\"\x83\x01\n" +
 	"\tLoginInfo\x12\x16\n" +
 	"\x06openId\x18\x01 \x01(\tR\x06openId\x12$\n" +
-	"\rlastLoginTime\x18\x02 \x01(\x03R\rlastLoginTime\x12\x1c\n" +
+	"\rlastLoginTime\x18\x02 \x01(\x05R\rlastLoginTime\x12\x1c\n" +
 	"\ttotalDays\x18\x03 \x01(\x05R\ttotalDays\x12\x1a\n" +
 	"\bisAccept\x18\x04 \x01(\bR\bisAccept\"`\n" +
 	"\tS2C_Login\x12!\n" +
@@ -346,8 +390,11 @@ const file_login_login_proto_rawDesc = "" +
 	".LoginTypeR\tloginType\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\x05R\bserverId\x12\x12\n" +
 	"\x04code\x18\x03 \x01(\tR\x04code:\x04\x80\xb5\x18e\"\x11\n" +
-	"\tC2S_Heart:\x04\x80\xb5\x18f\"\x12\n" +
-	"\tS2C_Heart:\x05\x80\xb5\x18\xca\x01*-\n" +
+	"\tC2S_Heart:\x04\x80\xb5\x18f\"0\n" +
+	"\tS2C_Heart\x12\x1c\n" +
+	"\ttimestamp\x18\x01 \x01(\x05R\ttimestamp:\x05\x80\xb5\x18\xca\x01\"\x13\n" +
+	"\n" +
+	"S2C_Logout:\x05\x80\xb5\x18\xcc\x01*-\n" +
 	"\tLoginType\x12\b\n" +
 	"\x04None\x10\x00\x12\n" +
 	"\n" +
@@ -368,14 +415,15 @@ func file_login_login_proto_rawDescGZIP() []byte {
 }
 
 var file_login_login_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_login_login_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_login_login_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_login_login_proto_goTypes = []any{
-	(LoginType)(0),    // 0: LoginType
-	(*LoginInfo)(nil), // 1: LoginInfo
-	(*S2C_Login)(nil), // 2: S2C_Login
-	(*C2S_Login)(nil), // 3: C2S_Login
-	(*C2S_Heart)(nil), // 4: C2S_Heart
-	(*S2C_Heart)(nil), // 5: S2C_Heart
+	(LoginType)(0),     // 0: LoginType
+	(*LoginInfo)(nil),  // 1: LoginInfo
+	(*S2C_Login)(nil),  // 2: S2C_Login
+	(*C2S_Login)(nil),  // 3: C2S_Login
+	(*C2S_Heart)(nil),  // 4: C2S_Heart
+	(*S2C_Heart)(nil),  // 5: S2C_Heart
+	(*S2C_Logout)(nil), // 6: S2C_Logout
 }
 var file_login_login_proto_depIdxs = []int32{
 	1, // 0: S2C_Login.login_info:type_name -> LoginInfo
@@ -393,14 +441,13 @@ func file_login_login_proto_init() {
 		return
 	}
 	file_message_id_proto_init()
-	file_game_player_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_login_login_proto_rawDesc), len(file_login_login_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -171,10 +171,23 @@ func (tu *TimeUtils) getWeekStart(t time.Time) time.Time {
 	daysToMonday := weekday - 1
 
 	// 获取周一0点
-	monday := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	monday := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, tu.getTimezone())
 	monday = monday.AddDate(0, 0, -daysToMonday)
 
 	return monday
+}
+
+func (tu *TimeUtils) getWeekEnd(t time.Time) time.Time {
+	weekday := int(t.Weekday())
+	if weekday == 0 { // 周日
+		weekday = 7
+	}
+	// 计算到周日的天数差
+	daysToSunday := 7 - weekday
+	// 获取周日23:59:59
+	sunday := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, tu.getTimezone())
+	sunday = sunday.AddDate(0, 0, daysToSunday)
+	return sunday
 }
 
 // 全局时间工具实例
@@ -190,6 +203,16 @@ var GlobalTimeUtils = &TimeUtils{
 // IsCrossDay 判断两个时间戳是否跨天（使用默认配置）
 func IsCrossDay(timestamp1, timestamp2 int64) bool {
 	return GlobalTimeUtils.IsCrossDay(timestamp1, timestamp2)
+}
+
+func GetWeekStart(timestamp int64) int64 {
+	t := time.Unix(timestamp, 0)
+	return GlobalTimeUtils.getWeekStart(t).Unix()
+}
+
+func GetWeekEnd(timestamp int64) int64 {
+	t := time.Unix(timestamp, 0)
+	return GlobalTimeUtils.getWeekEnd(t).Unix()
 }
 
 // DaysBetween 计算两个时间戳相距多少天（使用默认配置）

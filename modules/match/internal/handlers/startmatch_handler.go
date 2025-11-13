@@ -1,17 +1,15 @@
+
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/game"
-	"gameserver/modules/match/internal/managers"
 )
 
 // C2S_StartMatchHandler 处理C2S_StartMatch消息
 func C2S_StartMatchHandler(args []interface{}) {
-	if len(args) < 2 {
+	if len(args) < 3 {
 		log.Error("C2S_StartMatchHandler: 参数不足")
 		return
 	}
@@ -28,10 +26,12 @@ func C2S_StartMatchHandler(args []interface{}) {
 		return
 	}
 
-	log.Debug("收到C2S_StartMatch消息: %v, agent: %v", msg, agent)
-	teamId, response := managers.GetMatchManager().HandleMatch(agent, msg)
-	if response.Result {
-		game.External.TeamManager.SendMessageExceptSelf(teamId, response, agent.UserData().(models.User).PlayerId)
+	seq, ok := args[2].(uint32)
+	if !ok {
+		log.Error("C2S_StartMatchHandler: Seq类型错误")
+		return
 	}
-	agent.WriteMsgWithSeq(response, args[2].(uint32))
+
+	log.Debug("收到C2S_StartMatch消息: %v, agent: %v, seq: %v", msg, agent, seq)
+	// TODO: 实现具体的业务逻辑
 }

@@ -30,17 +30,18 @@ func TestTaskTimeout(t *testing.T) {
 	// 测试用例1：正常任务，不会超时
 	t.Run("NormalTask", func(t *testing.T) {
 		start := time.Now()
-		result := handler.SendTask(func() *Response {
+		result := handler.SendTask(func() string {
 			time.Sleep(100 * time.Millisecond) // 100ms任务
-			return &Response{
-				Result: []interface{}{"success"},
-				Error:  nil,
-			}
+			return "success"
 		})
 		duration := time.Since(start)
 
-		if result.Error != nil {
-			t.Errorf("正常任务应该成功，但得到错误: %v", result.Error)
+		if err, ok := result.(error); ok {
+			t.Errorf("正常任务应该成功，但得到错误: %v", err)
+		}
+
+		if result != "success" {
+			t.Errorf("期望结果 'success'，但得到: %v", result)
 		}
 		if duration > 500*time.Millisecond {
 			t.Errorf("正常任务执行时间过长: %v", duration)
@@ -50,21 +51,20 @@ func TestTaskTimeout(t *testing.T) {
 	// 测试用例2：超时任务
 	t.Run("TimeoutTask", func(t *testing.T) {
 		start := time.Now()
-		result := handler.SendTask(func() *Response {
+		result := handler.SendTask(func() string {
 			time.Sleep(3 * time.Second) // 3秒任务，超过2秒超时
-			return &Response{
-				Result: []interface{}{"should not reach here"},
-				Error:  nil,
-			}
+			return "should not reach here"
 		})
 		duration := time.Since(start)
 
 		// 应该超时
-		if result.Error == nil {
+		if _, ok := result.(error); !ok {
 			t.Error("超时任务应该返回错误")
 		}
-		if !contains(result.Error.Error(), "timeout") {
-			t.Errorf("错误信息应该包含'timeout'，但得到: %v", result.Error)
+		if err, ok := result.(error); ok {
+			if !contains(err.Error(), "timeout") {
+				t.Errorf("错误信息应该包含'timeout'，但得到: %v", err)
+			}
 		}
 		// 执行时间应该在2秒左右（允许一些误差）
 		if duration < 1900*time.Millisecond || duration > 2200*time.Millisecond {
@@ -74,17 +74,14 @@ func TestTaskTimeout(t *testing.T) {
 
 	// 测试用例3：单个快速任务
 	t.Run("SingleFastTask", func(t *testing.T) {
-		result := handler.SendTask(func() *Response {
+		result := handler.SendTask(func() string {
 			time.Sleep(50 * time.Millisecond)
-			return &Response{
-				Result: []interface{}{"fast_task"},
-				Error:  nil,
-			}
+			return "fast_task"
 		})
 
 		// 任务应该成功
-		if result.Error != nil {
-			t.Errorf("快速任务应该成功，但得到错误: %v", result.Error)
+		if err, ok := result.(error); ok {
+			t.Errorf("快速任务应该成功，但得到错误: %v", err)
 		}
 
 	})

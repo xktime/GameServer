@@ -11,9 +11,14 @@ import (
 
 func InitRouter() {
 	// 模块间使用 ChanRPC 通讯，消息路由也不例外
-	msg.Processor.SetRouter(&message.C2S_GetRechargeRecords{}, game.External.ChanRPC)
-	msg.Processor.SetRouter(&message.C2S_GetRechargeConfigs{}, game.External.ChanRPC)
-	msg.Processor.SetRouter(&message.C2S_RechargeRequest{}, game.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_GetUploadUrl{}, game.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_GetHistoryRankReward{}, rank.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_GetMyHistoryRank{}, rank.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_GetChanllengeList{}, rank.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_ModifyAvatar{}, game.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_ChanllengeByCode{}, rank.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_GeneratorChanllengeCode{}, rank.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_SeasonInfo{}, rank.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_ModifyName{}, game.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_CheckName{}, game.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_GetPlayerInfo{}, game.External.ChanRPC)

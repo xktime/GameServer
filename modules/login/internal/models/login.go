@@ -51,3 +51,18 @@ type Code2SessionResponseData struct {
 	UnionId    string `json:"unionid"`
 	DOpenid    string `json:"dopenid"`
 }
+
+// 微信登录
+type WeChatCode2SessionRequest struct {
+	AppId  string `json:"appid"`
+	Secret string `json:"secret"`
+	JsCode string `json:"js_code"`
+}
+
+type WeChatCode2SessionResponse struct {
+	OpenId     string `json:"openid"`
+	SessionKey string `json:"session_key"`
+	UnionId    string `json:"unionid"`
+	ErrCode    int    `json:"errcode"`
+	ErrMsg     string `json:"errmsg"`
+}

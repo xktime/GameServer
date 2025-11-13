@@ -2,7 +2,6 @@ package managers
 
 import (
 	"gameserver/common/base/actor"
-	gconf "gameserver/common/config/generated"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
@@ -35,10 +34,7 @@ func GetMatchManager() *MatchManager {
 // Init 初始化匹配管理器
 func (m *MatchManager) Init(args ...any) {
 	m.matchQueues = make(map[int32]*match_models.MatchQueue)
-	configs, _ := gconf.GetAllMatchConfigs()
-	for _, config := range configs {
-		m.matchQueues[int32(config.Id)] = match_models.NewMatchQueue()
-	}
+	m.matchQueues[1] = match_models.NewMatchQueue()
 }
 
 // Stop 停止MatchManager
@@ -51,7 +47,7 @@ func (m *MatchManager) GetInterval() int {
 }
 
 func (m *MatchManager) OnTimer() {
-	m.SendTask(func() {
+	m.SendTaskAsync(func() {
 		m.Matching()
 		m.ProcessTimeoutRequests()
 	})
@@ -76,11 +72,16 @@ func (m *MatchManager) Matching() {
 
 // HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
-	response := m.SendTask(func() (int64, *message.S2C_StartMatch) {
-		teamId, item := m.doHandleMatch(agent, msg)
-		return teamId, item
+	result := m.SendTask(func() (int64, *message.S2C_StartMatch) {
+		return m.doHandleMatch(agent, msg)
 	})
-	if results, ok := response.([]interface{}); ok {
+
+	if err, ok := result.(error); ok {
+		log.Error("处理匹配失败: %v", err)
+		return 0, nil
+	}
+
+	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
 		if teamId, ok := results[0].(int64); ok {
 			if item, ok := results[1].(*message.S2C_StartMatch); ok {
 				return teamId, item
@@ -158,11 +159,16 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 
 // HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
-	response := m.SendTask(func() (int64, *message.S2C_CancelMatch) {
-		itemId, item := m.doHandleCancelMatch(agent)
-		return itemId, item
+	result := m.SendTask(func() (int64, *message.S2C_CancelMatch) {
+		return m.doHandleCancelMatch(agent)
 	})
-	if results, ok := response.([]interface{}); ok {
+
+	if err, ok := result.(error); ok {
+		log.Error("取消匹配失败: %v", err)
+		return 0, nil
+	}
+
+	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
 		if itemId, ok := results[0].(int64); ok {
 			if item, ok := results[1].(*message.S2C_CancelMatch); ok {
 				return itemId, item
@@ -170,7 +176,6 @@ func (m *MatchManager) HandleCancelMatch(agent gate.Agent) (int64, *message.S2C_
 		}
 	}
 	return 0, nil
-
 }
 
 // doHandleCancelMatch 处理取消匹配请求的同步实现
@@ -216,12 +221,7 @@ func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) (int64, *message.S2
 
 // 根据匹配类型获取目标房间人数
 func getTargetRoomSize(matchType int32) int {
-	cfg, ok := gconf.GetMatchConfig(matchType)
-	if ok && cfg != nil {
-		return int(cfg.Room)
-	}
-	log.Error("获取房间数量，匹配类型 %d 不合法", matchType)
-	return 0
+	return 5
 }
 
 // executeTeamMatchingForType 执行指定类型的队伍匹配逻辑

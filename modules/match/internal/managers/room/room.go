@@ -3,11 +3,12 @@ package room
 import (
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
-	"gameserver/common/utils"
 	"gameserver/core/log"
 	"gameserver/modules/game"
+	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -20,7 +21,7 @@ const (
 // Room 房间结构
 type Room struct {
 	actor.BaseActor `bson:"-"`
-	RoomId          int64         `bson:"_id"`
+	RoomId          string        `bson:"_id"`
 	RoomMembers     []int64       `bson:"room_members"`
 	TeamIds         []int64       `bson:"team_ids"`
 	CreateTime      time.Time     `bson:"create_time"`  // 房间创建时间
@@ -39,7 +40,7 @@ func CreateRoom(playerIds []int64, teamIds []int64) *Room {
 func (r *Room) Init(args ...any) {
 	r.CreateTime = time.Now()
 	r.MaxLifetime = MaxRoomLifetime
-	if roomId, ok := args[0].(int64); ok {
+	if roomId, ok := args[0].(string); ok {
 		r.RoomId = roomId
 	}
 	if playerIds, ok := args[1].([]int64); ok {
@@ -129,12 +130,12 @@ func (r *Room) SendRoomMessageExceptSelf(msg proto.Message, selfId int64) {
 
 func (r *Room) PlayerOffline(playerId int64) {
 	msg := &message.S2C_PlayerOffline{
-		PlayerId: playerId,
+		PlayerId: strconv.FormatInt(playerId, 10),
 	}
 	r.SendRoomMessageExceptSelf(msg, playerId)
 }
 
 // generateRoomId 生成房间ID
-func generateRoomId() int64 {
-	return utils.FlakeId()
+func generateRoomId() string {
+	return uuid.New().String()
 }

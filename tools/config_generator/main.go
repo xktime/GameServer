@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -42,6 +43,7 @@ import (
 	"gameserver/common/config"
 	"reflect"
 	"sync"
+	"gameserver/core/log"
 )
 
 // {{.StructName}}Data {{.FileName}}配置数据结构体（自动生成，请勿手动修改）
@@ -224,6 +226,110 @@ func convertTo{{.StructName}}(config interface{}) (*{{.StructName}}Data, bool) {
 							field.Set(reflect.ValueOf(slice))
 						}
 					}
+				case reflect.Map:
+					if mapData, ok := value.(map[string]interface{}); ok {
+						// 处理不同类型的map
+						keyType := field.Type().Key()
+						valueType := field.Type().Elem()
+						
+						// 检查key类型是否为string
+						if keyType.Kind() == reflect.String {
+							switch valueType.Kind() {
+							case reflect.String:
+								// map[string]string
+								strMap := make(map[string]string)
+								for k, v := range mapData {
+									if str, ok := v.(string); ok {
+										strMap[k] = str
+									}
+								}
+								field.Set(reflect.ValueOf(strMap))
+							case reflect.Int32:
+								// map[string]int32
+								intMap := make(map[string]int32)
+								for k, v := range mapData {
+									if num, ok := v.(float64); ok {
+										intMap[k] = int32(num)
+									}
+								}
+								field.Set(reflect.ValueOf(intMap))
+							case reflect.Float64:
+								// map[string]float64
+								floatMap := make(map[string]float64)
+								for k, v := range mapData {
+									if num, ok := v.(float64); ok {
+										floatMap[k] = num
+									}
+								}
+								field.Set(reflect.ValueOf(floatMap))
+							case reflect.Bool:
+								// map[string]bool
+								boolMap := make(map[string]bool)
+								for k, v := range mapData {
+									if b, ok := v.(bool); ok {
+										boolMap[k] = b
+									}
+								}
+								field.Set(reflect.ValueOf(boolMap))
+							case reflect.Slice:
+								// map[string][]T
+								if valueType.Elem().Kind() == reflect.String {
+									// map[string][]string
+									strSliceMap := make(map[string][]string)
+									for k, v := range mapData {
+										if slice, ok := v.([]interface{}); ok {
+											strSlice := make([]string, len(slice))
+											for i, item := range slice {
+												if str, ok := item.(string); ok {
+													strSlice[i] = str
+												}
+											}
+											strSliceMap[k] = strSlice
+										}
+									}
+									field.Set(reflect.ValueOf(strSliceMap))
+								} else if valueType.Elem().Kind() == reflect.Int32 {
+									// map[string][]int32
+									intSliceMap := make(map[string][]int32)
+									for k, v := range mapData {
+										if slice, ok := v.([]interface{}); ok {
+											intSlice := make([]int32, len(slice))
+											for i, item := range slice {
+												if num, ok := item.(float64); ok {
+													intSlice[i] = int32(num)
+												}
+											}
+											intSliceMap[k] = intSlice
+										}
+									}
+									field.Set(reflect.ValueOf(intSliceMap))
+								} else if valueType.Elem().Kind() == reflect.Float64 {
+									// map[string][]float64
+									floatSliceMap := make(map[string][]float64)
+									for k, v := range mapData {
+										if slice, ok := v.([]interface{}); ok {
+											floatSlice := make([]float64, len(slice))
+											for i, item := range slice {
+												if num, ok := item.(float64); ok {
+													floatSlice[i] = num
+												}
+											}
+											floatSliceMap[k] = floatSlice
+										}
+									}
+									field.Set(reflect.ValueOf(floatSliceMap))
+								} else {
+									// 其他类型的切片，使用interface{}
+									field.Set(reflect.ValueOf(mapData))
+								}
+							default:
+								// 其他复杂类型，直接设置为 interface{}
+								field.Set(reflect.ValueOf(mapData))
+							}
+						} else {
+							log.Error("{{.StructName}}转换错误: %v %v %v", convertTo{{.StructName}}, config, value)
+						}
+					}
 				}
 			}
 		}
@@ -321,6 +427,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"gameserver/core/log"
 )
 
 // GameConst 全局配置变量（自动生成，请勿手动修改）
@@ -347,7 +454,11 @@ func initGameConst() {
 			configData, exists := config.GetConfig("GameConst.json", nil)
 			if exists {
 				// 配置管理器已初始化，继续处理
-				processGameConstConfig(configData)
+				formatData := make(map[string]interface{})
+				for k, v := range configData.(map[string]interface{}) {
+					formatData[strings.ToLower(k)] = v
+				}
+				processGameConstConfig(formatData)
 				break
 			}
 			// 如果配置管理器未初始化，等待一下
@@ -357,26 +468,27 @@ func initGameConst() {
 }
 
 // processGameConstConfig 处理GameConst配置数据
-func processGameConstConfig(configData interface{}) {
+func processGameConstConfig(formatData map[string]interface{}) {
 	// 使用反射设置字段值
 	gameConstValue := reflect.ValueOf(&GameConst).Elem()
 	gameConstType := gameConstValue.Type()
-	
+
 	for i := 0; i < gameConstValue.NumField(); i++ {
 		field := gameConstValue.Field(i)
 		fieldType := gameConstType.Field(i)
 		fieldName := fieldType.Name
-		
+
 		// 将字段名转换为JSON字段名（首字母小写）
-		jsonName := strings.ToLower(fieldName[:1]) + fieldName[1:]
-		
-		if value, exists := configData.(map[string]interface{})[jsonName]; exists {
+		jsonName := strings.ToLower(fieldName)
+
+		if value, exists := formatData[jsonName]; exists {
 			// 根据字段类型进行类型转换
 			switch field.Kind() {
 			case reflect.String:
 				if str, ok := value.(string); ok {
 					field.SetString(str)
 				}
+
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 				if num, ok := value.(float64); ok {
 					field.SetInt(int64(num))
@@ -389,10 +501,206 @@ func processGameConstConfig(configData interface{}) {
 				if b, ok := value.(bool); ok {
 					field.SetBool(b)
 				}
+			case reflect.Slice:
+				if slice, ok := value.([]interface{}); ok {
+					// 处理不同类型的切片
+					elemType := field.Type().Elem()
+					switch elemType.Kind() {
+					case reflect.String:
+						strSlice := make([]string, len(slice))
+						for j, item := range slice {
+							if str, ok := item.(string); ok {
+								strSlice[j] = str
+							}
+						}
+						field.Set(reflect.ValueOf(strSlice))
+					case reflect.Int32:
+						intSlice := make([]int32, len(slice))
+						for j, item := range slice {
+							if num, ok := item.(float64); ok {
+								intSlice[j] = int32(num)
+							}
+						}
+						field.Set(reflect.ValueOf(intSlice))
+					case reflect.Float64:
+						floatSlice := make([]float64, len(slice))
+						for j, item := range slice {
+							if num, ok := item.(float64); ok {
+								floatSlice[j] = num
+							}
+						}
+						field.Set(reflect.ValueOf(floatSlice))
+					case reflect.Bool:
+						boolSlice := make([]bool, len(slice))
+						for j, item := range slice {
+							if b, ok := item.(bool); ok {
+								boolSlice[j] = b
+							}
+						}
+						field.Set(reflect.ValueOf(boolSlice))
+					case reflect.Slice:
+						// 处理二维数组
+						if elemType.Elem().Kind() == reflect.String {
+							// [][]string
+							str2DSlice := make([][]string, len(slice))
+							for i, outerItem := range slice {
+								if outerSlice, ok := outerItem.([]interface{}); ok {
+									strSlice := make([]string, len(outerSlice))
+									for j, innerItem := range outerSlice {
+										if str, ok := innerItem.(string); ok {
+											strSlice[j] = str
+										}
+									}
+									str2DSlice[i] = strSlice
+								}
+							}
+							field.Set(reflect.ValueOf(str2DSlice))
+						} else if elemType.Elem().Kind() == reflect.Int32 {
+							// [][]int32
+							int2DSlice := make([][]int32, len(slice))
+							for i, outerItem := range slice {
+								if outerSlice, ok := outerItem.([]interface{}); ok {
+									intSlice := make([]int32, len(outerSlice))
+									for j, innerItem := range outerSlice {
+										if num, ok := innerItem.(float64); ok {
+											intSlice[j] = int32(num)
+										}
+									}
+									int2DSlice[i] = intSlice
+								}
+							}
+							field.Set(reflect.ValueOf(int2DSlice))
+						} else if elemType.Elem().Kind() == reflect.Float64 {
+							// [][]float64
+							float2DSlice := make([][]float64, len(slice))
+							for i, outerItem := range slice {
+								if outerSlice, ok := outerItem.([]interface{}); ok {
+									floatSlice := make([]float64, len(outerSlice))
+									for j, innerItem := range outerSlice {
+										if num, ok := innerItem.(float64); ok {
+											floatSlice[j] = num
+										}
+									}
+									float2DSlice[i] = floatSlice
+								}
+							}
+							field.Set(reflect.ValueOf(float2DSlice))
+						} else {
+							// 其他二维数组类型，使用interface{}
+							field.Set(reflect.ValueOf(slice))
+						}
+					default:
+						// 对于复杂类型，直接设置为 interface{}
+						field.Set(reflect.ValueOf(slice))
+					}
+				}
+			case reflect.Map:
+				if mapData, ok := value.(map[string]interface{}); ok {
+					// 处理不同类型的map
+					keyType := field.Type().Key()
+					valueType := field.Type().Elem()
+
+					// 检查key类型是否为string
+					if keyType.Kind() == reflect.String {
+						switch valueType.Kind() {
+						case reflect.String:
+							// map[string]string
+							strMap := make(map[string]string)
+							for k, v := range mapData {
+								if str, ok := v.(string); ok {
+									strMap[k] = str
+								}
+							}
+							field.Set(reflect.ValueOf(strMap))
+						case reflect.Int32:
+							// map[string]int32
+							intMap := make(map[string]int32)
+							for k, v := range mapData {
+								if num, ok := v.(float64); ok {
+									intMap[k] = int32(num)
+								}
+							}
+							field.Set(reflect.ValueOf(intMap))
+						case reflect.Float64:
+							// map[string]float64
+							floatMap := make(map[string]float64)
+							for k, v := range mapData {
+								if num, ok := v.(float64); ok {
+									floatMap[k] = num
+								}
+							}
+							field.Set(reflect.ValueOf(floatMap))
+						case reflect.Bool:
+							// map[string]bool
+							boolMap := make(map[string]bool)
+							for k, v := range mapData {
+								if b, ok := v.(bool); ok {
+									boolMap[k] = b
+								}
+							}
+							field.Set(reflect.ValueOf(boolMap))
+						case reflect.Slice:
+							// map[string][]T
+							if valueType.Elem().Kind() == reflect.String {
+								// map[string][]string
+								strSliceMap := make(map[string][]string)
+								for k, v := range mapData {
+									if slice, ok := v.([]interface{}); ok {
+										strSlice := make([]string, len(slice))
+										for i, item := range slice {
+											if str, ok := item.(string); ok {
+												strSlice[i] = str
+											}
+										}
+										strSliceMap[k] = strSlice
+									}
+								}
+								field.Set(reflect.ValueOf(strSliceMap))
+							} else if valueType.Elem().Kind() == reflect.Int32 {
+								// map[string][]int32
+								intSliceMap := make(map[string][]int32)
+								for k, v := range mapData {
+									if slice, ok := v.([]interface{}); ok {
+										intSlice := make([]int32, len(slice))
+										for i, item := range slice {
+											if num, ok := item.(float64); ok {
+												intSlice[i] = int32(num)
+											}
+										}
+										intSliceMap[k] = intSlice
+									}
+								}
+								field.Set(reflect.ValueOf(intSliceMap))
+							} else if valueType.Elem().Kind() == reflect.Float64 {
+								// map[string][]float64
+								floatSliceMap := make(map[string][]float64)
+								for k, v := range mapData {
+									if slice, ok := v.([]interface{}); ok {
+										floatSlice := make([]float64, len(slice))
+										for i, item := range slice {
+											if num, ok := item.(float64); ok {
+												floatSlice[i] = num
+											}
+										}
+										floatSliceMap[k] = floatSlice
+									}
+								}
+								field.Set(reflect.ValueOf(floatSliceMap))
+							} else {
+								// 其他类型的切片，使用interface{}
+								field.Set(reflect.ValueOf(mapData))
+							}
+						default:
+							// 其他复杂类型，直接设置为 interface{}
+							field.Set(reflect.ValueOf(mapData))
+						}
+					} else {
+						log.Error("GameConst转换错误: %v %v %v", fieldName, value)
+					}
+				}
 			}
 		}
 	}
-	
 	gameConstLoaded = true
 }
 
@@ -791,7 +1099,14 @@ func detectIdType(data interface{}) string {
 		// 检查是否是新的配置格式
 		if isConfigMapFormat(v) {
 			// 对于新格式，ID类型是string（因为最外层的key是字符串）
-			return "string"
+			if v, ok := data.(map[string]interface{}); ok {
+				for key := range v {
+					if _, err := strconv.Atoi(key); err != nil {
+						return "string"
+					}
+				}
+			}
+			return "int32"
 		} else {
 			// 原有格式：直接检查id字段
 			if idValue, exists := v["id"]; exists {
@@ -878,7 +1193,7 @@ func inferGoType(value interface{}, fieldName string) string {
 	case map[string]interface{}:
 		// 分析map的值类型，尝试推断更具体的类型
 		if len(v) == 0 {
-			return "map[string]interface{}"
+			return "map[string]int32"
 		}
 
 		// 检查所有值的类型是否一致

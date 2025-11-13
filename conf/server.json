@@ -18,10 +18,21 @@
         "Secret": "1234",
         "IsSandBox": 0
     },
+    "WeChatInfo": {
+        "Appid": "1",
+        "Secret": "1",
+        "IsSandBox": 0
+    },
     "MongoDB": {
         "Host": "mongodb://localhost:27017",
         "Database": "test",
         "MinPoolSize": 10,
         "MaxPoolSize": 100
+    },
+    "Bucket": {
+        "AccessKeyID": "1",
+        "AccessKeySecret": "1",
+        "Endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
+        "BucketName": "game-server"
     }
 }

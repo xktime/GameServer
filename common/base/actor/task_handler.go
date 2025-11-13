@@ -83,20 +83,12 @@ func RegisterActor[T IActor](actorGroup ActorGroup, uniqueID interface{}, args .
 
 	// 初始化Actor
 	actorInterface.Init(args...)
-	return actor
-}
 
-func GetActors(actorGroup ActorGroup, uniqueID interface{}) []IActor {
-	result := make([]IActor, 0)
-	id := getUniqueId(actorGroup, uniqueID)
-	handler, exists := GetHandler(id)
-	if !exists || handler.IsStopped() {
-		return result
+	// 初始化判断一下跨天
+	if timer, ok := actorInterface.(OnCrossDayTimer); ok {
+		timer.OnCrossDay(time.Now().Unix())
 	}
-	for _, actor := range handler.actors {
-		result = append(result, actor)
-	}
-	return result
+	return actor
 }
 
 // GetActor 获取已存在的Actor对象
@@ -257,7 +249,7 @@ func (b *TaskHandler) sendTask(f func() *Response) *Response {
 	}
 }
 
-// SendTaskAuto 发送任务并等待结果（简化版本）
+// SendTask 发送任务并等待结果
 // 自动处理Response构造和结果提取，支持任意返回值
 func (b *TaskHandler) SendTask(f interface{}) interface{} {
 	// 使用反射调用函数并自动处理结果
@@ -266,10 +258,10 @@ func (b *TaskHandler) SendTask(f interface{}) interface{} {
 
 	// 检查函数签名
 	if fnType.Kind() != reflect.Func {
-		panic("SendTaskAuto: 参数必须是函数")
+		panic("SendTask: 参数必须是函数")
 	}
 
-	// 调用原版SendTask，但自动构造Response
+	// 调用SendTask，但自动构造Response
 	response := b.sendTask(func() *Response {
 		// 调用传入的函数
 		results := fn.Call([]reflect.Value{})
@@ -416,8 +408,6 @@ func (b *TaskHandler) Stop() {
 	// 现在取消context（此时所有任务已完成）
 	b.cancel()
 
-	// 注意：定时保存由 schedule.go 统一管理，这里不需要单独停止
-
 	// 在Stop时保存所有Actor数据
 	for _, actor := range b.actors {
 		if persistData, ok := actor.(mongodb.PersistData); ok {
@@ -514,7 +504,7 @@ func (b *TaskHandler) IsRunning() bool {
 
 // IsStopped 检查是否已停止（线程安全）
 func (b *TaskHandler) IsStopped() bool {
-	return b.GetState() == ActorStateStopped
+	return b.GetState() == ActorStateStopped || b.GetState() == ActorStateStopping
 }
 
 // notifyAllTasksFailed 通知所有等待的任务执行失败
@@ -538,7 +528,7 @@ func (b *TaskHandler) IsStopping() bool {
 func getTaskHandler(ActorGroup ActorGroup, uniqueID interface{}, a IActor) *TaskHandler {
 	id := getUniqueId(ActorGroup, uniqueID)
 	actorName := getActorName(a)
-	if taskHandler, ok := GetHandler(id); ok {
+	if taskHandler, ok := GetHandler(id); ok && !taskHandler.IsStopped() {
 		taskHandler.actors[actorName] = a
 		return taskHandler
 	} else {

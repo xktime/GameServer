@@ -23,7 +23,7 @@ const (
 
 type MatchPlayerInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
+	PlayerId      string                 `protobuf:"bytes,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
 	IsRobot       bool                   `protobuf:"varint,2,opt,name=isRobot,proto3" json:"isRobot,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -59,11 +59,11 @@ func (*MatchPlayerInfo) Descriptor() ([]byte, []int) {
 	return file_match_match_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *MatchPlayerInfo) GetPlayerId() int64 {
+func (x *MatchPlayerInfo) GetPlayerId() string {
 	if x != nil {
 		return x.PlayerId
 	}
-	return 0
+	return ""
 }
 
 func (x *MatchPlayerInfo) GetIsRobot() bool {
@@ -163,7 +163,7 @@ func (x *S2C_StartMatch) GetResult() bool {
 
 type S2C_MatchResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        int64                  `protobuf:"varint,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
 	PlayerInfos   []*MatchPlayerInfo     `protobuf:"bytes,2,rep,name=playerInfos,proto3" json:"playerInfos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -199,11 +199,11 @@ func (*S2C_MatchResult) Descriptor() ([]byte, []int) {
 	return file_match_match_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *S2C_MatchResult) GetRoomId() int64 {
+func (x *S2C_MatchResult) GetRoomId() string {
 	if x != nil {
 		return x.RoomId
 	}
-	return 0
+	return ""
 }
 
 func (x *S2C_MatchResult) GetPlayerInfos() []*MatchPlayerInfo {
@@ -295,7 +295,7 @@ func (x *S2C_CancelMatch) GetResult() bool {
 
 type S2C_PlayerOffline struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
+	PlayerId      string                 `protobuf:"bytes,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -330,17 +330,17 @@ func (*S2C_PlayerOffline) Descriptor() ([]byte, []int) {
 	return file_match_match_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *S2C_PlayerOffline) GetPlayerId() int64 {
+func (x *S2C_PlayerOffline) GetPlayerId() string {
 	if x != nil {
 		return x.PlayerId
 	}
-	return 0
+	return ""
 }
 
 // ---------------room-----------
 type C2S_RecordGameOperate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        int64                  `protobuf:"varint,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
 	OperateInfo   string                 `protobuf:"bytes,2,opt,name=operateInfo,proto3" json:"operateInfo,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -376,11 +376,11 @@ func (*C2S_RecordGameOperate) Descriptor() ([]byte, []int) {
 	return file_match_match_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *C2S_RecordGameOperate) GetRoomId() int64 {
+func (x *C2S_RecordGameOperate) GetRoomId() string {
 	if x != nil {
 		return x.RoomId
 	}
-	return 0
+	return ""
 }
 
 func (x *C2S_RecordGameOperate) GetOperateInfo() string {
@@ -440,22 +440,22 @@ const file_match_match_proto_rawDesc = "" +
 	"\n" +
 	"\x11match/match.proto\x1a\x10message_id.proto\"G\n" +
 	"\x0fMatchPlayerInfo\x12\x1a\n" +
-	"\bplayerId\x18\x01 \x01(\x03R\bplayerId\x12\x18\n" +
+	"\bplayerId\x18\x01 \x01(\tR\bplayerId\x12\x18\n" +
 	"\aisRobot\x18\x02 \x01(\bR\aisRobot\"+\n" +
 	"\x0eC2S_StartMatch\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\x05R\x04type:\x05\x80\xb5\x18\xad\x02\"/\n" +
 	"\x0eS2C_StartMatch\x12\x16\n" +
 	"\x06result\x18\x01 \x01(\bR\x06result:\x05\x80\xb5\x18\x91\x03\"d\n" +
 	"\x0fS2C_MatchResult\x12\x16\n" +
-	"\x06roomId\x18\x01 \x01(\x03R\x06roomId\x122\n" +
+	"\x06roomId\x18\x01 \x01(\tR\x06roomId\x122\n" +
 	"\vplayerInfos\x18\x02 \x03(\v2\x10.MatchPlayerInfoR\vplayerInfos:\x05\x80\xb5\x18\x92\x03\"\x18\n" +
 	"\x0fC2S_CancelMatch:\x05\x80\xb5\x18\xaf\x02\"0\n" +
 	"\x0fS2C_CancelMatch\x12\x16\n" +
 	"\x06result\x18\x01 \x01(\bR\x06result:\x05\x80\xb5\x18\x93\x03\"6\n" +
 	"\x11S2C_PlayerOffline\x12\x1a\n" +
-	"\bplayerId\x18\x01 \x01(\x03R\bplayerId:\x05\x80\xb5\x18\x93\x03\"X\n" +
+	"\bplayerId\x18\x01 \x01(\tR\bplayerId:\x05\x80\xb5\x18\x93\x03\"X\n" +
 	"\x15C2S_RecordGameOperate\x12\x16\n" +
-	"\x06roomId\x18\x01 \x01(\x03R\x06roomId\x12 \n" +
+	"\x06roomId\x18\x01 \x01(\tR\x06roomId\x12 \n" +
 	"\voperateInfo\x18\x02 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\xb0\x02\"@\n" +
 	"\x15S2C_RecordGameOperate\x12 \n" +
 	"\voperateInfo\x18\x01 \x01(\tR\voperateInfo:\x05\x80\xb5\x18\x94\x03B\x0eZ\f./../messageb\x06proto3"

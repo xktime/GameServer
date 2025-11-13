@@ -1,0 +1,173 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+// C2S 500--599
+// S2C 600--699
+
+// 排行榜项目
+message RankItem {
+    string playerId = 1;
+    string playerName = 2;
+    int32 rank = 3;
+    int32 score = 4;     // 分数/等级/战力/财富等
+    string avatar = 5;    // 头像
+    int32 level = 6;      // 等级
+    repeated OtherInfo otherInfos = 7; // 扩展字段
+
+}
+
+// chanllenge_key : value
+message OtherInfo {
+    string key = 1;
+    string value = 2;
+}
+
+// 获取排行榜
+message C2S_GetRankList {
+    option (message_id) = 501;
+    RankType rankType = 1;  // 排行榜类型
+    int32 page = 2;      // 页码，从1开始
+    int32 pageSize = 3;  // 每页大小
+    int32 season = 4; // 赛季
+}
+
+message S2C_GetRankList {
+    option (message_id) = 601;
+    RankType rankType = 1;
+    repeated RankItem rankItems = 2;
+    int32 totalCount = 3;
+    int32 currentPage = 4;
+    int32 season = 5; // 赛季
+}
+
+// 获取我的排名
+message C2S_GetMyRank {
+    option (message_id) = 502;
+    RankType rankType = 1;
+    int32 season = 2; // 赛季
+}
+
+message S2C_GetMyRank {
+    option (message_id) = 602;
+    RankType rankType = 1;
+    int32 myRank = 2;
+    int32 myScore = 3;
+    int32 totalCount = 4;
+}
+
+// todo 正常不应该客户端请求更新
+// 更新排行榜数据
+message C2S_UpdateRankData {
+    option (message_id) = 503;
+    RankType rankType = 1;
+    int32 score = 2;
+}
+
+message S2C_UpdateRankData {
+    option (message_id) = 603;
+    bool success = 1;
+    int32 newRank = 2;
+}
+
+message C2S_SeasonInfo {
+    option (message_id) = 504;
+}
+
+message S2C_SeasonInfo {
+    option (message_id) = 604;
+    int32 season = 1; // 赛季
+    int32 season_start_timestamp = 2; //赛季开始时间
+    int32 season_end_timestamp = 3;// 赛季结束时间
+}
+
+// 生成挑战码
+message C2S_GeneratorChanllengeCode {
+    option (message_id) = 505;
+    string playerId = 1;
+}
+
+message S2C_GeneratorChanllengeCode {
+    option (message_id) = 605;
+    int32 code = 1;
+    int32 expire_timestamp = 2;
+}
+
+// 根据挑战码挑战
+message C2S_ChanllengeByCode {
+    option (message_id) = 506;
+    int32 code = 1;
+}
+
+message S2C_ChanllengeByCode {
+    option (message_id) = 606;
+    RankItem rankItem = 1;
+    ChanllengeResult result = 2;
+}
+
+// 获取挑战列表
+message C2S_GetChanllengeList {
+    option (message_id) = 507;
+    RankType rank_type = 1;
+    RefreshType refresh_type = 2;
+}
+
+message S2C_GetChanllengeList {
+    option (message_id) = 607;
+    repeated RankItem rankItem = 1;
+}
+
+message HistoryRankItem {
+    int32 current_rank = 1;
+    int32 last_rank = 2;
+    bool accept_reward = 3;
+}
+
+// 获取历史记录
+message C2S_GetMyHistoryRank {
+    option (message_id) = 508;
+}
+
+message S2C_GetMyHistoryRank {
+    option (message_id) = 608;
+    HistoryRankItem daily = 1;
+    HistoryRankItem week = 2;
+}
+
+// 获取结算奖励
+message C2S_GetHistoryRankReward {
+    option (message_id) = 509;
+    int32 type = 1; // 1为日榜，2为周榜
+}
+
+message S2C_GetHistoryRankReward {
+    option (message_id) = 609;
+    bool success = 1;
+    int32 type = 2;
+    HistoryRankItem rank_item = 3;
+}
+
+
+enum ChanllengeResult {
+    ChanllengeResult_None = 0;
+    ChanllengeResult_SUCCESS = 1;
+    ChanllengeResult_CodeError = 2;
+    ChanllengeResult_CodeExpired = 3;
+}
+
+enum RefreshType {
+    RefreshType_None = 0; // 不刷新，读取上次缓存
+    RefreshType_Rand = 1;
+    RefreshType_Rank = 2;
+}
+
+
+enum RankType {
+    RankType_None = 0;
+    RankType_LadderPoint = 1; //天梯积分 赛季排行
+    RankType_PowerPoint = 2;//战力
+    RankType_ChallengePoint = 3;// 
+}
+
+

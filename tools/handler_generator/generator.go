@@ -12,10 +12,11 @@ import (
 )
 
 type HandlerGenerator struct {
-	ProtoDir    string
-	OutputDir   string
-	ModulesDir  string
-	IgnoreFiles []string
+	CommonProtoDir string
+	ProtoDir       string
+	OutputDir      string
+	ModulesDir     string
+	IgnoreFiles    []string
 }
 
 type MessageInfo struct {
@@ -24,12 +25,13 @@ type MessageInfo struct {
 	Module string
 }
 
-func NewHandlerGenerator(protoDir, outputDir, modulesDir string, ignoreFiles []string) *HandlerGenerator {
+func NewHandlerGenerator(commonProtoDir, protoDir, outputDir, modulesDir string, ignoreFiles []string) *HandlerGenerator {
 	return &HandlerGenerator{
-		ProtoDir:    protoDir,
-		OutputDir:   outputDir,
-		ModulesDir:  modulesDir,
-		IgnoreFiles: ignoreFiles,
+		CommonProtoDir: commonProtoDir,
+		ProtoDir:       protoDir,
+		OutputDir:      outputDir,
+		ModulesDir:     modulesDir,
+		IgnoreFiles:    ignoreFiles,
 	}
 }
 
@@ -41,6 +43,30 @@ func (g *HandlerGenerator) Generate() error {
 
 	var allMessages []MessageInfo
 	var existingHandlers []string
+	if g.CommonProtoDir != "" {
+		if err := g.runCommonProtoc(); err != nil {
+			return fmt.Errorf("执行通用protoc失败: %v", err)
+		}
+		err := filepath.Walk(g.CommonProtoDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// 只处理.proto文件
+			if !info.IsDir() && strings.HasSuffix(path, ".proto") {
+				messages, err := g.parseProtoFile(g.CommonProtoDir, path)
+				if err != nil {
+					return fmt.Errorf("解析proto文件 %s 失败: %v", path, err)
+				}
+				allMessages = append(allMessages, messages...)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("扫描common proto文件失败: %v", err)
+		}
+	}
 
 	// 递归扫描所有proto文件
 	err := filepath.Walk(g.ProtoDir, func(path string, info os.FileInfo, err error) error {
@@ -50,7 +76,7 @@ func (g *HandlerGenerator) Generate() error {
 
 		// 只处理.proto文件
 		if !info.IsDir() && strings.HasSuffix(path, ".proto") {
-			messages, err := g.parseProtoFile(path)
+			messages, err := g.parseProtoFile(g.ProtoDir, path)
 			if err != nil {
 				return fmt.Errorf("解析proto文件 %s 失败: %v", path, err)
 			}
@@ -95,7 +121,7 @@ func (g *HandlerGenerator) Generate() error {
 	return nil
 }
 
-func (g *HandlerGenerator) parseProtoFile(protoFile string) ([]MessageInfo, error) {
+func (g *HandlerGenerator) parseProtoFile(dir, protoFile string) ([]MessageInfo, error) {
 	file, err := os.Open(protoFile)
 	if err != nil {
 		return nil, err
@@ -114,8 +140,7 @@ func (g *HandlerGenerator) parseProtoFile(protoFile string) ([]MessageInfo, erro
 	var currentID string
 
 	// 根据proto文件路径判断模块
-	module := g.detectModuleFromPath(protoFile)
-
+	module := g.detectModuleFromPath(dir, protoFile)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
@@ -146,9 +171,9 @@ func (g *HandlerGenerator) parseProtoFile(protoFile string) ([]MessageInfo, erro
 }
 
 // 新增：根据proto文件路径检测模块
-func (g *HandlerGenerator) detectModuleFromPath(protoFile string) string {
+func (g *HandlerGenerator) detectModuleFromPath(dir, protoFile string) string {
 	// 获取相对路径
-	relPath, err := filepath.Rel(g.ProtoDir, protoFile)
+	relPath, err := filepath.Rel(dir, protoFile)
 	if err != nil {
 		return "game" // 默认返回game
 	}
@@ -264,6 +289,69 @@ func (g *HandlerGenerator) runProtoc() error {
 	// 切换到proto目录
 	if err := os.Chdir(g.ProtoDir); err != nil {
 		return fmt.Errorf("切换到proto目录失败: %v", err)
+	}
+	defer os.Chdir(originalDir) // 恢复原目录
+
+	// 确保输出目录存在
+	outputDir := g.OutputDir
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("创建输出目录失败: %v", err)
+	}
+
+	// 动态扫描所有proto文件
+	protoFiles, err := g.scanProtoFiles()
+	if err != nil {
+		return fmt.Errorf("扫描proto文件失败: %v", err)
+	}
+
+	if len(protoFiles) == 0 {
+		fmt.Println("未找到proto文件")
+		return nil
+	}
+
+	// 根据依赖关系排序proto文件
+	sortedFiles, err := g.sortProtoFilesByDependency(protoFiles)
+	if err != nil {
+		return fmt.Errorf("排序proto文件失败: %v", err)
+	}
+
+	fmt.Printf("找到 %d 个proto文件，按依赖顺序排列:\n", len(sortedFiles))
+	for i, file := range sortedFiles {
+		fmt.Printf("  %d. %s\n", i+1, file)
+	}
+
+	// 构建protoc命令参数
+	args := []string{
+		"--proto_path=.",
+		fmt.Sprintf("--go_out=%s", outputDir),
+	}
+	args = append(args, sortedFiles...)
+
+	// 执行protoc命令
+	cmd := exec.Command("protoc", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Printf("执行命令: protoc %s\n", strings.Join(args, " "))
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("protoc命令执行失败: %v", err)
+	}
+
+	fmt.Println("所有proto文件处理完成")
+	return nil
+}
+
+func (g *HandlerGenerator) runCommonProtoc() error {
+	// 切换到proto目录
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("获取当前目录失败: %v", err)
+	}
+
+	// 切换到proto目录
+	if err := os.Chdir(g.CommonProtoDir); err != nil {
+		return fmt.Errorf("切换到通用proto目录失败: %v", err)
 	}
 	defer os.Chdir(originalDir) // 恢复原目录
 

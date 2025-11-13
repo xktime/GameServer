@@ -8,6 +8,7 @@ import (
 	"gameserver/modules/game"
 	"gameserver/modules/rank/internal/models"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -53,10 +54,19 @@ func (r RankManager) GetPersistId() interface{} {
 
 // HandleUpdateRankData 更新排行榜数据 - 异步执行
 func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) *message.S2C_UpdateRankData {
-	response := r.SendTask(func() *message.S2C_UpdateRankData {
+	result := r.SendTask(func() *message.S2C_UpdateRankData {
 		return r.doHandleUpdateRankData(playerId, req)
 	})
-	return response.(*message.S2C_UpdateRankData)
+
+	if err, ok := result.(error); ok {
+		log.Error("更新排行榜数据失败: %v", err)
+		return &message.S2C_UpdateRankData{Success: false}
+	}
+
+	if response, ok := result.(*message.S2C_UpdateRankData); ok {
+		return response
+	}
+	return &message.S2C_UpdateRankData{Success: false}
 }
 
 // doHandleUpdateRankData 更新排行榜数据的同步实现
@@ -91,8 +101,8 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 	newItem := models.RankItem{
 		PlayerId:   playerId,
 		PlayerName: player.PlayerInfo.PlayerName,
-		Score:      req.Score,
-		Avatar:     player.PlayerInfo.Avatar,
+		Score:      int64(req.Score),
+		Avatar:     player.PlayerInfo.GetAvatarURL(),
 		Level:      player.PlayerInfo.Level,
 		UpdateTime: time.Now(),
 	}
@@ -121,11 +131,19 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 
 // HandleGetRankList 获取排行榜列表 - 异步执行
 func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRankList) *message.S2C_GetRankList {
-	response := r.SendTask(func() *message.S2C_GetRankList {
+	result := r.SendTask(func() *message.S2C_GetRankList {
 		return r.doHandleGetRankList(playerId, req)
 	})
 
-	return response.(*message.S2C_GetRankList)
+	if err, ok := result.(error); ok {
+		log.Error("获取排行榜列表失败: %v", err)
+		return nil
+	}
+
+	if getRankListResp, ok := result.(*message.S2C_GetRankList); ok {
+		return getRankListResp
+	}
+	return nil
 }
 
 // doHandleGetRankList 获取排行榜列表的同步实现
@@ -174,10 +192,10 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 	response.RankItems = make([]*message.RankItem, 0)
 	for i, item := range items {
 		response.RankItems = append(response.RankItems, &message.RankItem{
-			PlayerId:   item.PlayerId,
+			PlayerId:   strconv.FormatInt(playerId, 10),
 			PlayerName: item.PlayerName,
 			Rank:       int32(i + 1),
-			Score:      item.Score,
+			Score:      int32(item.Score),
 			Avatar:     item.Avatar,
 			Level:      item.Level,
 		})
@@ -186,16 +204,24 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 }
 
 // HandleGetMyRank 获取我的排名 - 异步执行
-func (r *RankManager) HandleGetMyRank(playerId int64, rankType int32) *message.S2C_GetMyRank {
-	response := r.SendTask(func() *message.S2C_GetMyRank {
+func (r *RankManager) HandleGetMyRank(playerId int64, rankType message.RankType) *message.S2C_GetMyRank {
+	result := r.SendTask(func() *message.S2C_GetMyRank {
 		return r.doHandleGetMyRank(playerId, rankType)
 	})
 
-	return response.(*message.S2C_GetMyRank)
+	if err, ok := result.(error); ok {
+		log.Error("获取我的排名失败: %v", err)
+		return nil
+	}
+
+	if getMyRankResp, ok := result.(*message.S2C_GetMyRank); ok {
+		return getMyRankResp
+	}
+	return nil
 }
 
 // doHandleGetMyRank 获取我的排名的同步实现
-func (r *RankManager) doHandleGetMyRank(playerId int64, rankType int32) *message.S2C_GetMyRank {
+func (r *RankManager) doHandleGetMyRank(playerId int64, rankType message.RankType) *message.S2C_GetMyRank {
 	player := game.External.UserManager.GetPlayer(playerId)
 	response := &message.S2C_GetMyRank{RankType: rankType}
 	if player == nil {
@@ -210,7 +236,7 @@ func (r *RankManager) doHandleGetMyRank(playerId int64, rankType int32) *message
 	for i, item := range rankData.Items {
 		if item.PlayerId == playerId {
 			response.MyRank = int32(i + 1)
-			response.MyScore = item.Score
+			response.MyScore = int32(item.Score)
 		}
 	}
 	response.TotalCount = int32(len(rankData.Items))

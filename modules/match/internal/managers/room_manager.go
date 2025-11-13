@@ -38,35 +38,40 @@ func (m *RoomManager) Stop() {
 }
 
 // HandleRecordOperate 处理游戏操作记录 - 异步执行
-func (r *RoomManager) HandleRecordOperate(msg *message.C2S_RecordGameOperate, agent gate.Agent) (int64, *message.S2C_RecordGameOperate) {
-	response := r.SendTask(func() (int64, *message.S2C_RecordGameOperate) {
-		teamId, recordOperateResp := r.doHandleRecordOperate(msg, agent)
-		return teamId, recordOperateResp
+func (r *RoomManager) HandleRecordOperate(msg *message.C2S_RecordGameOperate, agent gate.Agent) (string, *message.S2C_RecordGameOperate) {
+	result := r.SendTask(func() (string, *message.S2C_RecordGameOperate) {
+		return r.doHandleRecordOperate(msg, agent)
 	})
-	if results, ok := response.([]interface{}); ok {
-		if teamId, ok := results[0].(int64); ok {
+
+	if err, ok := result.(error); ok {
+		log.Error("处理游戏操作记录失败: %v", err)
+		return "", nil
+	}
+
+	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
+		if roomId, ok := results[0].(string); ok {
 			if recordOperateResp, ok := results[1].(*message.S2C_RecordGameOperate); ok {
-				return teamId, recordOperateResp
+				return roomId, recordOperateResp
 			}
 		}
 	}
-	return 0, nil
+	return "", nil
 }
 
 // doHandleRecordOperate 处理游戏操作记录的同步实现
-func (r *RoomManager) doHandleRecordOperate(msg *message.C2S_RecordGameOperate, agent gate.Agent) (int64, *message.S2C_RecordGameOperate) {
+func (r *RoomManager) doHandleRecordOperate(msg *message.C2S_RecordGameOperate, agent gate.Agent) (string, *message.S2C_RecordGameOperate) {
 	playerId := agent.UserData().(models.User).PlayerId
 	team := game.External.TeamManager.GetTeamByPlayerId(playerId)
 	if team == nil {
 		log.Error("玩家 %d 没有队伍", playerId)
-		return 0, &message.S2C_RecordGameOperate{
+		return "", &message.S2C_RecordGameOperate{
 			OperateInfo: "",
 		}
 	}
 	roomId := team.RoomId
 	if roomId != msg.RoomId {
 		log.Error("队伍 %d 的房间ID不匹配", team.TeamId)
-		return 0, &message.S2C_RecordGameOperate{
+		return "", &message.S2C_RecordGameOperate{
 			OperateInfo: "",
 		}
 	}

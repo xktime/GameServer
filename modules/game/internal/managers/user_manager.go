@@ -50,6 +50,11 @@ func (m *UserManager) Init(args ...any) {
 	m.PreloadNames()
 }
 
+// Stop 停止UserManager
+func (m *UserManager) Stop() {
+	m.RemoveActor(m)
+}
+
 func (m *UserManager) OnTimer() {
 	m.SendTask(func() {
 		now := time.Now().Unix()
@@ -64,18 +69,21 @@ func (m *UserManager) GetInterval() int {
 	return 5
 }
 
-// Stop 停止UserManager
-func (m *UserManager) Stop() {
-	m.RemoveActor(m)
-}
-
 // UserLogin 用户登录 - 异步执行
 func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) *message.S2C_Login {
-	response := m.SendTask(func() *message.S2C_Login {
+	result := m.SendTask(func() *message.S2C_Login {
 		return m.doUserLogin(agent, openId, serverId, loginType)
 	})
 
-	return response.(*message.S2C_Login)
+	if err, ok := result.(error); ok {
+		log.Error("用户登录失败: %v", err)
+		return nil
+	}
+
+	if loginResp, ok := result.(*message.S2C_Login); ok {
+		return loginResp
+	}
+	return nil
 }
 
 // userLoginSync 用户登录的同步实现
@@ -85,7 +93,7 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 	if existingUser, exists := m.getUserFromCache(accountId); exists {
 		log.Debug("UserLogin: user already online (顶号操作): %s", accountId)
 		// 处理顶号逻辑：先让旧用户下线
-		m.doUserOffline(*existingUser)
+		m.doUserOffline(*existingUser, true)
 	}
 	if _, exists := m.getUserFromCache(accountId); exists {
 		log.Debug("UserLogin: user already online (顶号操作): %s", accountId)
@@ -150,7 +158,7 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 		LoginResult: 1,
 		LoginInfo: &message.LoginInfo{
 			OpenId:        user.OpenId,
-			LastLoginTime: user.LastOfflineTime,
+			LastLoginTime: int32(user.LastOfflineTime),
 			TotalDays:     user.TotalLoginDays,
 			IsAccept:      false,
 		},
@@ -163,8 +171,17 @@ func (m *UserManager) ModifyName(playerId int64, name string) (message.Result, s
 		return m.doModifyName(playerId, name)
 	})
 
-	if results, ok := result.([]interface{}); ok {
-		return results[0].(message.Result), results[1].(string)
+	if err, ok := result.(error); ok {
+		log.Error("修改名字失败: %v", err)
+		return message.Result_Fail, ""
+	}
+
+	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
+		if typedResult, ok := results[0].(message.Result); ok {
+			if typedName, ok := results[1].(string); ok {
+				return typedResult, typedName
+			}
+		}
 	}
 	return message.Result_Fail, ""
 }
@@ -186,32 +203,33 @@ func (m *UserManager) doModifyName(playerId int64, name string) (message.Result,
 // UserOffline 玩家下线处理 - 异步执行
 func (m *UserManager) UserOffline(user models.User) {
 	m.SendTaskAsync(func() {
-		m.doUserOffline(user)
+		m.doUserOffline(user, true)
 	})
 }
 
 // UserOfflineSync 玩家下线处理的同步实现
-func (m *UserManager) doUserOffline(user models.User) {
+func (m *UserManager) doUserOffline(user models.User, save bool) {
+	if save {
+		// user不是actor，需要手动保存
+		user.LastOfflineTime = time.Now().Unix()
+		mongodb.Save(user)
+	}
+
 	// 先从缓存获取玩家信息
 	p := m.getPlayerFromCache(user.PlayerId)
 	if p != nil {
-		// 异步停止玩家Actor，避免在TaskHandler上下文中调用Stop造成死锁
-		go func() {
-			p.Stop()
-		}()
-
 		// 清理玩家缓存
 		m.removePlayerCache(user.PlayerId)
 
+		p.DoSendToClient(&message.S2C_Logout{})
+
+		p.Stop()
+
 		// todo 玩家离线是否需要离开队伍？有可能需要重连房间
 		teamInfo, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
-		if !ok {
-			return
+		if ok {
+			teamInfo.LeaveTeam(p.PlayerId)
 		}
-
-		teamInfo.LeaveTeam(p.PlayerId)
-
-		p.CloseAgent()
 	}
 
 	// 清理用户缓存
@@ -225,10 +243,16 @@ func (m *UserManager) CheckName(playerName string) message.Result {
 	response := m.SendTask(func() message.Result {
 		return m.checkNameSync(playerName)
 	})
-	if _, ok := response.(error); ok {
+
+	if err, ok := response.(error); ok {
+		log.Error("检查名字失败: %v", err)
 		return message.Result_Fail
 	}
-	return response.(message.Result)
+
+	if result, ok := response.(message.Result); ok {
+		return result
+	}
+	return message.Result_Fail
 }
 
 // checkNameSync 检查名称的同步实现
@@ -286,12 +310,21 @@ func (m *UserManager) isValidPlayerName(name string) bool {
 
 // GetUserByOpenId 通过openId和serverId获取用户 - 异步执行
 func (m *UserManager) GetUserByOpenId(openId string, serverId int32) (models.User, bool) {
-	response := m.SendTask(func() (models.User, bool) {
+	result := m.SendTask(func() (models.User, bool) {
 		return m.doGetUserByOpenId(openId, serverId)
 	})
 
-	if results, ok := response.([]interface{}); ok {
-		return results[0].(models.User), results[1].(bool)
+	if err, ok := result.(error); ok {
+		log.Error("获取用户失败: %v", err)
+		return models.User{}, false
+	}
+
+	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
+		if user, ok := results[0].(models.User); ok {
+			if exists, ok := results[1].(bool); ok {
+				return user, exists
+			}
+		}
 	}
 	return models.User{}, false
 }
@@ -326,14 +359,23 @@ func (m *UserManager) doGetUserByOpenId(openId string, serverId int32) (models.U
 
 // GetUser 通过accountId获取用户（仅从缓存获取）
 func (m *UserManager) GetUser(accountId string) (models.User, bool) {
-	response := m.SendTask(func() (*models.User, bool) {
-		return m.getUserFromCache(accountId)
+	result := m.SendTask(func() (models.User, bool) {
+		user, exists := m.getUserFromCache(accountId)
+		if user != nil {
+			return *user, exists
+		}
+		return models.User{}, exists
 	})
 
-	if results, ok := response.([]interface{}); ok {
-		if user, ok := results[0].(*models.User); ok {
+	if err, ok := result.(error); ok {
+		log.Error("获取用户失败: %v", err)
+		return models.User{}, false
+	}
+
+	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
+		if user, ok := results[0].(models.User); ok {
 			if exists, ok := results[1].(bool); ok {
-				return *user, exists
+				return user, exists
 			}
 		}
 	}
@@ -342,15 +384,22 @@ func (m *UserManager) GetUser(accountId string) (models.User, bool) {
 }
 
 func (m *UserManager) GetUsers() []models.User {
-	response := m.SendTask(func() []models.User {
+	result := m.SendTask(func() []models.User {
 		users := []models.User{}
 		for _, user := range m.memCache {
 			users = append(users, *user)
 		}
 		return users
 	})
+	if err, ok := result.(error); ok {
+		log.Error("获取所有用户失败: %v", err)
+		return []models.User{}
+	}
 
-	return response.([]models.User)
+	if users, ok := result.([]models.User); ok {
+		return users
+	}
+	return []models.User{}
 }
 
 // ClearAllCache 强制清理所有缓存（用于维护或重启）
@@ -382,11 +431,19 @@ func (m *UserManager) doClearAllCache() {
 
 // IsUserOnline 检查用户是否在线
 func (m *UserManager) IsUserOnline(accountId string) bool {
-	response := m.SendTask(func() bool {
+	result := m.SendTask(func() bool {
 		_, exists := m.memCache[accountId]
 		return exists
 	})
-	return response.(bool)
+	if err, ok := result.(error); ok {
+		log.Error("检查用户存在失败: %v", err)
+		return false
+	}
+
+	if exists, ok := result.(bool); ok {
+		return exists
+	}
+	return false
 }
 
 // 更新用户缓存
@@ -412,7 +469,9 @@ func (m *UserManager) getUserFromCache(accountId string) (*models.User, bool) {
 
 // 更新玩家缓存
 func (m *UserManager) updatePlayerCache(playerInstance *player.Player) {
-	m.playerCache[playerInstance.PlayerId] = playerInstance
+	m.SendTaskAsync(func() {
+		m.playerCache[playerInstance.PlayerId] = playerInstance
+	})
 }
 
 // 从缓存获取玩家
@@ -468,18 +527,24 @@ func (m *UserManager) GetRandomPlayer(exceptPlayerId []int64) *player.Player {
 
 // GetPlayer 获取缓存的玩家（优先从缓存获取，缓存没有则从Actor获取）
 func (m *UserManager) GetPlayer(playerId int64) *player.Player {
-	// 优先从缓存获取
-	if cachedPlayer := m.getPlayerFromCache(playerId); cachedPlayer != nil {
-		return cachedPlayer
+	result := m.SendTask(func() *player.Player {
+		// 优先从缓存获取
+		return m.getPlayerFromCache(playerId)
+	})
+	if err, ok := result.(error); ok {
+		log.Error("从缓存获取玩家失败: %v", err)
+		return nil
 	}
 
+	if player, ok := result.(*player.Player); ok {
+		return player
+	}
 	// 缓存中没有，从Actor获取
 	if actorPlayer := player.GetPlayerActor(playerId); actorPlayer != nil {
 		// 获取到后更新缓存
 		m.updatePlayerCache(actorPlayer)
 		return actorPlayer
 	}
-
 	return nil
 }
 
@@ -495,45 +560,6 @@ func (m *UserManager) GetOfflinePlayer(playerId int64) *player.Player {
 		return nil
 	}
 	return player
-}
-
-// GetPlayerCacheStats 获取玩家缓存统计信息
-func (m *UserManager) GetPlayerCacheStats() map[string]interface{} {
-	count := 0
-	for _, _ = range m.playerCache {
-		count++
-	}
-
-	return map[string]interface{}{
-		"cached_players":    count,
-		"player_cache_size": count,
-	}
-}
-
-// GetCacheStats 获取缓存统计信息
-func (m *UserManager) GetCacheStats() map[string]interface{} {
-	userCount := 0
-	playerCount := 0
-	nameCount := 0
-
-	for _, _ = range m.memCache {
-		userCount++
-	}
-
-	for _, _ = range m.playerCache {
-		playerCount++
-	}
-
-	for _, _ = range m.nameCache {
-		nameCount++
-	}
-
-	return map[string]interface{}{
-		"online_users":     userCount,
-		"cached_players":   playerCount,
-		"cached_names":     nameCount,
-		"total_cache_size": userCount + playerCount + nameCount,
-	}
 }
 
 // AddNameToCache 添加名称到缓存（用于预加载或批量导入）
@@ -569,4 +595,13 @@ func (m *UserManager) PreloadNames() {
 	}
 
 	log.Debug("Preloaded %d names from database", count)
+}
+
+func (m *UserManager) ModifyAvatarSuffix(playerId int64, avatar string) (message.Result, string) {
+	p := m.getPlayerFromCache(playerId)
+	if p != nil {
+		result := p.ModifyAvatarSuffix(avatar)
+		return result, p.PlayerInfo.AvatarSuffix
+	}
+	return message.Result_Illegal, ""
 }

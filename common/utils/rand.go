@@ -2,90 +2,108 @@ package utils
 
 import (
 	"math/rand"
-	"time"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
+func RandByArray[T any](array []T) int32 {
+	result := RandByArrayCount(array, 1)
+	if len(result) == 0 {
+		return -1
+	}
+	return result[0]
 }
 
-func RandGroup(p ...uint32) int {
-	if p == nil {
-		panic("args not found")
+func RandByArrayCount[T any](array []T, count int32) []int32 {
+	if len(array) == 0 || count <= 0 {
+		return []int32{}
 	}
 
-	r := make([]uint32, len(p))
-	for i := 0; i < len(p); i++ {
-		if i == 0 {
-			r[0] = p[0]
-		} else {
-			r[i] = r[i-1] + p[i]
+	// 如果请求数量大于等于数组长度，返回所有下标
+	if int32(len(array)) <= count {
+		result := make([]int32, len(array))
+		for i := range array {
+			result[i] = int32(i)
 		}
+		return result
 	}
 
-	rl := r[len(r)-1]
-	if rl == 0 {
-		return 0
+	// 使用Fisher-Yates洗牌算法的变种来高效选择不重复的下标
+	indices := make([]int32, len(array))
+	for i := range indices {
+		indices[i] = int32(i)
 	}
 
-	rn := uint32(rand.Int63n(int64(rl)))
-	for i := 0; i < len(r); i++ {
-		if rn < r[i] {
-			return i
-		}
+	result := make([]int32, 0, count)
+	for i := 0; i < int(count); i++ {
+		// 从剩余的下标中随机选择一个
+		j := rand.Intn(len(indices)-i) + i
+		// 交换到前面
+		indices[i], indices[j] = indices[j], indices[i]
+		result = append(result, indices[i])
 	}
 
-	panic("bug")
+	return result
 }
 
-func RandInterval(b1, b2 int32) int32 {
-	if b1 == b2 {
-		return b1
+func RandWeight(weight map[int32]int32) int32 {
+	result := RandWeightByCount(weight, 1)
+	if len(result) == 0 {
+		return -1
 	}
-
-	min, max := int64(b1), int64(b2)
-	if min > max {
-		min, max = max, min
-	}
-	return int32(rand.Int63n(max-min+1) + min)
+	return result[0]
 }
 
-func RandIntervalN(b1, b2 int32, n uint32) []int32 {
-	if b1 == b2 {
-		return []int32{b1}
+// RandWeight 根据权重随机选择
+func RandWeightByCount(weight map[int32]int32, count int32) []int32 {
+	if len(weight) == 0 || count <= 0 {
+		return []int32{}
 	}
 
-	min, max := int64(b1), int64(b2)
-	if min > max {
-		min, max = max, min
+	// 先把所有key和累加权重准备好
+	type kv struct {
+		Key    int32
+		Weight int32
 	}
-	l := max - min + 1
-	if int64(n) > l {
-		n = uint32(l)
-	}
-
-	r := make([]int32, n)
-	m := make(map[int32]int32)
-	for i := uint32(0); i < n; i++ {
-		v := int32(rand.Int63n(l) + min)
-
-		if mv, ok := m[v]; ok {
-			r[i] = mv
-		} else {
-			r[i] = v
+	kvs := make([]kv, 0, len(weight))
+	var totalWeight int32 = 0
+	for k, w := range weight {
+		if w > 0 {
+			kvs = append(kvs, kv{Key: k, Weight: w})
+			totalWeight += w
 		}
+	}
+	if totalWeight == 0 {
+		return []int32{}
+	}
 
-		lv := int32(l - 1 + min)
-		if v != lv {
-			if mv, ok := m[lv]; ok {
-				m[v] = mv
-			} else {
-				m[v] = lv
+	// 如果count大于可选项数量，最多返回所有key
+	if int32(len(kvs)) < count {
+		count = int32(len(kvs))
+	}
+
+	result := make([]int32, 0, count)
+	used := make(map[int32]struct{})
+
+	for int32(len(result)) < count {
+		r := rand.Int31n(totalWeight)
+		acc := int32(0)
+		for i, item := range kvs {
+			acc += item.Weight
+			if r < acc {
+				// 避免重复
+				if _, ok := used[item.Key]; !ok {
+					result = append(result, item.Key)
+					used[item.Key] = struct{}{}
+					// 选中后从kvs和totalWeight中移除
+					totalWeight -= item.Weight
+					kvs = append(kvs[:i], kvs[i+1:]...)
+				}
+				break
 			}
 		}
-
-		l--
+		// 如果kvs被清空，提前退出
+		if len(kvs) == 0 {
+			break
+		}
 	}
-
-	return r
+	return result
 }

@@ -21,15 +21,169 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ChanllengeResult int32
+
+const (
+	ChanllengeResult_ChanllengeResult_None        ChanllengeResult = 0
+	ChanllengeResult_ChanllengeResult_SUCCESS     ChanllengeResult = 1
+	ChanllengeResult_ChanllengeResult_CodeError   ChanllengeResult = 2
+	ChanllengeResult_ChanllengeResult_CodeExpired ChanllengeResult = 3
+)
+
+// Enum value maps for ChanllengeResult.
+var (
+	ChanllengeResult_name = map[int32]string{
+		0: "ChanllengeResult_None",
+		1: "ChanllengeResult_SUCCESS",
+		2: "ChanllengeResult_CodeError",
+		3: "ChanllengeResult_CodeExpired",
+	}
+	ChanllengeResult_value = map[string]int32{
+		"ChanllengeResult_None":        0,
+		"ChanllengeResult_SUCCESS":     1,
+		"ChanllengeResult_CodeError":   2,
+		"ChanllengeResult_CodeExpired": 3,
+	}
+)
+
+func (x ChanllengeResult) Enum() *ChanllengeResult {
+	p := new(ChanllengeResult)
+	*p = x
+	return p
+}
+
+func (x ChanllengeResult) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ChanllengeResult) Descriptor() protoreflect.EnumDescriptor {
+	return file_rank_rank_proto_enumTypes[0].Descriptor()
+}
+
+func (ChanllengeResult) Type() protoreflect.EnumType {
+	return &file_rank_rank_proto_enumTypes[0]
+}
+
+func (x ChanllengeResult) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ChanllengeResult.Descriptor instead.
+func (ChanllengeResult) EnumDescriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{0}
+}
+
+type RefreshType int32
+
+const (
+	RefreshType_RefreshType_None RefreshType = 0 // 不刷新，读取上次缓存
+	RefreshType_RefreshType_Rand RefreshType = 1
+	RefreshType_RefreshType_Rank RefreshType = 2
+)
+
+// Enum value maps for RefreshType.
+var (
+	RefreshType_name = map[int32]string{
+		0: "RefreshType_None",
+		1: "RefreshType_Rand",
+		2: "RefreshType_Rank",
+	}
+	RefreshType_value = map[string]int32{
+		"RefreshType_None": 0,
+		"RefreshType_Rand": 1,
+		"RefreshType_Rank": 2,
+	}
+)
+
+func (x RefreshType) Enum() *RefreshType {
+	p := new(RefreshType)
+	*p = x
+	return p
+}
+
+func (x RefreshType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RefreshType) Descriptor() protoreflect.EnumDescriptor {
+	return file_rank_rank_proto_enumTypes[1].Descriptor()
+}
+
+func (RefreshType) Type() protoreflect.EnumType {
+	return &file_rank_rank_proto_enumTypes[1]
+}
+
+func (x RefreshType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RefreshType.Descriptor instead.
+func (RefreshType) EnumDescriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{1}
+}
+
+type RankType int32
+
+const (
+	RankType_RankType_None           RankType = 0
+	RankType_RankType_LadderPoint    RankType = 1 //天梯积分 赛季排行
+	RankType_RankType_PowerPoint     RankType = 2 //战力
+	RankType_RankType_ChallengePoint RankType = 3 //
+)
+
+// Enum value maps for RankType.
+var (
+	RankType_name = map[int32]string{
+		0: "RankType_None",
+		1: "RankType_LadderPoint",
+		2: "RankType_PowerPoint",
+		3: "RankType_ChallengePoint",
+	}
+	RankType_value = map[string]int32{
+		"RankType_None":           0,
+		"RankType_LadderPoint":    1,
+		"RankType_PowerPoint":     2,
+		"RankType_ChallengePoint": 3,
+	}
+)
+
+func (x RankType) Enum() *RankType {
+	p := new(RankType)
+	*p = x
+	return p
+}
+
+func (x RankType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RankType) Descriptor() protoreflect.EnumDescriptor {
+	return file_rank_rank_proto_enumTypes[2].Descriptor()
+}
+
+func (RankType) Type() protoreflect.EnumType {
+	return &file_rank_rank_proto_enumTypes[2]
+}
+
+func (x RankType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RankType.Descriptor instead.
+func (RankType) EnumDescriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{2}
+}
+
 // 排行榜项目
 type RankItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PlayerId      int64                  `protobuf:"varint,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
+	PlayerId      string                 `protobuf:"bytes,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
 	PlayerName    string                 `protobuf:"bytes,2,opt,name=playerName,proto3" json:"playerName,omitempty"`
 	Rank          int32                  `protobuf:"varint,3,opt,name=rank,proto3" json:"rank,omitempty"`
-	Score         int64                  `protobuf:"varint,4,opt,name=score,proto3" json:"score,omitempty"`  // 分数/等级/战力/财富等
-	Avatar        string                 `protobuf:"bytes,5,opt,name=avatar,proto3" json:"avatar,omitempty"` // 头像
-	Level         int32                  `protobuf:"varint,6,opt,name=level,proto3" json:"level,omitempty"`  // 等级
+	Score         int32                  `protobuf:"varint,4,opt,name=score,proto3" json:"score,omitempty"`          // 分数/等级/战力/财富等
+	Avatar        string                 `protobuf:"bytes,5,opt,name=avatar,proto3" json:"avatar,omitempty"`         // 头像
+	Level         int32                  `protobuf:"varint,6,opt,name=level,proto3" json:"level,omitempty"`          // 等级
+	OtherInfos    []*OtherInfo           `protobuf:"bytes,7,rep,name=otherInfos,proto3" json:"otherInfos,omitempty"` // 扩展字段
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -64,11 +218,11 @@ func (*RankItem) Descriptor() ([]byte, []int) {
 	return file_rank_rank_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *RankItem) GetPlayerId() int64 {
+func (x *RankItem) GetPlayerId() string {
 	if x != nil {
 		return x.PlayerId
 	}
-	return 0
+	return ""
 }
 
 func (x *RankItem) GetPlayerName() string {
@@ -85,7 +239,7 @@ func (x *RankItem) GetRank() int32 {
 	return 0
 }
 
-func (x *RankItem) GetScore() int64 {
+func (x *RankItem) GetScore() int32 {
 	if x != nil {
 		return x.Score
 	}
@@ -106,19 +260,80 @@ func (x *RankItem) GetLevel() int32 {
 	return 0
 }
 
+func (x *RankItem) GetOtherInfos() []*OtherInfo {
+	if x != nil {
+		return x.OtherInfos
+	}
+	return nil
+}
+
+// chanllenge_key : value
+type OtherInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OtherInfo) Reset() {
+	*x = OtherInfo{}
+	mi := &file_rank_rank_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OtherInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OtherInfo) ProtoMessage() {}
+
+func (x *OtherInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OtherInfo.ProtoReflect.Descriptor instead.
+func (*OtherInfo) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *OtherInfo) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *OtherInfo) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
 // 获取排行榜
 type C2S_GetRankList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"` // 排行榜类型
-	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`         // 页码，从1开始
-	PageSize      int32                  `protobuf:"varint,3,opt,name=pageSize,proto3" json:"pageSize,omitempty"` // 每页大小
+	RankType      RankType               `protobuf:"varint,1,opt,name=rankType,proto3,enum=RankType" json:"rankType,omitempty"` // 排行榜类型
+	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`                       // 页码，从1开始
+	PageSize      int32                  `protobuf:"varint,3,opt,name=pageSize,proto3" json:"pageSize,omitempty"`               // 每页大小
+	Season        int32                  `protobuf:"varint,4,opt,name=season,proto3" json:"season,omitempty"`                   // 赛季
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *C2S_GetRankList) Reset() {
 	*x = C2S_GetRankList{}
-	mi := &file_rank_rank_proto_msgTypes[1]
+	mi := &file_rank_rank_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -130,7 +345,7 @@ func (x *C2S_GetRankList) String() string {
 func (*C2S_GetRankList) ProtoMessage() {}
 
 func (x *C2S_GetRankList) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[1]
+	mi := &file_rank_rank_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -143,14 +358,14 @@ func (x *C2S_GetRankList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_GetRankList.ProtoReflect.Descriptor instead.
 func (*C2S_GetRankList) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{1}
+	return file_rank_rank_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *C2S_GetRankList) GetRankType() int32 {
+func (x *C2S_GetRankList) GetRankType() RankType {
 	if x != nil {
 		return x.RankType
 	}
-	return 0
+	return RankType_RankType_None
 }
 
 func (x *C2S_GetRankList) GetPage() int32 {
@@ -167,19 +382,27 @@ func (x *C2S_GetRankList) GetPageSize() int32 {
 	return 0
 }
 
+func (x *C2S_GetRankList) GetSeason() int32 {
+	if x != nil {
+		return x.Season
+	}
+	return 0
+}
+
 type S2C_GetRankList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"`
+	RankType      RankType               `protobuf:"varint,1,opt,name=rankType,proto3,enum=RankType" json:"rankType,omitempty"`
 	RankItems     []*RankItem            `protobuf:"bytes,2,rep,name=rankItems,proto3" json:"rankItems,omitempty"`
 	TotalCount    int32                  `protobuf:"varint,3,opt,name=totalCount,proto3" json:"totalCount,omitempty"`
 	CurrentPage   int32                  `protobuf:"varint,4,opt,name=currentPage,proto3" json:"currentPage,omitempty"`
+	Season        int32                  `protobuf:"varint,5,opt,name=season,proto3" json:"season,omitempty"` // 赛季
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *S2C_GetRankList) Reset() {
 	*x = S2C_GetRankList{}
-	mi := &file_rank_rank_proto_msgTypes[2]
+	mi := &file_rank_rank_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -191,7 +414,7 @@ func (x *S2C_GetRankList) String() string {
 func (*S2C_GetRankList) ProtoMessage() {}
 
 func (x *S2C_GetRankList) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[2]
+	mi := &file_rank_rank_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -204,14 +427,14 @@ func (x *S2C_GetRankList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_GetRankList.ProtoReflect.Descriptor instead.
 func (*S2C_GetRankList) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{2}
+	return file_rank_rank_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *S2C_GetRankList) GetRankType() int32 {
+func (x *S2C_GetRankList) GetRankType() RankType {
 	if x != nil {
 		return x.RankType
 	}
-	return 0
+	return RankType_RankType_None
 }
 
 func (x *S2C_GetRankList) GetRankItems() []*RankItem {
@@ -235,17 +458,25 @@ func (x *S2C_GetRankList) GetCurrentPage() int32 {
 	return 0
 }
 
+func (x *S2C_GetRankList) GetSeason() int32 {
+	if x != nil {
+		return x.Season
+	}
+	return 0
+}
+
 // 获取我的排名
 type C2S_GetMyRank struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"`
+	RankType      RankType               `protobuf:"varint,1,opt,name=rankType,proto3,enum=RankType" json:"rankType,omitempty"`
+	Season        int32                  `protobuf:"varint,2,opt,name=season,proto3" json:"season,omitempty"` // 赛季
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *C2S_GetMyRank) Reset() {
 	*x = C2S_GetMyRank{}
-	mi := &file_rank_rank_proto_msgTypes[3]
+	mi := &file_rank_rank_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -257,7 +488,7 @@ func (x *C2S_GetMyRank) String() string {
 func (*C2S_GetMyRank) ProtoMessage() {}
 
 func (x *C2S_GetMyRank) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[3]
+	mi := &file_rank_rank_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,21 +501,28 @@ func (x *C2S_GetMyRank) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_GetMyRank.ProtoReflect.Descriptor instead.
 func (*C2S_GetMyRank) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{3}
+	return file_rank_rank_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *C2S_GetMyRank) GetRankType() int32 {
+func (x *C2S_GetMyRank) GetRankType() RankType {
 	if x != nil {
 		return x.RankType
+	}
+	return RankType_RankType_None
+}
+
+func (x *C2S_GetMyRank) GetSeason() int32 {
+	if x != nil {
+		return x.Season
 	}
 	return 0
 }
 
 type S2C_GetMyRank struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"`
+	RankType      RankType               `protobuf:"varint,1,opt,name=rankType,proto3,enum=RankType" json:"rankType,omitempty"`
 	MyRank        int32                  `protobuf:"varint,2,opt,name=myRank,proto3" json:"myRank,omitempty"`
-	MyScore       int64                  `protobuf:"varint,3,opt,name=myScore,proto3" json:"myScore,omitempty"`
+	MyScore       int32                  `protobuf:"varint,3,opt,name=myScore,proto3" json:"myScore,omitempty"`
 	TotalCount    int32                  `protobuf:"varint,4,opt,name=totalCount,proto3" json:"totalCount,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -292,7 +530,7 @@ type S2C_GetMyRank struct {
 
 func (x *S2C_GetMyRank) Reset() {
 	*x = S2C_GetMyRank{}
-	mi := &file_rank_rank_proto_msgTypes[4]
+	mi := &file_rank_rank_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -304,7 +542,7 @@ func (x *S2C_GetMyRank) String() string {
 func (*S2C_GetMyRank) ProtoMessage() {}
 
 func (x *S2C_GetMyRank) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[4]
+	mi := &file_rank_rank_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -317,14 +555,14 @@ func (x *S2C_GetMyRank) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_GetMyRank.ProtoReflect.Descriptor instead.
 func (*S2C_GetMyRank) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{4}
+	return file_rank_rank_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *S2C_GetMyRank) GetRankType() int32 {
+func (x *S2C_GetMyRank) GetRankType() RankType {
 	if x != nil {
 		return x.RankType
 	}
-	return 0
+	return RankType_RankType_None
 }
 
 func (x *S2C_GetMyRank) GetMyRank() int32 {
@@ -334,7 +572,7 @@ func (x *S2C_GetMyRank) GetMyRank() int32 {
 	return 0
 }
 
-func (x *S2C_GetMyRank) GetMyScore() int64 {
+func (x *S2C_GetMyRank) GetMyScore() int32 {
 	if x != nil {
 		return x.MyScore
 	}
@@ -352,15 +590,15 @@ func (x *S2C_GetMyRank) GetTotalCount() int32 {
 // 更新排行榜数据
 type C2S_UpdateRankData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RankType      int32                  `protobuf:"varint,1,opt,name=rankType,proto3" json:"rankType,omitempty"`
-	Score         int64                  `protobuf:"varint,2,opt,name=score,proto3" json:"score,omitempty"`
+	RankType      RankType               `protobuf:"varint,1,opt,name=rankType,proto3,enum=RankType" json:"rankType,omitempty"`
+	Score         int32                  `protobuf:"varint,2,opt,name=score,proto3" json:"score,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *C2S_UpdateRankData) Reset() {
 	*x = C2S_UpdateRankData{}
-	mi := &file_rank_rank_proto_msgTypes[5]
+	mi := &file_rank_rank_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -372,7 +610,7 @@ func (x *C2S_UpdateRankData) String() string {
 func (*C2S_UpdateRankData) ProtoMessage() {}
 
 func (x *C2S_UpdateRankData) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[5]
+	mi := &file_rank_rank_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -385,17 +623,17 @@ func (x *C2S_UpdateRankData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use C2S_UpdateRankData.ProtoReflect.Descriptor instead.
 func (*C2S_UpdateRankData) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{5}
+	return file_rank_rank_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *C2S_UpdateRankData) GetRankType() int32 {
+func (x *C2S_UpdateRankData) GetRankType() RankType {
 	if x != nil {
 		return x.RankType
 	}
-	return 0
+	return RankType_RankType_None
 }
 
-func (x *C2S_UpdateRankData) GetScore() int64 {
+func (x *C2S_UpdateRankData) GetScore() int32 {
 	if x != nil {
 		return x.Score
 	}
@@ -412,7 +650,7 @@ type S2C_UpdateRankData struct {
 
 func (x *S2C_UpdateRankData) Reset() {
 	*x = S2C_UpdateRankData{}
-	mi := &file_rank_rank_proto_msgTypes[6]
+	mi := &file_rank_rank_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -424,7 +662,7 @@ func (x *S2C_UpdateRankData) String() string {
 func (*S2C_UpdateRankData) ProtoMessage() {}
 
 func (x *S2C_UpdateRankData) ProtoReflect() protoreflect.Message {
-	mi := &file_rank_rank_proto_msgTypes[6]
+	mi := &file_rank_rank_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -437,7 +675,7 @@ func (x *S2C_UpdateRankData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S2C_UpdateRankData.ProtoReflect.Descriptor instead.
 func (*S2C_UpdateRankData) Descriptor() ([]byte, []int) {
-	return file_rank_rank_proto_rawDescGZIP(), []int{6}
+	return file_rank_rank_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *S2C_UpdateRankData) GetSuccess() bool {
@@ -454,46 +692,745 @@ func (x *S2C_UpdateRankData) GetNewRank() int32 {
 	return 0
 }
 
+type C2S_SeasonInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_SeasonInfo) Reset() {
+	*x = C2S_SeasonInfo{}
+	mi := &file_rank_rank_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_SeasonInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_SeasonInfo) ProtoMessage() {}
+
+func (x *C2S_SeasonInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_SeasonInfo.ProtoReflect.Descriptor instead.
+func (*C2S_SeasonInfo) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{8}
+}
+
+type S2C_SeasonInfo struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Season               int32                  `protobuf:"varint,1,opt,name=season,proto3" json:"season,omitempty"`                                                           // 赛季
+	SeasonStartTimestamp int32                  `protobuf:"varint,2,opt,name=season_start_timestamp,json=seasonStartTimestamp,proto3" json:"season_start_timestamp,omitempty"` //赛季开始时间
+	SeasonEndTimestamp   int32                  `protobuf:"varint,3,opt,name=season_end_timestamp,json=seasonEndTimestamp,proto3" json:"season_end_timestamp,omitempty"`       // 赛季结束时间
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *S2C_SeasonInfo) Reset() {
+	*x = S2C_SeasonInfo{}
+	mi := &file_rank_rank_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_SeasonInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_SeasonInfo) ProtoMessage() {}
+
+func (x *S2C_SeasonInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_SeasonInfo.ProtoReflect.Descriptor instead.
+func (*S2C_SeasonInfo) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *S2C_SeasonInfo) GetSeason() int32 {
+	if x != nil {
+		return x.Season
+	}
+	return 0
+}
+
+func (x *S2C_SeasonInfo) GetSeasonStartTimestamp() int32 {
+	if x != nil {
+		return x.SeasonStartTimestamp
+	}
+	return 0
+}
+
+func (x *S2C_SeasonInfo) GetSeasonEndTimestamp() int32 {
+	if x != nil {
+		return x.SeasonEndTimestamp
+	}
+	return 0
+}
+
+// 生成挑战码
+type C2S_GeneratorChanllengeCode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId      string                 `protobuf:"bytes,1,opt,name=playerId,proto3" json:"playerId,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_GeneratorChanllengeCode) Reset() {
+	*x = C2S_GeneratorChanllengeCode{}
+	mi := &file_rank_rank_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_GeneratorChanllengeCode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_GeneratorChanllengeCode) ProtoMessage() {}
+
+func (x *C2S_GeneratorChanllengeCode) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_GeneratorChanllengeCode.ProtoReflect.Descriptor instead.
+func (*C2S_GeneratorChanllengeCode) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *C2S_GeneratorChanllengeCode) GetPlayerId() string {
+	if x != nil {
+		return x.PlayerId
+	}
+	return ""
+}
+
+type S2C_GeneratorChanllengeCode struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Code            int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	ExpireTimestamp int32                  `protobuf:"varint,2,opt,name=expire_timestamp,json=expireTimestamp,proto3" json:"expire_timestamp,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *S2C_GeneratorChanllengeCode) Reset() {
+	*x = S2C_GeneratorChanllengeCode{}
+	mi := &file_rank_rank_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_GeneratorChanllengeCode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_GeneratorChanllengeCode) ProtoMessage() {}
+
+func (x *S2C_GeneratorChanllengeCode) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_GeneratorChanllengeCode.ProtoReflect.Descriptor instead.
+func (*S2C_GeneratorChanllengeCode) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *S2C_GeneratorChanllengeCode) GetCode() int32 {
+	if x != nil {
+		return x.Code
+	}
+	return 0
+}
+
+func (x *S2C_GeneratorChanllengeCode) GetExpireTimestamp() int32 {
+	if x != nil {
+		return x.ExpireTimestamp
+	}
+	return 0
+}
+
+// 根据挑战码挑战
+type C2S_ChanllengeByCode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_ChanllengeByCode) Reset() {
+	*x = C2S_ChanllengeByCode{}
+	mi := &file_rank_rank_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_ChanllengeByCode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_ChanllengeByCode) ProtoMessage() {}
+
+func (x *C2S_ChanllengeByCode) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_ChanllengeByCode.ProtoReflect.Descriptor instead.
+func (*C2S_ChanllengeByCode) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *C2S_ChanllengeByCode) GetCode() int32 {
+	if x != nil {
+		return x.Code
+	}
+	return 0
+}
+
+type S2C_ChanllengeByCode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RankItem      *RankItem              `protobuf:"bytes,1,opt,name=rankItem,proto3" json:"rankItem,omitempty"`
+	Result        ChanllengeResult       `protobuf:"varint,2,opt,name=result,proto3,enum=ChanllengeResult" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_ChanllengeByCode) Reset() {
+	*x = S2C_ChanllengeByCode{}
+	mi := &file_rank_rank_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_ChanllengeByCode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_ChanllengeByCode) ProtoMessage() {}
+
+func (x *S2C_ChanllengeByCode) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_ChanllengeByCode.ProtoReflect.Descriptor instead.
+func (*S2C_ChanllengeByCode) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *S2C_ChanllengeByCode) GetRankItem() *RankItem {
+	if x != nil {
+		return x.RankItem
+	}
+	return nil
+}
+
+func (x *S2C_ChanllengeByCode) GetResult() ChanllengeResult {
+	if x != nil {
+		return x.Result
+	}
+	return ChanllengeResult_ChanllengeResult_None
+}
+
+// 获取挑战列表
+type C2S_GetChanllengeList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RankType      RankType               `protobuf:"varint,1,opt,name=rank_type,json=rankType,proto3,enum=RankType" json:"rank_type,omitempty"`
+	RefreshType   RefreshType            `protobuf:"varint,2,opt,name=refresh_type,json=refreshType,proto3,enum=RefreshType" json:"refresh_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_GetChanllengeList) Reset() {
+	*x = C2S_GetChanllengeList{}
+	mi := &file_rank_rank_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_GetChanllengeList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_GetChanllengeList) ProtoMessage() {}
+
+func (x *C2S_GetChanllengeList) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_GetChanllengeList.ProtoReflect.Descriptor instead.
+func (*C2S_GetChanllengeList) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *C2S_GetChanllengeList) GetRankType() RankType {
+	if x != nil {
+		return x.RankType
+	}
+	return RankType_RankType_None
+}
+
+func (x *C2S_GetChanllengeList) GetRefreshType() RefreshType {
+	if x != nil {
+		return x.RefreshType
+	}
+	return RefreshType_RefreshType_None
+}
+
+type S2C_GetChanllengeList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RankItem      []*RankItem            `protobuf:"bytes,1,rep,name=rankItem,proto3" json:"rankItem,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_GetChanllengeList) Reset() {
+	*x = S2C_GetChanllengeList{}
+	mi := &file_rank_rank_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_GetChanllengeList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_GetChanllengeList) ProtoMessage() {}
+
+func (x *S2C_GetChanllengeList) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_GetChanllengeList.ProtoReflect.Descriptor instead.
+func (*S2C_GetChanllengeList) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *S2C_GetChanllengeList) GetRankItem() []*RankItem {
+	if x != nil {
+		return x.RankItem
+	}
+	return nil
+}
+
+type HistoryRankItem struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CurrentRank   int32                  `protobuf:"varint,1,opt,name=current_rank,json=currentRank,proto3" json:"current_rank,omitempty"`
+	LastRank      int32                  `protobuf:"varint,2,opt,name=last_rank,json=lastRank,proto3" json:"last_rank,omitempty"`
+	AcceptReward  bool                   `protobuf:"varint,3,opt,name=accept_reward,json=acceptReward,proto3" json:"accept_reward,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoryRankItem) Reset() {
+	*x = HistoryRankItem{}
+	mi := &file_rank_rank_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoryRankItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoryRankItem) ProtoMessage() {}
+
+func (x *HistoryRankItem) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoryRankItem.ProtoReflect.Descriptor instead.
+func (*HistoryRankItem) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *HistoryRankItem) GetCurrentRank() int32 {
+	if x != nil {
+		return x.CurrentRank
+	}
+	return 0
+}
+
+func (x *HistoryRankItem) GetLastRank() int32 {
+	if x != nil {
+		return x.LastRank
+	}
+	return 0
+}
+
+func (x *HistoryRankItem) GetAcceptReward() bool {
+	if x != nil {
+		return x.AcceptReward
+	}
+	return false
+}
+
+// 获取历史记录
+type C2S_GetMyHistoryRank struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_GetMyHistoryRank) Reset() {
+	*x = C2S_GetMyHistoryRank{}
+	mi := &file_rank_rank_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_GetMyHistoryRank) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_GetMyHistoryRank) ProtoMessage() {}
+
+func (x *C2S_GetMyHistoryRank) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_GetMyHistoryRank.ProtoReflect.Descriptor instead.
+func (*C2S_GetMyHistoryRank) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{17}
+}
+
+type S2C_GetMyHistoryRank struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Daily         *HistoryRankItem       `protobuf:"bytes,1,opt,name=daily,proto3" json:"daily,omitempty"`
+	Week          *HistoryRankItem       `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_GetMyHistoryRank) Reset() {
+	*x = S2C_GetMyHistoryRank{}
+	mi := &file_rank_rank_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_GetMyHistoryRank) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_GetMyHistoryRank) ProtoMessage() {}
+
+func (x *S2C_GetMyHistoryRank) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_GetMyHistoryRank.ProtoReflect.Descriptor instead.
+func (*S2C_GetMyHistoryRank) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *S2C_GetMyHistoryRank) GetDaily() *HistoryRankItem {
+	if x != nil {
+		return x.Daily
+	}
+	return nil
+}
+
+func (x *S2C_GetMyHistoryRank) GetWeek() *HistoryRankItem {
+	if x != nil {
+		return x.Week
+	}
+	return nil
+}
+
+// 获取结算奖励
+type C2S_GetHistoryRankReward struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          int32                  `protobuf:"varint,1,opt,name=type,proto3" json:"type,omitempty"` // 1为日榜，2为周榜
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *C2S_GetHistoryRankReward) Reset() {
+	*x = C2S_GetHistoryRankReward{}
+	mi := &file_rank_rank_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *C2S_GetHistoryRankReward) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*C2S_GetHistoryRankReward) ProtoMessage() {}
+
+func (x *C2S_GetHistoryRankReward) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use C2S_GetHistoryRankReward.ProtoReflect.Descriptor instead.
+func (*C2S_GetHistoryRankReward) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *C2S_GetHistoryRankReward) GetType() int32 {
+	if x != nil {
+		return x.Type
+	}
+	return 0
+}
+
+type S2C_GetHistoryRankReward struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Type          int32                  `protobuf:"varint,2,opt,name=type,proto3" json:"type,omitempty"`
+	RankItem      *HistoryRankItem       `protobuf:"bytes,3,opt,name=rank_item,json=rankItem,proto3" json:"rank_item,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S2C_GetHistoryRankReward) Reset() {
+	*x = S2C_GetHistoryRankReward{}
+	mi := &file_rank_rank_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S2C_GetHistoryRankReward) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S2C_GetHistoryRankReward) ProtoMessage() {}
+
+func (x *S2C_GetHistoryRankReward) ProtoReflect() protoreflect.Message {
+	mi := &file_rank_rank_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S2C_GetHistoryRankReward.ProtoReflect.Descriptor instead.
+func (*S2C_GetHistoryRankReward) Descriptor() ([]byte, []int) {
+	return file_rank_rank_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *S2C_GetHistoryRankReward) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *S2C_GetHistoryRankReward) GetType() int32 {
+	if x != nil {
+		return x.Type
+	}
+	return 0
+}
+
+func (x *S2C_GetHistoryRankReward) GetRankItem() *HistoryRankItem {
+	if x != nil {
+		return x.RankItem
+	}
+	return nil
+}
+
 var File_rank_rank_proto protoreflect.FileDescriptor
 
 const file_rank_rank_proto_rawDesc = "" +
 	"\n" +
-	"\x0frank/rank.proto\x1a\x10message_id.proto\"\x9e\x01\n" +
+	"\x0frank/rank.proto\x1a\x10message_id.proto\"\xca\x01\n" +
 	"\bRankItem\x12\x1a\n" +
-	"\bplayerId\x18\x01 \x01(\x03R\bplayerId\x12\x1e\n" +
+	"\bplayerId\x18\x01 \x01(\tR\bplayerId\x12\x1e\n" +
 	"\n" +
 	"playerName\x18\x02 \x01(\tR\n" +
 	"playerName\x12\x12\n" +
 	"\x04rank\x18\x03 \x01(\x05R\x04rank\x12\x14\n" +
-	"\x05score\x18\x04 \x01(\x03R\x05score\x12\x16\n" +
+	"\x05score\x18\x04 \x01(\x05R\x05score\x12\x16\n" +
 	"\x06avatar\x18\x05 \x01(\tR\x06avatar\x12\x14\n" +
-	"\x05level\x18\x06 \x01(\x05R\x05level\"d\n" +
-	"\x0fC2S_GetRankList\x12\x1a\n" +
-	"\brankType\x18\x01 \x01(\x05R\brankType\x12\x12\n" +
+	"\x05level\x18\x06 \x01(\x05R\x05level\x12*\n" +
+	"\n" +
+	"otherInfos\x18\a \x03(\v2\n" +
+	".OtherInfoR\n" +
+	"otherInfos\"3\n" +
+	"\tOtherInfo\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\x87\x01\n" +
+	"\x0fC2S_GetRankList\x12%\n" +
+	"\brankType\x18\x01 \x01(\x0e2\t.RankTypeR\brankType\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1a\n" +
-	"\bpageSize\x18\x03 \x01(\x05R\bpageSize:\x05\x80\xb5\x18\xf5\x03\"\x9f\x01\n" +
-	"\x0fS2C_GetRankList\x12\x1a\n" +
-	"\brankType\x18\x01 \x01(\x05R\brankType\x12'\n" +
+	"\bpageSize\x18\x03 \x01(\x05R\bpageSize\x12\x16\n" +
+	"\x06season\x18\x04 \x01(\x05R\x06season:\x05\x80\xb5\x18\xf5\x03\"\xc2\x01\n" +
+	"\x0fS2C_GetRankList\x12%\n" +
+	"\brankType\x18\x01 \x01(\x0e2\t.RankTypeR\brankType\x12'\n" +
 	"\trankItems\x18\x02 \x03(\v2\t.RankItemR\trankItems\x12\x1e\n" +
 	"\n" +
 	"totalCount\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12 \n" +
-	"\vcurrentPage\x18\x04 \x01(\x05R\vcurrentPage:\x05\x80\xb5\x18\xd9\x04\"2\n" +
-	"\rC2S_GetMyRank\x12\x1a\n" +
-	"\brankType\x18\x01 \x01(\x05R\brankType:\x05\x80\xb5\x18\xf6\x03\"\x84\x01\n" +
-	"\rS2C_GetMyRank\x12\x1a\n" +
-	"\brankType\x18\x01 \x01(\x05R\brankType\x12\x16\n" +
+	"\vcurrentPage\x18\x04 \x01(\x05R\vcurrentPage\x12\x16\n" +
+	"\x06season\x18\x05 \x01(\x05R\x06season:\x05\x80\xb5\x18\xd9\x04\"U\n" +
+	"\rC2S_GetMyRank\x12%\n" +
+	"\brankType\x18\x01 \x01(\x0e2\t.RankTypeR\brankType\x12\x16\n" +
+	"\x06season\x18\x02 \x01(\x05R\x06season:\x05\x80\xb5\x18\xf6\x03\"\x8f\x01\n" +
+	"\rS2C_GetMyRank\x12%\n" +
+	"\brankType\x18\x01 \x01(\x0e2\t.RankTypeR\brankType\x12\x16\n" +
 	"\x06myRank\x18\x02 \x01(\x05R\x06myRank\x12\x18\n" +
-	"\amyScore\x18\x03 \x01(\x03R\amyScore\x12\x1e\n" +
+	"\amyScore\x18\x03 \x01(\x05R\amyScore\x12\x1e\n" +
 	"\n" +
 	"totalCount\x18\x04 \x01(\x05R\n" +
-	"totalCount:\x05\x80\xb5\x18\xda\x04\"M\n" +
-	"\x12C2S_UpdateRankData\x12\x1a\n" +
-	"\brankType\x18\x01 \x01(\x05R\brankType\x12\x14\n" +
-	"\x05score\x18\x02 \x01(\x03R\x05score:\x05\x80\xb5\x18\xf7\x03\"O\n" +
+	"totalCount:\x05\x80\xb5\x18\xda\x04\"X\n" +
+	"\x12C2S_UpdateRankData\x12%\n" +
+	"\brankType\x18\x01 \x01(\x0e2\t.RankTypeR\brankType\x12\x14\n" +
+	"\x05score\x18\x02 \x01(\x05R\x05score:\x05\x80\xb5\x18\xf7\x03\"O\n" +
 	"\x12S2C_UpdateRankData\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\anewRank\x18\x02 \x01(\x05R\anewRank:\x05\x80\xb5\x18\xdb\x04B\x0eZ\f./../messageb\x06proto3"
+	"\anewRank\x18\x02 \x01(\x05R\anewRank:\x05\x80\xb5\x18\xdb\x04\"\x17\n" +
+	"\x0eC2S_SeasonInfo:\x05\x80\xb5\x18\xf8\x03\"\x97\x01\n" +
+	"\x0eS2C_SeasonInfo\x12\x16\n" +
+	"\x06season\x18\x01 \x01(\x05R\x06season\x124\n" +
+	"\x16season_start_timestamp\x18\x02 \x01(\x05R\x14seasonStartTimestamp\x120\n" +
+	"\x14season_end_timestamp\x18\x03 \x01(\x05R\x12seasonEndTimestamp:\x05\x80\xb5\x18\xdc\x04\"@\n" +
+	"\x1bC2S_GeneratorChanllengeCode\x12\x1a\n" +
+	"\bplayerId\x18\x01 \x01(\tR\bplayerId:\x05\x80\xb5\x18\xf9\x03\"c\n" +
+	"\x1bS2C_GeneratorChanllengeCode\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\x05R\x04code\x12)\n" +
+	"\x10expire_timestamp\x18\x02 \x01(\x05R\x0fexpireTimestamp:\x05\x80\xb5\x18\xdd\x04\"1\n" +
+	"\x14C2S_ChanllengeByCode\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\x05R\x04code:\x05\x80\xb5\x18\xfa\x03\"o\n" +
+	"\x14S2C_ChanllengeByCode\x12%\n" +
+	"\brankItem\x18\x01 \x01(\v2\t.RankItemR\brankItem\x12)\n" +
+	"\x06result\x18\x02 \x01(\x0e2\x11.ChanllengeResultR\x06result:\x05\x80\xb5\x18\xde\x04\"w\n" +
+	"\x15C2S_GetChanllengeList\x12&\n" +
+	"\trank_type\x18\x01 \x01(\x0e2\t.RankTypeR\brankType\x12/\n" +
+	"\frefresh_type\x18\x02 \x01(\x0e2\f.RefreshTypeR\vrefreshType:\x05\x80\xb5\x18\xfb\x03\"E\n" +
+	"\x15S2C_GetChanllengeList\x12%\n" +
+	"\brankItem\x18\x01 \x03(\v2\t.RankItemR\brankItem:\x05\x80\xb5\x18\xdf\x04\"v\n" +
+	"\x0fHistoryRankItem\x12!\n" +
+	"\fcurrent_rank\x18\x01 \x01(\x05R\vcurrentRank\x12\x1b\n" +
+	"\tlast_rank\x18\x02 \x01(\x05R\blastRank\x12#\n" +
+	"\raccept_reward\x18\x03 \x01(\bR\facceptReward\"\x1d\n" +
+	"\x14C2S_GetMyHistoryRank:\x05\x80\xb5\x18\xfc\x03\"k\n" +
+	"\x14S2C_GetMyHistoryRank\x12&\n" +
+	"\x05daily\x18\x01 \x01(\v2\x10.HistoryRankItemR\x05daily\x12$\n" +
+	"\x04week\x18\x02 \x01(\v2\x10.HistoryRankItemR\x04week:\x05\x80\xb5\x18\xe0\x04\"5\n" +
+	"\x18C2S_GetHistoryRankReward\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\x05R\x04type:\x05\x80\xb5\x18\xfd\x03\"~\n" +
+	"\x18S2C_GetHistoryRankReward\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\x05R\x04type\x12-\n" +
+	"\trank_item\x18\x03 \x01(\v2\x10.HistoryRankItemR\brankItem:\x05\x80\xb5\x18\xe1\x04*\x8d\x01\n" +
+	"\x10ChanllengeResult\x12\x19\n" +
+	"\x15ChanllengeResult_None\x10\x00\x12\x1c\n" +
+	"\x18ChanllengeResult_SUCCESS\x10\x01\x12\x1e\n" +
+	"\x1aChanllengeResult_CodeError\x10\x02\x12 \n" +
+	"\x1cChanllengeResult_CodeExpired\x10\x03*O\n" +
+	"\vRefreshType\x12\x14\n" +
+	"\x10RefreshType_None\x10\x00\x12\x14\n" +
+	"\x10RefreshType_Rand\x10\x01\x12\x14\n" +
+	"\x10RefreshType_Rank\x10\x02*m\n" +
+	"\bRankType\x12\x11\n" +
+	"\rRankType_None\x10\x00\x12\x18\n" +
+	"\x14RankType_LadderPoint\x10\x01\x12\x17\n" +
+	"\x13RankType_PowerPoint\x10\x02\x12\x1b\n" +
+	"\x17RankType_ChallengePoint\x10\x03B\x0eZ\f./../messageb\x06proto3"
 
 var (
 	file_rank_rank_proto_rawDescOnce sync.Once
@@ -507,23 +1444,55 @@ func file_rank_rank_proto_rawDescGZIP() []byte {
 	return file_rank_rank_proto_rawDescData
 }
 
-var file_rank_rank_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_rank_rank_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_rank_rank_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_rank_rank_proto_goTypes = []any{
-	(*RankItem)(nil),           // 0: RankItem
-	(*C2S_GetRankList)(nil),    // 1: C2S_GetRankList
-	(*S2C_GetRankList)(nil),    // 2: S2C_GetRankList
-	(*C2S_GetMyRank)(nil),      // 3: C2S_GetMyRank
-	(*S2C_GetMyRank)(nil),      // 4: S2C_GetMyRank
-	(*C2S_UpdateRankData)(nil), // 5: C2S_UpdateRankData
-	(*S2C_UpdateRankData)(nil), // 6: S2C_UpdateRankData
+	(ChanllengeResult)(0),               // 0: ChanllengeResult
+	(RefreshType)(0),                    // 1: RefreshType
+	(RankType)(0),                       // 2: RankType
+	(*RankItem)(nil),                    // 3: RankItem
+	(*OtherInfo)(nil),                   // 4: OtherInfo
+	(*C2S_GetRankList)(nil),             // 5: C2S_GetRankList
+	(*S2C_GetRankList)(nil),             // 6: S2C_GetRankList
+	(*C2S_GetMyRank)(nil),               // 7: C2S_GetMyRank
+	(*S2C_GetMyRank)(nil),               // 8: S2C_GetMyRank
+	(*C2S_UpdateRankData)(nil),          // 9: C2S_UpdateRankData
+	(*S2C_UpdateRankData)(nil),          // 10: S2C_UpdateRankData
+	(*C2S_SeasonInfo)(nil),              // 11: C2S_SeasonInfo
+	(*S2C_SeasonInfo)(nil),              // 12: S2C_SeasonInfo
+	(*C2S_GeneratorChanllengeCode)(nil), // 13: C2S_GeneratorChanllengeCode
+	(*S2C_GeneratorChanllengeCode)(nil), // 14: S2C_GeneratorChanllengeCode
+	(*C2S_ChanllengeByCode)(nil),        // 15: C2S_ChanllengeByCode
+	(*S2C_ChanllengeByCode)(nil),        // 16: S2C_ChanllengeByCode
+	(*C2S_GetChanllengeList)(nil),       // 17: C2S_GetChanllengeList
+	(*S2C_GetChanllengeList)(nil),       // 18: S2C_GetChanllengeList
+	(*HistoryRankItem)(nil),             // 19: HistoryRankItem
+	(*C2S_GetMyHistoryRank)(nil),        // 20: C2S_GetMyHistoryRank
+	(*S2C_GetMyHistoryRank)(nil),        // 21: S2C_GetMyHistoryRank
+	(*C2S_GetHistoryRankReward)(nil),    // 22: C2S_GetHistoryRankReward
+	(*S2C_GetHistoryRankReward)(nil),    // 23: S2C_GetHistoryRankReward
 }
 var file_rank_rank_proto_depIdxs = []int32{
-	0, // 0: S2C_GetRankList.rankItems:type_name -> RankItem
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	4,  // 0: RankItem.otherInfos:type_name -> OtherInfo
+	2,  // 1: C2S_GetRankList.rankType:type_name -> RankType
+	2,  // 2: S2C_GetRankList.rankType:type_name -> RankType
+	3,  // 3: S2C_GetRankList.rankItems:type_name -> RankItem
+	2,  // 4: C2S_GetMyRank.rankType:type_name -> RankType
+	2,  // 5: S2C_GetMyRank.rankType:type_name -> RankType
+	2,  // 6: C2S_UpdateRankData.rankType:type_name -> RankType
+	3,  // 7: S2C_ChanllengeByCode.rankItem:type_name -> RankItem
+	0,  // 8: S2C_ChanllengeByCode.result:type_name -> ChanllengeResult
+	2,  // 9: C2S_GetChanllengeList.rank_type:type_name -> RankType
+	1,  // 10: C2S_GetChanllengeList.refresh_type:type_name -> RefreshType
+	3,  // 11: S2C_GetChanllengeList.rankItem:type_name -> RankItem
+	19, // 12: S2C_GetMyHistoryRank.daily:type_name -> HistoryRankItem
+	19, // 13: S2C_GetMyHistoryRank.week:type_name -> HistoryRankItem
+	19, // 14: S2C_GetHistoryRankReward.rank_item:type_name -> HistoryRankItem
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_rank_rank_proto_init() }
@@ -537,13 +1506,14 @@ func file_rank_rank_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rank_rank_proto_rawDesc), len(file_rank_rank_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   7,
+			NumEnums:      3,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_rank_rank_proto_goTypes,
 		DependencyIndexes: file_rank_rank_proto_depIdxs,
+		EnumInfos:         file_rank_rank_proto_enumTypes,
 		MessageInfos:      file_rank_rank_proto_msgTypes,
 	}.Build()
 	File_rank_rank_proto = out.File

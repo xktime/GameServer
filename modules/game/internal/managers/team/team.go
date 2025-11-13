@@ -15,7 +15,7 @@ type Team struct {
 	TeamId          int64   `bson:"_id"`
 	LeaderId        int64   `bson:"leader_id"`
 	TeamMembers     []int64 `bson:"team_members"`
-	RoomId          int64   `bson:"room_id"`
+	RoomId          string  `bson:"room_id"`
 }
 
 func (t Team) GetPersistId() interface{} {
@@ -61,15 +61,15 @@ func (t *Team) doJoinTeam(playerId int64) {
 	log.Debug("玩家 %d 成功加入队伍 %d，当前成员数量: %d", playerId, t.TeamId, len(t.TeamMembers))
 }
 
-func (t *Team) JoinRoom(roomId int64) {
+func (t *Team) JoinRoom(roomId string) {
 	t.SendTaskAsync(func() {
 		t.doJoinRoom(roomId)
 	})
 }
 
-func (t *Team) doJoinRoom(roomId int64) {
+func (t *Team) doJoinRoom(roomId string) {
 	t.RoomId = roomId
-	log.Debug("队伍 %d 成功加入房间 %d", t.TeamId, roomId)
+	log.Debug("队伍 %d 成功加入房间 %s", t.TeamId, roomId)
 }
 
 func (t *Team) LeaveRoom() {
@@ -79,7 +79,7 @@ func (t *Team) LeaveRoom() {
 }
 
 func (t *Team) doLeaveRoom() {
-	t.RoomId = 0
+	t.RoomId = ""
 	log.Debug("队伍 %d 成功离开房间", t.TeamId)
 }
 
@@ -126,10 +126,19 @@ func (t *Team) doLeaveTeam(playerId int64) {
 
 // IsMember 检查玩家是否是队伍成员
 func (t *Team) IsMember(playerId int64) bool {
-	response := t.SendTask(func() bool {
+	result := t.SendTask(func() bool {
 		return t.doIsMember(playerId)
 	})
-	return response.(bool)
+
+	if err, ok := result.(error); ok {
+		log.Error("检查队员失败: %v", err)
+		return false
+	}
+
+	if typedResult, ok := result.(bool); ok {
+		return typedResult
+	}
+	return false
 }
 
 func (t *Team) doIsMember(playerId int64) bool {
@@ -138,10 +147,19 @@ func (t *Team) doIsMember(playerId int64) bool {
 
 // IsLeader 检查玩家是否是队长
 func (t *Team) IsLeader(playerId int64) bool {
-	response := t.SendTask(func() bool {
+	result := t.SendTask(func() bool {
 		return t.doIsLeader(playerId)
 	})
-	return response.(bool)
+
+	if err, ok := result.(error); ok {
+		log.Error("检查队长失败: %v", err)
+		return false
+	}
+
+	if typedResult, ok := result.(bool); ok {
+		return typedResult
+	}
+	return false
 }
 
 func (t *Team) doIsLeader(playerId int64) bool {

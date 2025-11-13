@@ -6,6 +6,7 @@ import (
 	"gameserver/core/log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 )
 
@@ -122,12 +123,25 @@ func (cm *ConfigManager) isNewConfigFormat(configObj map[string]interface{}) boo
 // loadNewFormatConfig 加载新格式的配置文件
 func (cm *ConfigManager) loadNewFormatConfig(configObj map[string]interface{}, filename string) error {
 	configMap := make(map[interface{}]interface{})
-
+	isInt := true
+	for keyStr, _ := range configObj {
+		if _, err := strconv.Atoi(keyStr); err != nil {
+			isInt = false
+			break
+		}
+	}
 	for keyStr, value := range configObj {
 		if configItem, ok := value.(map[string]interface{}); ok {
 			// 对key进行类型转换
-			convertedKey := convertIDType(keyStr)
-			configMap[convertedKey] = configItem
+			if isInt {
+				convertedKey, _ := strconv.Atoi(keyStr)
+				configMap[int32(convertedKey)] = configItem
+			} else {
+				convertedKey := convertIDType(keyStr)
+				configMap[convertedKey] = configItem
+			}
+		} else {
+			log.Error("配置文件 %s 中 %s 字段不是对象类型", filename, keyStr)
 		}
 	}
 

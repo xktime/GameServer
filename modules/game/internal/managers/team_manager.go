@@ -38,11 +38,19 @@ func (m *TeamManager) Stop() {
 
 // GetTeamByPlayerId 通过玩家ID获取队伍 - 异步执行
 func (t *TeamManager) GetTeamByPlayerId(playerId int64) *team.Team {
-	response := t.SendTask(func() *team.Team {
+	result := t.SendTask(func() *team.Team {
 		return t.doGetTeamByPlayerId(playerId)
 	})
 
-	return response.(*team.Team)
+	if err, ok := result.(error); ok {
+		log.Error("获取队伍失败: %v", err)
+		return nil
+	}
+
+	if team, ok := result.(*team.Team); ok {
+		return team
+	}
+	return nil
 }
 
 // doGetTeamByPlayerId 通过玩家ID获取队伍的同步实现
@@ -59,14 +67,14 @@ func (t *TeamManager) doGetTeamByPlayerId(playerId int64) *team.Team {
 }
 
 // JoinRoom 加入房间 - 异步执行
-func (t *TeamManager) JoinRoom(playerId int64, roomId int64) {
+func (t *TeamManager) JoinRoom(playerId int64, roomId string) {
 	t.SendTaskAsync(func() {
 		t.doJoinRoom(playerId, roomId)
 	})
 }
 
 // doJoinRoom 加入房间的同步实现
-func (t *TeamManager) doJoinRoom(playerId int64, roomId int64) {
+func (t *TeamManager) doJoinRoom(playerId int64, roomId string) {
 	player := GetUserManager().GetPlayer(playerId)
 	if player == nil {
 		return

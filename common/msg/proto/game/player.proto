@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+option go_package = "./../message";
+import "message_id.proto";
+
+// C2S 800--900
+// S2C 900--1000
+enum Result {
+    Success = 0;
+    Fail = 1;
+    Duplicate = 2;
+    Illegal = 3;
+}
+
+message PlayerInfo {
+    int32 server_id = 1;
+    string player_name = 2;
+    string avatar = 3;
+    int32 level = 4;
+    string playerId = 5;
+}
+
+// 获取玩家信息请求
+message C2S_GetPlayerInfo {
+    option (message_id) = 801;
+    int32 type = 1;
+}
+;
+// 获取玩家信息响应
+message S2C_GetPlayerInfo {
+    option (message_id) = 901;
+    PlayerInfo playerInfo = 1;
+}
+
+// 检验玩家名是否合法
+message C2S_CheckName {
+    option (message_id) = 802;
+    string name = 1;
+}
+
+message S2C_CheckName {
+    option (message_id) = 902;
+    Result result = 1;
+}
+
+// 修改玩家名
+message C2S_ModifyName {
+    option (message_id) = 803;
+    string name = 1;
+}
+
+message S2C_ModifyName {
+    option (message_id) = 903;
+    Result result = 1;
+    string name = 2;
+}
+
+// 获取上传url
+message C2S_GetUploadUrl {
+    option (message_id) = 804;
+    UploadType type = 1;
+    string suffixName = 2; // 文件类型 jpg/png
+}
+
+message S2C_GetUploadUrl {
+    option (message_id) = 904;
+    string url = 1;
+}
+
+// 修改头像路径
+message C2S_ModifyAvatar {
+    option (message_id) = 805;
+    string avatar = 1;
+}
+
+message S2C_ModifyAvatar {
+    option (message_id) = 905;
+    Result result = 1;
+    string avatar = 2;
+}
+
+enum UploadType {
+    UploadType_None = 0;
+    UploadType_Avatar = 1;
+}
+

@@ -3,6 +3,7 @@ package player
 import (
 	"fmt"
 	"gameserver/common/base/actor"
+	"gameserver/common/bucket"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
@@ -11,20 +12,19 @@ import (
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
 	"gameserver/modules/game/internal/models/player"
-	"time"
+	"path/filepath"
+	"strconv"
 
 	"google.golang.org/protobuf/proto"
 )
 
 type Player struct {
 	actor.BaseActor `bson:"-"`
-	actor.OnCrossDayTimerImpl
-	PlayerId             int64              `bson:"_id"`
-	PlayerInfo           *player.PlayerInfo `bson:"player_info"`
-	TeamId               int64              `bson:"team_id"`
-	TowerLevel           int32              `bson:"tower_level"`
-	LastOnCrossTimestamp int64              `bson:"last_on_cross_timestamp"`
-	agent                gate.Agent         `bson:"-"`
+	PlayerId        int64              `bson:"_id"`
+	PlayerInfo      *player.PlayerInfo `bson:"player_info"`
+	TeamId          int64              `bson:"team_id"`
+	TowerLevel      int32              `bson:"tower_level"`
+	agent           gate.Agent         `bson:"-"`
 }
 
 func (p Player) GetPersistId() interface{} {
@@ -51,23 +51,12 @@ func initPlayer(agent gate.Agent, isNew bool) *Player {
 	playerId := user.PlayerId
 
 	// 检查是否已存在Actor
-	// todo 登录频繁可能会导致登录不上
 	if existingPlayer := GetPlayerActor(playerId); existingPlayer != nil {
 		log.Error("玩家Actor已存在，可能是离线未正常清理: %v", playerId)
-		// 异步停止旧的Actor，避免在TaskHandler上下文中调用Stop造成死锁
-		go func() {
-			existingPlayer.Stop()
-		}()
+		existingPlayer.Stop()
 	}
 
-	// 初始化玩家数据
-	p, err := initPlayerData(playerId, user, isNew)
-	if err != nil {
-		log.Error("初始化玩家数据失败: %v", err)
-		return nil
-	}
-
-	return actor.RegisterActor[*Player](actor.Player, playerId, agent, p)
+	return actor.RegisterActor[*Player](actor.Player, playerId, agent, user, isNew)
 }
 
 func (p *Player) Init(args ...any) {
@@ -77,42 +66,30 @@ func (p *Player) Init(args ...any) {
 			p.PlayerId = 0
 		}
 	}()
-	if agent, ok := args[0].(gate.Agent); ok {
-		p.agent = agent
-	} else {
-		log.Error("初始化玩家数据失败: %v", args[0])
+	agent := args[0].(gate.Agent)
+	user := args[1].(models.User)
+	isNew := args[2].(bool)
+	playerId := user.PlayerId
+	// 初始化玩家数据
+	err := p.InitPlayerData(playerId, user, isNew)
+	if err != nil {
+		log.Error("初始化玩家数据失败: %v", err)
+		return
 	}
-	if p1, ok := args[1].(*Player); ok {
-		p.PlayerInfo = p1.PlayerInfo
-		p.TeamId = p1.TeamId
-		p.TowerLevel = p1.TowerLevel
-		p.PlayerId = p1.PlayerId
-		p.OnCrossDayTimerImpl = p1.OnCrossDayTimerImpl
-	} else {
-		log.Error("初始化玩家数据失败: %v", args[1])
-	}
+	p.agent = agent
 }
 
-// InitModules 初始化玩家模块（装备、背包等）
+// InitModules 初始化玩家模块
 func (p *Player) InitModules() {
 	// 自己的actor里面可以放队列里初始化
 	// 其他actor需要同步初始化，避免快速请求还未加载完成
 	p.SendTaskAsync(func() {
-		p.OnCrossDay()
 	})
 	p.InitTeam()
 }
 
-func (p *Player) OnCrossDay() {
-	now := time.Now().Unix()
-	if !utils.IsCrossDay(p.GetLastCrossDayTime(), now) {
-		return
-	}
-	p.SetLastCrossDayTime(now)
-}
-
 // initPlayerData 初始化玩家数据
-func initPlayerData(playerId int64, user models.User, isNew bool) (*Player, error) {
+func (p *Player) InitPlayerData(playerId int64, user models.User, isNew bool) error {
 	if isNew {
 		// 新玩家：创建初始数据
 		playerInfo := &player.PlayerInfo{
@@ -130,36 +107,47 @@ func initPlayerData(playerId int64, user models.User, isNew bool) (*Player, erro
 			PlayerId:   playerId,
 			PlayerInfo: playerInfo,
 		}
+		p.PlayerId = playerId
+		p.PlayerInfo = playerInfo
 
+		// newPlayer.initAvatar()
 		// 保存新玩家数据
 		if _, err := mongodb.Save(newPlayer); err != nil {
-			return nil, err
+			return err
 		}
-
-		return newPlayer, nil
 	} else {
 		// 老玩家：从数据库加载数据
 		existingPlayer, err := mongodb.FindOneById[Player](playerId)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if existingPlayer == nil {
-			return nil, fmt.Errorf("老玩家数据不存在: %v", playerId)
+			return fmt.Errorf("老玩家数据不存在: %v", playerId)
 		}
 
-		return existingPlayer, nil
+		p.PlayerInfo = existingPlayer.PlayerInfo
+		p.TeamId = existingPlayer.TeamId
+		p.TowerLevel = existingPlayer.TowerLevel
+		p.PlayerId = existingPlayer.PlayerId
 	}
+	fmt.Println("InitPlayerData", p.PlayerInfo.GetAvatarURL())
+	return nil
 }
 
 func (p *Player) ModifyName(name string) message.Result {
-	response := p.SendTask(func() message.Result {
+	result := p.SendTask(func() message.Result {
 		return p.doModifyName(name)
 	})
 
-	if _, ok := response.(error); ok {
+	if err, ok := result.(error); ok {
+		log.Error("修改名字失败: %v", err)
 		return message.Result_Fail
 	}
-	return response.(message.Result)
+
+	if typedResult, ok := result.(message.Result); ok {
+		return typedResult
+	}
+	return message.Result_Fail
 }
 
 func (p *Player) doModifyName(name string) message.Result {
@@ -175,7 +163,7 @@ func (p *Player) InitTeam() {
 		teamActor, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
 		// team还存在
 		if ok {
-			if teamActor.RoomId > 0 {
+			if teamActor.RoomId != "" {
 				// todo 重连逻辑
 				return
 			}
@@ -196,9 +184,8 @@ func SendToClient(playerId int64, message proto.Message) {
 }
 
 func (p *Player) SendToClient(message proto.Message) {
-	p.SendTask(func() *actor.Response {
+	p.SendTask(func() {
 		p.DoSendToClient(message)
-		return nil
 	})
 }
 
@@ -212,6 +199,49 @@ func (p *Player) DoSendToClient(message proto.Message) {
 	p.agent.WriteMsg(message)
 }
 
-func (p *Player) CloseAgent() {
-	p.agent.Close()
+func (p *Player) Stop() {
+	// 避免重复事件
+	if p.agent != nil {
+		p.agent.SetUserData(nil)
+		p.agent.Close()
+	}
+
+	p.TaskHandler.Stop()
+}
+
+func (p *Player) GetUser() (models.User, bool) {
+	userData := p.agent.UserData()
+	if userData == nil {
+		return models.User{}, false
+	}
+	return userData.(models.User), true
+}
+
+func (p *Player) initAvatar() {
+	objects, err := bucket.GetOSSClient().GetObjects("avatar/", 10)
+	if err != nil {
+		fmt.Printf("获取OSS对象列表失败: %v\n", err)
+		return
+	}
+	pathName := objects[utils.RandByArray(objects)].Key
+	_, err = bucket.GetOSSClient().CopyObject(pathName, strconv.FormatInt(p.PlayerId, 10))
+	if err == nil {
+		p.PlayerInfo.AvatarSuffix = filepath.Ext(pathName)
+	}
+}
+
+func (p *Player) ModifyAvatarSuffix(avatar string) message.Result {
+	response := p.SendTask(func() message.Result {
+		return p.doModifyAvatarSuffix(avatar)
+	})
+
+	if _, ok := response.(error); ok {
+		return message.Result_Fail
+	}
+	return response.(message.Result)
+}
+
+func (p *Player) doModifyAvatarSuffix(avatar string) message.Result {
+	p.PlayerInfo.AvatarSuffix = "." + avatar
+	return message.Result_Success
 }
