@@ -1,10 +1,10 @@
-
 package handlers
 
 import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/rank/internal/managers"
 )
 
 // C2S_ChanllengeByCodeHandler 处理C2S_ChanllengeByCode消息
@@ -33,5 +33,6 @@ func C2S_ChanllengeByCodeHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_ChanllengeByCode消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	// TODO: 实现具体的业务逻辑
+	response := managers.GetRankManager().ChanllengeByCode(msg)
+	agent.WriteMsgWithSeq(response, seq)
 }

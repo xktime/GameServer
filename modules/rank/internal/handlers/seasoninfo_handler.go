@@ -1,10 +1,10 @@
-
 package handlers
 
 import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/rank/internal/managers"
 )
 
 // C2S_SeasonInfoHandler 处理C2S_SeasonInfo消息
@@ -34,4 +34,6 @@ func C2S_SeasonInfoHandler(args []interface{}) {
 
 	log.Debug("收到C2S_SeasonInfo消息: %v, agent: %v, seq: %v", msg, agent, seq)
 	// TODO: 实现具体的业务逻辑
+	m := managers.GetSeasonManager()
+	agent.WriteMsgWithSeq(m.GetSeasonInfo(), seq)
 }

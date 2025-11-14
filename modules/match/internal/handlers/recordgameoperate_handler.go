@@ -1,15 +1,17 @@
-
 package handlers
 
 import (
+	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/match/internal/managers"
+	"gameserver/modules/match/internal/managers/room"
 )
 
 // C2S_RecordGameOperateHandler 处理C2S_RecordGameOperate消息
 func C2S_RecordGameOperateHandler(args []interface{}) {
-	if len(args) < 3 {
+	if len(args) < 2 {
 		log.Error("C2S_RecordGameOperateHandler: 参数不足")
 		return
 	}
@@ -26,12 +28,13 @@ func C2S_RecordGameOperateHandler(args []interface{}) {
 		return
 	}
 
-	seq, ok := args[2].(uint32)
-	if !ok {
-		log.Error("C2S_RecordGameOperateHandler: Seq类型错误")
-		return
+	log.Debug("收到C2S_RecordGameOperate消息: %v, agent: %v", msg, agent)
+	playerId := agent.UserData().(models.User).PlayerId
+	roomId, response := managers.GetRoomManager().HandleRecordOperate(msg, agent)
+	if response != nil {
+		room.SendRoomMessageExceptSelf(roomId, &message.S2C_RecordGameOperate{
+			OperateInfo: msg.OperateInfo,
+		}, playerId)
+		agent.WriteMsgWithSeq(response, args[2].(uint32))
 	}
-
-	log.Debug("收到C2S_RecordGameOperate消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	// TODO: 实现具体的业务逻辑
 }

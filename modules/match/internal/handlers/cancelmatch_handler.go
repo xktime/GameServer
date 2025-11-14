@@ -1,15 +1,17 @@
-
 package handlers
 
 import (
+	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/game"
+	"gameserver/modules/match/internal/managers"
 )
 
 // C2S_CancelMatchHandler 处理C2S_CancelMatch消息
 func C2S_CancelMatchHandler(args []interface{}) {
-	if len(args) < 3 {
+	if len(args) < 2 {
 		log.Error("C2S_CancelMatchHandler: 参数不足")
 		return
 	}
@@ -26,12 +28,10 @@ func C2S_CancelMatchHandler(args []interface{}) {
 		return
 	}
 
-	seq, ok := args[2].(uint32)
-	if !ok {
-		log.Error("C2S_CancelMatchHandler: Seq类型错误")
-		return
+	log.Debug("收到C2S_CancelMatch消息: %v, agent: %v", msg, agent)
+	teamId, response := managers.GetMatchManager().HandleCancelMatch(agent)
+	if response.Result {
+		game.External.TeamManager.SendMessageExceptSelf(teamId, response, agent.UserData().(models.User).PlayerId)
 	}
-
-	log.Debug("收到C2S_CancelMatch消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	// TODO: 实现具体的业务逻辑
+	agent.WriteMsgWithSeq(response, args[2].(uint32))
 }

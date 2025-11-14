@@ -1,10 +1,11 @@
-
 package handlers
 
 import (
+	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/rank/internal/managers"
 )
 
 // C2S_GetMyHistoryRankHandler 处理C2S_GetMyHistoryRank消息
@@ -33,5 +34,7 @@ func C2S_GetMyHistoryRankHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_GetMyHistoryRank消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	// TODO: 实现具体的业务逻辑
+	playerId := agent.UserData().(models.User).PlayerId
+	response := managers.GetRankManager().GetMyHistoryRank(playerId)
+	agent.WriteMsgWithSeq(response, seq)
 }
