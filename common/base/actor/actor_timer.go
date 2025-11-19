@@ -11,6 +11,8 @@ type ActorTimer interface {
 	OnTimer()
 }
 
+var lastTickTime int64
+
 func OnTimer() {
 	actorsSnapshot := make(map[string]*TaskHandler, len(globalActorManager.taskHandlers))
 	globalActorManager.mu.RLock()
@@ -34,6 +36,13 @@ func OnTimer() {
 			}
 		}
 	}
+
+	// 因为跨天时间可能因为配置或者时区的不一致，不能使用cronExpr。直接每秒判断是否跨天
+	nowTimestamp := now.Unix()
+	if lastTickTime != 0 && utils.IsCrossDay(lastTickTime, nowTimestamp) {
+		OnCrossDay(nowTimestamp, actorsSnapshot)
+	}
+	lastTickTime = nowTimestamp
 }
 
 // OnCrossDayTimer 跨天定时器接口
@@ -82,16 +91,16 @@ func (c *OnCrossDayTimerImpl) OnCrossDay(timestamp int64) {
 	// 如果设置了owner，调用owner的DoOnCrossDay方法
 	// 这样就能确保调用到嵌入结构体（如Shop）实现的方法
 	if c.owner != nil {
-		c.owner.DoOnCrossDay()
 		if crossWeek {
 			c.owner.DoOnCrossWeek()
 		}
+		c.owner.DoOnCrossDay()
 	} else {
 		// 回退到默认实现
-		c.DoOnCrossDay()
 		if crossWeek {
 			c.DoOnCrossWeek()
 		}
+		c.DoOnCrossDay()
 	}
 
 	c.SetLastCrossDayTime(timestamp)
@@ -106,16 +115,7 @@ func (c *OnCrossDayTimerImpl) DoOnCrossWeek() {
 	log.Error("执行的默认跨周逻辑，应该被嵌入结构体重写")
 }
 
-func OnCrossDay(timestamp int64) {
-	actorsSnapshot := make(map[string]*TaskHandler, len(globalActorManager.taskHandlers))
-	globalActorManager.mu.RLock()
-	{
-		// 创建副本，同时保存key和meta
-		for key, meta := range globalActorManager.taskHandlers {
-			actorsSnapshot[key] = meta
-		}
-	}
-	globalActorManager.mu.RUnlock()
+func OnCrossDay(timestamp int64, actorsSnapshot map[string]*TaskHandler) {
 	for _, meta := range actorsSnapshot {
 		for _, a := range meta.actors {
 			if a == nil {

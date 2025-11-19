@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/db/mongodb"
-	"gameserver/common/event_dispatcher"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
@@ -26,7 +25,6 @@ type UserManager struct {
 	playerCache     map[int64]*player.Player // 玩家缓存
 	nameCache       map[string]bool          // 名称缓存，key: playerName, value: bool (true表示已存在)
 	nameBloomFilter *utils.BloomFilter       // 布隆过滤器，用于快速判断名称是否可能重复
-	lastTickTime    int64                    // 上次tick时间
 }
 
 var (
@@ -53,16 +51,6 @@ func (m *UserManager) Init(args ...any) {
 // Stop 停止UserManager
 func (m *UserManager) Stop() {
 	m.RemoveActor(m)
-}
-
-func (m *UserManager) OnTimer() {
-	m.SendTask(func() {
-		now := time.Now().Unix()
-		if m.lastTickTime != 0 && utils.IsCrossDay(m.lastTickTime, now) {
-			event_dispatcher.ChanRPC.Go("OnCrossDay", now)
-		}
-		m.lastTickTime = now
-	})
 }
 
 func (m *UserManager) GetInterval() int {
