@@ -7,15 +7,19 @@ import (
 	"gameserver/core/timer"
 )
 
+type ScheduleName string
+
+const (
+	ActorTimer ScheduleName = "ActorTimer"
+	ActorSaver ScheduleName = "ActorSaver"
+)
+
 // 保存一个全局的Cron引用，以便需要时可以停止
-var saveActorCron *timer.Cron
+var saveActorCron map[ScheduleName]*timer.Cron
 var dispatcher *timer.Dispatcher
 
 func Init() {
-	// 停止已有的定时任务（如果存在）
-	if saveActorCron != nil {
-		saveActorCron.Stop()
-	}
+	saveActorCron = make(map[ScheduleName]*timer.Cron)
 
 	// 创建dispatcher（如果不存在）
 	if dispatcher == nil {
@@ -47,16 +51,20 @@ func StartActorSaver(interval int) {
 		interval = 60 // 默认60秒
 	}
 
-	RegisterIntervalSchedule(interval, actor_manager.SaveAllActorData)
+	RegisterIntervalSchedule(ActorSaver, interval, actor_manager.SaveAllActorData)
 	log.Release("Actor自动保存任务已启动，间隔%d秒", interval)
 }
 
 func StartActorTimer(interval int) {
-	RegisterIntervalSchedule(interval, actor_manager.OnTimer)
+	RegisterIntervalSchedule(ActorTimer, interval, actor_manager.OnTimer)
 }
 
 // interval: 保存间隔（秒）
-func RegisterIntervalSchedule(interval int, f func()) {
+func RegisterIntervalSchedule(name ScheduleName, interval int, f func()) {
+	if _, ok := saveActorCron[name]; ok {
+		log.Error("定时任务 %s 已存在", name)
+		return
+	}
 	// 创建Cron表达式，每隔interval秒执行一次
 	cronExprStr := fmt.Sprintf("*/%d * * * * *", interval)
 	cronExpr, err := timer.NewCronExpr(cronExprStr)
@@ -66,5 +74,5 @@ func RegisterIntervalSchedule(interval int, f func()) {
 	}
 
 	// 设置定时任务
-	saveActorCron = dispatcher.CronFunc(cronExpr, f)
+	saveActorCron[name] = dispatcher.CronFunc(cronExpr, f)
 }
