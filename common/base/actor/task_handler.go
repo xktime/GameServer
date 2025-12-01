@@ -261,6 +261,15 @@ func (b *TaskHandler) SendTask(f interface{}) interface{} {
 		panic("SendTask: 参数必须是函数")
 	}
 
+	// 没有返回值，不等待执行完成
+	if fnType.NumOut() == 0 {
+		// 无返回值函数，直接异步执行，不等待结果
+		b.SendTaskAsync(func() {
+			fn.Call([]reflect.Value{})
+		})
+		return &Response{}
+	}
+
 	// 调用SendTask，但自动构造Response
 	response := b.sendTask(func() *Response {
 		// 调用传入的函数
