@@ -1,78 +1,85 @@
 package schedule
 
 import (
-	"fmt"
-	actor_manager "gameserver/common/base/actor"
 	"gameserver/core/log"
-	"gameserver/core/timer"
+	"time"
 )
 
 type ScheduleName string
 
 const (
-	ActorTimer ScheduleName = "ActorTimer"
-	ActorSaver ScheduleName = "ActorSaver"
+	ActorTimer    ScheduleName = "ActorTimer"
+	ActorSaver    ScheduleName = "ActorSaver"
+	FrameSync     ScheduleName = "FrameSync"
+	RoomSyncState ScheduleName = "RoomSyncState"
 )
 
-// 保存一个全局的Cron引用，以便需要时可以停止
-var saveActorCron map[ScheduleName]*timer.Cron
-var dispatcher *timer.Dispatcher
+var tickers = make(map[string]*time.Ticker)
+var stopChans = make(map[string]chan struct{})
 
 func Init() {
-	saveActorCron = make(map[ScheduleName]*timer.Cron)
+	RegisterAll()
+}
 
-	// 创建dispatcher（如果不存在）
-	if dispatcher == nil {
-		dispatcher = timer.NewDispatcher(100)
-		// 启动dispatcher的事件循环
-		go func() {
-			for {
-				t := <-dispatcher.ChanTimer
-				if t != nil {
-					t.Cb()
-				}
-			}
+func RegisterAll() {
+
+}
+
+func Register(name ScheduleName, intervalMs int64, f func()) {
+	startTicker(name, "", time.Duration(intervalMs)*time.Millisecond, f)
+}
+
+func RegisterByUid(name ScheduleName, uid string, intervalMs int64, f func()) {
+	startTicker(name, uid, time.Duration(intervalMs)*time.Millisecond, f)
+}
+
+func startTicker(name ScheduleName, uid string, d time.Duration, f func()) {
+	uniqueId := getUniqueId(name, uid)
+	if _, exists := tickers[uniqueId]; exists {
+		log.Error("定时任务 %s 已运行，跳过重复启动", uniqueId)
+		return
+	}
+	log.Release("定时任务 %s 已启动，间隔%d毫秒", uniqueId, d.Milliseconds())
+	ticker := time.NewTicker(d)
+	stopChan := make(chan struct{})
+	tickers[uniqueId] = ticker
+	stopChans[uniqueId] = stopChan
+
+	go func() {
+		defer func() {
+			ticker.Stop()
+			log.Release("定时任务 %s 已停止", uniqueId)
 		}()
-	}
 
-	Register()
+		for {
+			select {
+			case <-ticker.C:
+				// 在 goroutine 中执行，避免阻塞 ticker
+				go f()
+			case <-stopChan:
+				return
+			}
+		}
+	}()
 }
 
-func Register() {
-	// 启动Actor定时任务
-	StartActorTimer(1)
-	// 启动Actor定时保存任务
-	StartActorSaver(60)
+func StopSchedule(name ScheduleName) {
+	StopScheduleByUid(name, "")
 }
 
-// StartActorSaver 启动定时保存所有ActorData的任务
-func StartActorSaver(interval int) {
-	if interval <= 0 {
-		interval = 60 // 默认60秒
+func StopScheduleByUid(name ScheduleName, uid string) {
+	uniqueId := getUniqueId(name, uid)
+	if stopChan, ok := stopChans[uniqueId]; ok {
+		close(stopChan)
+		delete(tickers, uniqueId)
+		delete(stopChans, uniqueId)
 	}
-
-	RegisterIntervalSchedule(ActorSaver, interval, actor_manager.SaveAllActorData)
-	log.Release("Actor自动保存任务已启动，间隔%d秒", interval)
 }
 
-func StartActorTimer(interval int) {
-	RegisterIntervalSchedule(ActorTimer, interval, actor_manager.OnTimer)
-}
-
-// interval: 保存间隔（秒）
-func RegisterIntervalSchedule(name ScheduleName, interval int, f func()) {
-	if _, ok := saveActorCron[name]; ok {
-		log.Error("定时任务 %s 已存在", name)
-		return
+func getUniqueId(name ScheduleName, uid string) string {
+	uniqueId := string(name)
+	if uid != "" {
+		uniqueId += "_" + uid
 	}
-	// 创建Cron表达式，每隔interval秒执行一次
-	cronExprStr := fmt.Sprintf("*/%d * * * * *", interval)
-	cronExpr, err := timer.NewCronExpr(cronExprStr)
-	if err != nil {
-		log.Error("创建Cron表达式失败: %v", err)
-		return
-	}
-
-	// 设置定时任务
-	saveActorCron[name] = dispatcher.CronFunc(cronExpr, f)
+	return uniqueId
 }
