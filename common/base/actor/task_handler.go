@@ -251,6 +251,7 @@ func (b *TaskHandler) sendTask(f func() *Response) *Response {
 
 // SendTask 发送任务并等待结果
 // 自动处理Response构造和结果提取，支持任意返回值
+// 如果函数没有返回值，则直接进入队列执行，不等待返回结果
 func (b *TaskHandler) SendTask(f interface{}) interface{} {
 	// 使用反射调用函数并自动处理结果
 	fn := reflect.ValueOf(f)
@@ -261,7 +262,7 @@ func (b *TaskHandler) SendTask(f interface{}) interface{} {
 		panic("SendTask: 参数必须是函数")
 	}
 
-	// 没有返回值，不等待执行完成
+	// 检查函数是否有返回值
 	if fnType.NumOut() == 0 {
 		// 无返回值函数，直接异步执行，不等待结果
 		b.SendTaskAsync(func() {
@@ -385,19 +386,16 @@ func (b *TaskHandler) Start() {
 
 func (b *TaskHandler) Stop() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	// 检查状态，避免重复停止
 	if b.state == ActorStateStopped {
+		b.mu.Unlock()
 		return
 	}
 
 	// 如果已经在停止中，等待完成
 	if b.state == ActorStateStopping {
-		// 释放锁，等待停止完成
 		b.mu.Unlock()
-		b.wg.Wait()
-		b.mu.Lock()
 		return
 	}
 
@@ -407,11 +405,11 @@ func (b *TaskHandler) Stop() {
 	// 关闭任务队列（不再接受新任务）
 	close(b.taskQueue)
 
-	// 注意：不立即取消context，让队列中的任务继续执行
-
 	// 释放锁，等待所有goroutine完成（包括处理队列中剩余的任务）
 	b.mu.Unlock()
 	b.wg.Wait()
+
+	// 重新获取锁以完成剩余的清理工作
 	b.mu.Lock()
 
 	// 现在取消context（此时所有任务已完成）
@@ -430,13 +428,16 @@ func (b *TaskHandler) Stop() {
 	// 清理所有 Actor 引用
 	b.actors = make(map[string]IActor)
 
+	// 标记为已停止
+	b.state = ActorStateStopped
+
+	// 释放锁，以便Unregister可以获取锁
+	b.mu.Unlock()
+
 	// 从Actor管理器注销
 	if b.id != "" {
 		Unregister(b.id)
 	}
-
-	// 标记为已停止
-	b.state = ActorStateStopped
 }
 
 func (b *TaskHandler) Processor() {
@@ -495,7 +496,7 @@ func (b *TaskHandler) RemoveActor(a any) {
 
 	// 如果没有 Actor 了，异步停止 TaskHandler（避免死锁）
 	if shouldStop {
-		go b.Stop() // 使用 goroutine 异步停止，避免死锁
+		b.Stop() // 使用 goroutine 异步停止，避免死锁
 	}
 }
 

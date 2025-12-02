@@ -62,6 +62,9 @@ func GetHandler(name string) (*TaskHandler, bool) {
 	defer globalActorManager.mu.RUnlock()
 
 	taskHandler, exists := globalActorManager.taskHandlers[name]
+	if exists && !taskHandler.IsRunning() {
+		return nil, false
+	}
 	return taskHandler, exists
 }
 
