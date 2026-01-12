@@ -69,8 +69,6 @@ func (cm *ConnectManager) doUpdateHeartbeat(agent gate.Agent) {
 		LastHeartbeat: time.Now(),
 		Agent:         agent,
 	}
-
-	log.Debug("更新客户端心跳: %s", clientID)
 }
 
 // RemoveClient 移除客户端 - 异步执行

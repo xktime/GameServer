@@ -9,7 +9,7 @@ import (
 // 测试超时机制
 func TestTaskTimeout(t *testing.T) {
 	// 初始化Actor管理器，设置2秒超时
-	Init(200) // 2秒超时
+	Init(2000) // 2秒超时
 
 	// 创建一个测试用的TaskHandler
 	ctx, cancel := context.WithCancel(context.Background())
