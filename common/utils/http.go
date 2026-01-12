@@ -6,8 +6,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
-
-	"moul.io/http2curl"
 )
 
 var client = &http.Client{}
@@ -32,9 +30,6 @@ func HttpDo(ctx context.Context, uri string, method string, bodyStr string, prot
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	command, _ := http2curl.GetCurlCommand(req)
-	println("curl: ", command.String())
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -64,8 +59,5 @@ func HttpDo(ctx context.Context, uri string, method string, bodyStr string, prot
 		// handle error
 		return "", err
 	}
-
-	println("http utils get ", string(body))
-	println("", resp.Header.Get("X-Tt-Logid"))
 	return string(body), nil
 }

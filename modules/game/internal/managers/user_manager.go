@@ -83,13 +83,6 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 		// 处理顶号逻辑：先让旧用户下线
 		m.doUserOffline(*existingUser, true)
 	}
-	if _, exists := m.getUserFromCache(accountId); exists {
-		log.Debug("UserLogin: user already online (顶号操作): %s", accountId)
-		// 处理顶号逻辑：先让旧用户下线
-		return &message.S2C_Login{
-			LoginResult: -1,
-		}
-	}
 
 	// 2. 从数据库查询用户
 	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openId, "ServerId": serverId})

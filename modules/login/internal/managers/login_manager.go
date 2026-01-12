@@ -40,19 +40,7 @@ func (m *LoginManager) Stop() {
 
 // HandleLogin 处理登录请求 - 异步执行
 func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
-	result := m.SendTask(func() *message.S2C_Login {
-		return m.doHandleLogin(msg, agent)
-	})
-
-	if err, ok := result.(error); ok {
-		log.Error("处理登录失败: %v", err)
-		return nil
-	}
-
-	if loginResp, ok := result.(*message.S2C_Login); ok {
-		return loginResp
-	}
-	return nil
+	return m.doHandleLogin(msg, agent)
 }
 
 // doHandleLogin 处理登录请求的同步实现
