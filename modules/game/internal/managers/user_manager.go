@@ -110,11 +110,14 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 		if utils.IsCrossDay(user.LastOfflineTime, time.Now().Unix()) {
 			user.TotalLoginDays++
 		}
-		log.Debug("UserLogin old user: %v", user)
+		// 老用户流程
+		if utils.IsCrossDay(user.LastOfflineTime, time.Now().Unix()) {
+			user.TotalLoginDays++
+		}
 	}
 
 	user.LoginTime = time.Now().Unix()
-	log.Debug("user login: %s", user.AccountId)
+	log.Debug("user login: %s, isNew: %v", user.AccountId, isNew)
 
 	// 设置用户数据到agent
 	agent.SetUserData(*user)
