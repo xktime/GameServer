@@ -13,6 +13,7 @@ type User struct {
 	LastOfflineTime int64             `bson:"LastOfflineTime" default:"0"`
 	LoginTime       int64             `bson:"LoginTime" default:"0"`
 	TotalLoginDays  int32             `bson:"TotalLoginDays" default:"0"`
+	CreateTime      int64             `bson:"CreateTime" default:"0"`
 }
 
 func (u User) GetPersistId() interface{} {

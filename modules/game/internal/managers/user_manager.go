@@ -103,6 +103,7 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 			PlayerId:       utils.FlakeId(),
 			Platform:       loginType,
 			TotalLoginDays: 1,
+			CreateTime:     time.Now().Unix(),
 		}
 	} else {
 		// 老用户流程
