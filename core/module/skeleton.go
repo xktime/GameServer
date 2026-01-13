@@ -115,7 +115,15 @@ func (s *Skeleton) RegisterChanRPC(id interface{}, f interface{}) {
 		panic("invalid ChanRPCServer")
 	}
 
-	s.server.Register(id, f)
+	s.server.Register(id, f, false)
+}
+
+func (s *Skeleton) RegisterAsyncChanRPC(id interface{}, f interface{}) {
+	if s.ChanRPCServer == nil {
+		panic("invalid ChanRPCServer")
+	}
+
+	s.server.Register(id, f, true)
 }
 
 func (s *Skeleton) RegisterCommand(name string, help string, f interface{}) {

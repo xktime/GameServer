@@ -9,7 +9,7 @@ import (
 )
 
 func handleMsg(m proto.Message, h interface{}) {
-	skeleton.RegisterChanRPC(reflect.TypeOf(m), h)
+	skeleton.RegisterAsyncChanRPC(reflect.TypeOf(m), h)
 }
 
 func InitHandler() {

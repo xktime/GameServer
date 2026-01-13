@@ -16,21 +16,21 @@ func Example() {
 	go func() {
 		s.Register("f0", func(args []interface{}) {
 
-		})
+		}, false)
 
 		s.Register("f1", func(args []interface{}) interface{} {
 			return 1
-		})
+		}, false)
 
 		s.Register("fn", func(args []interface{}) []interface{} {
 			return []interface{}{1, 2, 3}
-		})
+		}, false)
 
 		s.Register("add", func(args []interface{}) interface{} {
 			n1 := args[0].(int)
 			n2 := args[1].(int)
 			return n1 + n2
-		})
+		}, false)
 
 		wg.Done()
 

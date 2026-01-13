@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"gameserver/core/chanrpc"
 	"gameserver/core/conf"
-	"gameserver/core/log"
+	"log"
+
 	"os"
 	"path"
 	"runtime/pprof"
@@ -67,7 +68,7 @@ func Register(name string, help string, f interface{}, server *chanrpc.Server) {
 		}
 	}
 
-	server.Register(name, f)
+	server.Register(name, f, false)
 
 	c := new(ExternalCommand)
 	c._name = name

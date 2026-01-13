@@ -2,9 +2,10 @@ package chanrpc
 
 import (
 	"errors"
-	"fmt"
 	"gameserver/core/conf"
 	"gameserver/core/log"
+
+	"fmt"
 	"runtime"
 )
 
@@ -17,8 +18,13 @@ type Server struct {
 	// func(args []interface{})
 	// func(args []interface{}) interface{}
 	// func(args []interface{}) []interface{}
-	functions map[interface{}]interface{}
+	functions map[interface{}]*FuncInfo
 	ChanCall  chan *CallInfo
+}
+
+type FuncInfo struct {
+	f     interface{}
+	async bool
 }
 
 type CallInfo struct {
@@ -26,6 +32,7 @@ type CallInfo struct {
 	args    []interface{}
 	chanRet chan *RetInfo
 	cb      interface{}
+	async   bool
 }
 
 type RetInfo struct {
@@ -50,7 +57,7 @@ type Client struct {
 
 func NewServer(l int) *Server {
 	s := new(Server)
-	s.functions = make(map[interface{}]interface{})
+	s.functions = make(map[interface{}]*FuncInfo)
 	s.ChanCall = make(chan *CallInfo, l)
 	return s
 }
@@ -64,7 +71,7 @@ func assert(i interface{}) []interface{} {
 }
 
 // you must call the function before calling Open and Go
-func (s *Server) Register(id interface{}, f interface{}) {
+func (s *Server) Register(id interface{}, f interface{}, async bool) {
 	switch f.(type) {
 	case func([]interface{}):
 	case func([]interface{}) interface{}:
@@ -77,7 +84,10 @@ func (s *Server) Register(id interface{}, f interface{}) {
 		panic(fmt.Sprintf("function id %v: already registered", id))
 	}
 
-	s.functions[id] = f
+	s.functions[id] = &FuncInfo{
+		f:     f,
+		async: async,
+	}
 }
 
 func (s *Server) ret(ci *CallInfo, ri *RetInfo) (err error) {
@@ -115,12 +125,25 @@ func (s *Server) exec(ci *CallInfo) (err error) {
 	switch ci.f.(type) {
 	case func([]interface{}):
 		ci.f.(func([]interface{}))(ci.args)
+		if ci.async {
+			go s.ret(ci, &RetInfo{})
+			return nil
+		}
 		return s.ret(ci, &RetInfo{})
+
 	case func([]interface{}) interface{}:
 		ret := ci.f.(func([]interface{}) interface{})(ci.args)
+		if ci.async {
+			go s.ret(ci, &RetInfo{ret: ret})
+			return nil
+		}
 		return s.ret(ci, &RetInfo{ret: ret})
 	case func([]interface{}) []interface{}:
 		ret := ci.f.(func([]interface{}) []interface{})(ci.args)
+		if ci.async {
+			go s.ret(ci, &RetInfo{ret: ret})
+			return nil
+		}
 		return s.ret(ci, &RetInfo{ret: ret})
 	}
 
@@ -146,8 +169,9 @@ func (s *Server) Go(id interface{}, args ...interface{}) {
 	}()
 
 	s.ChanCall <- &CallInfo{
-		f:    f,
-		args: args,
+		f:     f.f,
+		args:  args,
+		async: f.async,
 	}
 }
 
@@ -213,14 +237,14 @@ func (c *Client) call(ci *CallInfo, block bool) (err error) {
 	return
 }
 
-func (c *Client) f(id interface{}, n int) (f interface{}, err error) {
+func (c *Client) f(id interface{}, n int) (funcInfo *FuncInfo, err error) {
 	if c.s == nil {
 		err = errors.New("server not attached")
 		return
 	}
 
-	f = c.s.functions[id]
-	if f == nil {
+	funcInfo = c.s.functions[id]
+	if funcInfo == nil {
 		err = fmt.Errorf("function id %v: function not registered", id)
 		return
 	}
@@ -228,11 +252,11 @@ func (c *Client) f(id interface{}, n int) (f interface{}, err error) {
 	var ok bool
 	switch n {
 	case 0:
-		_, ok = f.(func([]interface{}))
+		_, ok = funcInfo.f.(func([]interface{}))
 	case 1:
-		_, ok = f.(func([]interface{}) interface{})
+		_, ok = funcInfo.f.(func([]interface{}) interface{})
 	case 2:
-		_, ok = f.(func([]interface{}) []interface{})
+		_, ok = funcInfo.f.(func([]interface{}) []interface{})
 	default:
 		panic("bug")
 	}
@@ -250,9 +274,10 @@ func (c *Client) Call0(id interface{}, args ...interface{}) error {
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		f:       f.f,
 		args:    args,
 		chanRet: c.chanSyncRet,
+		async:   f.async,
 	}, true)
 	if err != nil {
 		return err
@@ -269,9 +294,10 @@ func (c *Client) Call1(id interface{}, args ...interface{}) (interface{}, error)
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		f:       f.f,
 		args:    args,
 		chanRet: c.chanSyncRet,
+		async:   f.async,
 	}, true)
 	if err != nil {
 		return nil, err
@@ -288,9 +314,10 @@ func (c *Client) CallN(id interface{}, args ...interface{}) ([]interface{}, erro
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		f:       f.f,
 		args:    args,
 		chanRet: c.chanSyncRet,
+		async:   f.async,
 	}, true)
 	if err != nil {
 		return nil, err
@@ -308,10 +335,11 @@ func (c *Client) asynCall(id interface{}, args []interface{}, cb interface{}, n 
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		f:       f.f,
 		args:    args,
 		chanRet: c.ChanAsynRet,
 		cb:      cb,
+		async:   f.async,
 	}, false)
 	if err != nil {
 		c.ChanAsynRet <- &RetInfo{err: err, cb: cb}
