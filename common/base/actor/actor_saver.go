@@ -20,20 +20,8 @@ type TypeCache struct {
 
 // 全局类型缓存实例
 var globalTypeCache = &TypeCache{
-	maxSize: 100000,
+	maxSize: 10000,
 }
-
-// 保存统计信息
-type SaveStats struct {
-	TotalActors  int64
-	SavedActors  int64
-	FailedActors int64
-	BatchCount   int64
-	SaveDuration time.Duration
-	LastSaveTime time.Time
-}
-
-var saveStats SaveStats
 var statsMu sync.RWMutex
 
 // GetType 获取类型，如果不存在则创建并缓存
@@ -140,20 +128,6 @@ func ForceCleanupTypeCache() {
 	log.Debug("强制清理完成，共清理 %d 个缓存条目", deletedCount)
 }
 
-// GetSaveStats 获取保存统计信息
-func GetSaveStats() SaveStats {
-	statsMu.RLock()
-	defer statsMu.RUnlock()
-	return saveStats
-}
-
-// ResetSaveStats 重置保存统计信息
-func ResetSaveStats() {
-	statsMu.Lock()
-	defer statsMu.Unlock()
-	saveStats = SaveStats{}
-}
-
 // SaveAllActorData 保存所有实现了ActorData接口的Actor
 // 使用快照方式避免长时间加锁，容忍部分数据可能未保存
 func SaveAllActorData() {
@@ -192,13 +166,6 @@ func SaveAllActorData() {
 		}
 	}
 
-	// 更新统计信息
-	statsMu.Lock()
-	saveStats.TotalActors = int64(totalActors)
-	saveStats.BatchCount = int64(len(typeGroup))
-	saveStats.LastSaveTime = startTime
-	statsMu.Unlock()
-
 	// 对每个类型进行批量保存
 	savedCount := 0
 	failedCount := 0
@@ -211,11 +178,6 @@ func SaveAllActorData() {
 
 	// 更新最终统计信息
 	duration := time.Since(startTime)
-	statsMu.Lock()
-	saveStats.SavedActors = int64(savedCount)
-	saveStats.FailedActors = int64(failedCount)
-	saveStats.SaveDuration = duration
-	statsMu.Unlock()
 
 	log.Debug("Actor数据保存完成: 总数=%d, 成功=%d, 失败=%d, 批次=%d, 耗时=%v",
 		totalActors, savedCount, failedCount, len(typeGroup), duration)
