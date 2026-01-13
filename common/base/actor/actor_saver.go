@@ -13,14 +13,16 @@ import (
 
 // TypeCache 类型缓存结构，提供线程安全的类型缓存
 type TypeCache struct {
-	cache   sync.Map
-	size    int64
-	maxSize int64
+	cache         sync.Map
+	size          int64
+	maxSize       int64
+	saveBatchSize int64
 }
 
 // 全局类型缓存实例
 var globalTypeCache = &TypeCache{
-	maxSize: 10000,
+	maxSize:       10000,
+	saveBatchSize: 1000,
 }
 var statsMu sync.RWMutex
 
@@ -221,28 +223,44 @@ func batchSaveActorData(actorType reflect.Type, dataList []mongodb.PersistData) 
 		return 0, 0
 	}
 
-	// 使用接口切片并依赖MongoDB驱动的处理
-	result, err := mongodb.BulkSave(dataList)
+	totalSuccess := 0
+	totalFailed := 0
 
-	// 处理结果
-	if err != nil {
-		log.Error("批量保存%s类型Actor失败: %v, 数据量: %d", actorType.Name(), err, len(dataList))
-		return 0, len(dataList)
+	// 分批处理数据
+	for i := 0; i < len(dataList); i += int(globalTypeCache.saveBatchSize) {
+		end := i + int(globalTypeCache.saveBatchSize)
+		if end > len(dataList) {
+			end = len(dataList)
+		}
+
+		batch := dataList[i:end]
+
+		// 使用接口切片并依赖MongoDB驱动的处理
+		result, err := mongodb.BulkSave(batch)
+
+		if err != nil {
+			log.Error("批量保存%s类型Actor失败: %v, 数据量: %d", actorType.Name(), err, len(batch))
+			totalFailed += len(batch)
+			continue
+		}
+
+		// 计算成功和失败的数量
+		successCount := int(result.UpsertedCount + result.ModifiedCount)
+		failedCount := len(batch) - successCount
+
+		totalSuccess += successCount
+		totalFailed += failedCount
+
+		if failedCount > 0 {
+			log.Error("批量保存%s类型Actor部分失败: 成功=%d, 失败=%d, 总数=%d",
+				actorType.Name(), successCount, failedCount, len(batch))
+		} else {
+			log.Debug("批量保存%s类型Actor完成: UpsertedCount=%d, ModifiedCount=%d, 总数=%d",
+				actorType.Name(), result.UpsertedCount, result.ModifiedCount, len(batch))
+		}
 	}
 
-	// 计算成功和失败的数量
-	successCount := int(result.UpsertedCount + result.ModifiedCount)
-	failedCount := len(dataList) - successCount
-
-	if failedCount > 0 {
-		log.Error("批量保存%s类型Actor部分失败: 成功=%d, 失败=%d, 总数=%d",
-			actorType.Name(), successCount, failedCount, len(dataList))
-	} else {
-		log.Debug("批量保存%s类型Actor完成: UpsertedCount=%d, ModifiedCount=%d, 总数=%d",
-			actorType.Name(), result.UpsertedCount, result.ModifiedCount, len(dataList))
-	}
-
-	return successCount, failedCount
+	return totalSuccess, totalFailed
 }
 
 // SaveActorDataByType 按类型保存Actor数据
