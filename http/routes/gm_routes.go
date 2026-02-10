@@ -13,6 +13,7 @@ func SetupBaseRoutes(router *gin.Engine, gmHandler *handlers.GmHandler) {
 	router.Use(middleware.Logger())
 	router.Use(middleware.Recovery())
 	router.Use(middleware.CORS())
+	router.Use(middleware.RequestSizeLimiterDefault())
 
 	// API路由组
 	// api := router.Group("/api/v1")

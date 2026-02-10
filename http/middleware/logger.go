@@ -17,11 +17,11 @@ func GetLogLevel() logrus.Level {
 	switch conf.LogLevel {
 	case "debug":
 		return logrus.DebugLevel
-	case "info":
+	case "release":
 		return logrus.InfoLevel
-	case "warn":
-		return logrus.WarnLevel
 	case "error":
+		return logrus.WarnLevel
+	case "fatal":
 		return logrus.ErrorLevel
 	default:
 		return logrus.FatalLevel
