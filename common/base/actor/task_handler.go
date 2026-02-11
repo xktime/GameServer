@@ -186,16 +186,7 @@ func getGoroutineID() int64 {
 }
 
 // SendTask 发送任务到队列，支持超时机制
-func (b *TaskHandler) sendTask(f func() *Response) *Response {
-	// 检查是否已停止或正在停止
-	state := b.GetState()
-	if state != ActorStateRunning {
-		return &Response{
-			Result: nil,
-			Error:  fmt.Errorf("actor is not accepting new tasks, current state: %v", state),
-		}
-	}
-
+func (b *TaskHandler) sendTask(f func() *Response, isReentrant bool) *Response {
 	// 检查context是否已取消
 	if b.ctx.Err() != nil {
 		return &Response{
@@ -204,15 +195,18 @@ func (b *TaskHandler) sendTask(f func() *Response) *Response {
 		}
 	}
 
-	// 检测重入调用
-	currentGoroutineID := getGoroutineID()
-	b.muReentrant.Lock()
-	isReentrant := b.processingGoroutineID == currentGoroutineID
-	b.muReentrant.Unlock()
-
 	if isReentrant {
 		// 重入调用，直接执行任务，避免死锁
 		return f()
+	}
+
+	// 检查是否已停止或正在停止
+	state := b.GetState()
+	if state != ActorStateRunning {
+		return &Response{
+			Result: nil,
+			Error:  fmt.Errorf("actor is not accepting new tasks, current state: %v", state),
+		}
 	}
 
 	task := &TaskQueue{
@@ -262,12 +256,22 @@ func (b *TaskHandler) SendTask(f interface{}) interface{} {
 		panic("SendTask: 参数必须是函数")
 	}
 
+	// 检测重入调用
+	currentGoroutineID := getGoroutineID()
+	b.muReentrant.Lock()
+	isReentrant := b.processingGoroutineID == currentGoroutineID
+	b.muReentrant.Unlock()
+
 	// 检查函数是否有返回值
 	if fnType.NumOut() == 0 {
-		// 无返回值函数，直接异步执行，不等待结果
-		b.SendTaskAsync(func() {
+		// 无返回值，如果是重入，直接执行；不是，放队列异步执行
+		if isReentrant {
 			fn.Call([]reflect.Value{})
-		})
+		} else {
+			b.SendTaskAsync(func() {
+				fn.Call([]reflect.Value{})
+			})
+		}
 		return &Response{}
 	}
 
@@ -312,7 +316,7 @@ func (b *TaskHandler) SendTask(f interface{}) interface{} {
 		}
 
 		return response
-	})
+	}, isReentrant)
 
 	// 自动提取结果
 	if response.Error != nil {

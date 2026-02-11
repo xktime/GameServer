@@ -1725,3 +1725,371 @@ func TestNewActorSystem_StressTest(t *testing.T) {
 		actors[i].Stop()
 	}
 }
+
+// TestNewActorSystem_ReentrantCall 测试重入调用是否会阻塞
+func TestNewActorSystem_ReentrantCall(t *testing.T) {
+	actor.Init(2000)
+
+	// 创建测试Actor
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "reentrant_test")
+
+	fmt.Printf("=== 重入调用测试 ===\n")
+
+	// 测试在任务内部再次调用SendTask（重入调用）
+	response := testActor.SendTask(func() *actor.Response {
+		testActor.addMessage("outer_call")
+		fmt.Printf("外层调用开始\n")
+
+		// 重入调用：在任务内部再次调用SendTask
+		innerResponse := testActor.SendTask(func() *actor.Response {
+			testActor.addMessage("inner_call")
+			fmt.Printf("内层调用执行\n")
+			return &actor.Response{
+				Result: []interface{}{"inner_result"},
+			}
+		})
+
+		fmt.Printf("外层调用完成\n")
+		innerResp := innerResponse.(*actor.Response)
+		assert.NotNil(t, innerResp)
+		assert.Equal(t, "inner_result", innerResp.Result[0])
+
+		return &actor.Response{
+			Result: []interface{}{"outer_result"},
+		}
+	})
+
+	// 验证外层调用的响应
+	outerResp := response.(*actor.Response)
+	assert.NotNil(t, outerResp)
+	assert.Equal(t, "outer_result", outerResp.Result[0])
+
+	// 验证消息顺序：外层调用先添加消息，然后内层调用添加消息
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, 2)
+	assert.Equal(t, "outer_call", messages[0])
+	assert.Equal(t, "inner_call", messages[1])
+
+	fmt.Printf("重入调用测试完成：无阻塞，消息按顺序执行\n")
+
+	testActor.Stop()
+}
+
+// TestNewActorSystem_NestedReentrantCall 测试嵌套重入调用
+func TestNewActorSystem_NestedReentrantCall(t *testing.T) {
+	actor.Init(2000)
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "nested_reentrant_test")
+
+	fmt.Printf("=== 嵌套重入调用测试 ===\n")
+
+	// 测试多层嵌套的重入调用
+	response := testActor.SendTask(func() *actor.Response {
+		testActor.addMessage("level_1")
+		fmt.Printf("第1层调用\n")
+
+		// 第二层重入调用
+		response2 := testActor.SendTask(func() *actor.Response {
+			testActor.addMessage("level_2")
+			fmt.Printf("第2层调用\n")
+
+			// 第三层重入调用
+			response3 := testActor.SendTask(func() *actor.Response {
+				testActor.addMessage("level_3")
+				fmt.Printf("第3层调用\n")
+				return &actor.Response{
+					Result: []interface{}{"level_3_result"},
+				}
+			})
+
+			resp3 := response3.(*actor.Response)
+			assert.NotNil(t, resp3)
+			assert.Equal(t, "level_3_result", resp3.Result[0])
+
+			return &actor.Response{
+				Result: []interface{}{"level_2_result"},
+			}
+		})
+
+		resp2 := response2.(*actor.Response)
+		assert.NotNil(t, resp2)
+		assert.Equal(t, "level_2_result", resp2.Result[0])
+
+		return &actor.Response{
+			Result: []interface{}{"level_1_result"},
+		}
+	})
+
+	// 验证最外层响应
+	resp1 := response.(*actor.Response)
+	assert.NotNil(t, resp1)
+	assert.Equal(t, "level_1_result", resp1.Result[0])
+
+	// 验证消息顺序：应该按照调用顺序执行
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, 3)
+	assert.Equal(t, "level_1", messages[0])
+	assert.Equal(t, "level_2", messages[1])
+	assert.Equal(t, "level_3", messages[2])
+
+	fmt.Printf("嵌套重入调用测试完成：3层嵌套无阻塞\n")
+
+	testActor.Stop()
+}
+
+// TestNewActorSystem_AsyncCallOrder 测试无返回值的异步调用是否按顺序执行
+func TestNewActorSystem_AsyncCallOrder(t *testing.T) {
+	actor.Init(2000)
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "async_order_test")
+
+	fmt.Printf("=== 异步调用顺序测试 ===\n")
+
+	// 使用SendTaskAsync发送多个无返回值的任务
+	messageCount := 100
+	for i := 0; i < messageCount; i++ {
+		index := i // 捕获循环变量
+		success := testActor.SendTaskAsync(func() {
+			testActor.addMessage(fmt.Sprintf("async_msg_%03d", index))
+		})
+		assert.True(t, success, "SendTaskAsync should succeed")
+	}
+
+	// 等待所有异步任务完成
+	time.Sleep(500 * time.Millisecond)
+
+	// 验证消息按顺序执行
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, messageCount)
+
+	// 验证消息顺序
+	for i := 0; i < messageCount; i++ {
+		expected := fmt.Sprintf("async_msg_%03d", i)
+		assert.Equal(t, expected, messages[i], "Message at index %d should be %s", i, expected)
+	}
+
+	fmt.Printf("异步调用顺序测试完成：%d条消息按顺序执行\n", messageCount)
+
+	testActor.Stop()
+}
+
+// TestNewActorSystem_MixedSyncAsyncOrder 测试同步和异步调用混合时的顺序
+func TestNewActorSystem_MixedSyncAsyncOrder(t *testing.T) {
+	actor.Init(2000)
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "mixed_order_test")
+
+	fmt.Printf("=== 同步异步混合顺序测试 ===\n")
+
+	// 交替发送同步和异步任务
+	for i := 0; i < 50; i++ {
+		// 发送异步任务
+		index := i
+		success := testActor.SendTaskAsync(func() {
+			testActor.addMessage(fmt.Sprintf("async_%03d", index))
+		})
+		assert.True(t, success)
+
+		// 发送同步任务
+		response := testActor.SendTask(func() *actor.Response {
+			testActor.addMessage(fmt.Sprintf("sync_%03d", index))
+			return &actor.Response{
+				Result: []interface{}{fmt.Sprintf("sync_%03d", index)},
+			}
+		})
+		assert.NotNil(t, response)
+	}
+
+	// 等待所有任务完成
+	time.Sleep(500 * time.Millisecond)
+
+	// 验证消息数量
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, 100) // 50 async + 50 sync
+
+	// 验证消息顺序：应该是 async_0, sync_0, async_1, sync_1, ...
+	for i := 0; i < 50; i++ {
+		expectedAsync := fmt.Sprintf("async_%03d", i)
+		expectedSync := fmt.Sprintf("sync_%03d", i)
+		assert.Equal(t, expectedAsync, messages[i*2], "Async message at index %d", i*2)
+		assert.Equal(t, expectedSync, messages[i*2+1], "Sync message at index %d", i*2+1)
+	}
+
+	fmt.Printf("同步异步混合顺序测试完成：消息严格按发送顺序执行\n")
+
+	testActor.Stop()
+}
+
+// TestNewActorSystem_ReentrantWithAsync 测试重入调用中包含异步调用
+func TestNewActorSystem_ReentrantWithAsync(t *testing.T) {
+	actor.Init(2000)
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "reentrant_async_test")
+
+	fmt.Printf("=== 重入调用包含异步调用测试 ===\n")
+
+	// 在同步任务中发送异步任务
+	response := testActor.SendTask(func() *actor.Response {
+		testActor.addMessage("sync_outer")
+
+		// 在同步任务内部发送异步任务
+		for i := 0; i < 5; i++ {
+			index := i
+			testActor.SendTask(func() {
+				testActor.addMessage(fmt.Sprintf("async_inner_%d", index))
+			})
+		}
+
+		// 再发送一个同步任务
+		innerResponse := testActor.SendTask(func() *actor.Response {
+			testActor.addMessage("sync_inner")
+			return &actor.Response{
+				Result: []interface{}{"sync_inner_result"},
+			}
+		})
+		innerResp := innerResponse.(*actor.Response)
+		assert.NotNil(t, innerResp)
+
+		return &actor.Response{
+			Result: []interface{}{"sync_outer_result"},
+		}
+	})
+
+	// 验证外层响应
+	outerResp := response.(*actor.Response)
+	assert.NotNil(t, outerResp)
+	assert.Equal(t, "sync_outer_result", outerResp.Result[0])
+
+	// 等待异步任务完成
+	time.Sleep(500 * time.Millisecond)
+
+	// 验证消息顺序
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, 7) // 1 sync_outer + 5 async_inner + 1 sync_inner
+
+	// 验证顺序：sync_outer, async_inner_0-4, sync_inner
+	assert.Equal(t, "sync_outer", messages[0])
+	for i := 0; i < 5; i++ {
+		assert.Equal(t, fmt.Sprintf("async_inner_%d", i), messages[i+1])
+	}
+	assert.Equal(t, "sync_inner", messages[6])
+
+	fmt.Printf("重入调用包含异步调用测试完成\n")
+
+	testActor.Stop()
+}
+
+// TestNewActorSystem_ConcurrentReentrantCalls 测试并发情况下的重入调用
+func TestNewActorSystem_ConcurrentReentrantCalls(t *testing.T) {
+	actor.Init(2000)
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "concurrent_reentrant_test")
+
+	fmt.Printf("=== 并发重入调用测试 ===\n")
+
+	var wg sync.WaitGroup
+	goroutineCount := 10
+
+	// 并发发送包含重入调用的任务
+	for i := 0; i < goroutineCount; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			response := testActor.SendTask(func() *actor.Response {
+				testActor.addMessage(fmt.Sprintf("outer_%d", id))
+
+				// 重入调用
+				innerResponse := testActor.SendTask(func() *actor.Response {
+					testActor.addMessage(fmt.Sprintf("inner_%d", id))
+					return &actor.Response{
+						Result: []interface{}{fmt.Sprintf("inner_%d", id)},
+					}
+				})
+
+				innerResp := innerResponse.(*actor.Response)
+				assert.NotNil(t, innerResp)
+
+				return &actor.Response{
+					Result: []interface{}{fmt.Sprintf("outer_%d", id)},
+				}
+			})
+
+			outerResp := response.(*actor.Response)
+			assert.NotNil(t, outerResp)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// 等待所有任务完成
+	time.Sleep(500 * time.Millisecond)
+
+	// 验证消息数量
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, goroutineCount*2) // 每个goroutine产生2条消息
+
+	// 验证每对消息的顺序（outer在前，inner在后）
+	outerCount := 0
+	innerCount := 0
+	for _, msg := range messages {
+		msgStr := msg.(string)
+		if len(msgStr) > 6 && msgStr[:6] == "outer_" {
+			outerCount++
+		} else if len(msgStr) > 6 && msgStr[:6] == "inner_" {
+			innerCount++
+		}
+	}
+	assert.Equal(t, goroutineCount, outerCount)
+	assert.Equal(t, goroutineCount, innerCount)
+
+	fmt.Printf("并发重入调用测试完成：%d个goroutine无阻塞\n", goroutineCount)
+
+	testActor.Stop()
+}
+
+// TestNewActorSystem_AsyncNoBlocking 测试大量异步调用不会阻塞
+func TestNewActorSystem_AsyncNoBlocking(t *testing.T) {
+	actor.Init(5000) // 增加队列大小
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "async_no_blocking_test")
+
+	fmt.Printf("=== 异步调用无阻塞测试 ===\n")
+
+	messageCount := 1000
+	start := time.Now()
+
+	// 快速发送大量异步任务
+	for i := 0; i < messageCount; i++ {
+		index := i
+		success := testActor.SendTaskAsync(func() {
+			testActor.addMessage(fmt.Sprintf("msg_%04d", index))
+			// 模拟一些处理时间
+			time.Sleep(1 * time.Millisecond)
+		})
+		assert.True(t, success, "SendTaskAsync should not block")
+	}
+
+	sendDuration := time.Since(start)
+	fmt.Printf("发送%d条异步消息耗时: %v\n", messageCount, sendDuration)
+
+	// SendTaskAsync应该很快返回（不阻塞）
+	assert.Less(t, sendDuration.Milliseconds(), int64(1000), "SendTaskAsync should not block")
+
+	// 等待所有任务完成
+	time.Sleep(3 * time.Second)
+
+	// 验证所有消息都被处理
+	messages := testActor.GetMessages()
+	assert.Len(t, messages, messageCount)
+
+	// 验证消息顺序
+	for i := 0; i < messageCount; i++ {
+		expected := fmt.Sprintf("msg_%04d", i)
+		assert.Equal(t, expected, messages[i])
+	}
+
+	fmt.Printf("异步调用无阻塞测试完成：%d条消息按顺序处理\n", messageCount)
+
+	testActor.Stop()
+}

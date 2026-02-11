@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// 默认限制为 10MB
-	DefaultMaxSize = 10 * 1024 * 1024
+	// 默认限制为 1MB
+	DefaultMaxSize = 1 * 1024 * 1024
 )
 
 // RequestSizeLimiter 限制请求体大小的中间件
@@ -42,7 +42,7 @@ func RequestSizeLimiter(maxSize int64) gin.HandlerFunc {
 	}
 }
 
-// RequestSizeLimiterDefault 使用默认大小限制(10MB)的中间件
+// RequestSizeLimiterDefault 使用默认大小限制(1MB)的中间件
 func RequestSizeLimiterDefault() gin.HandlerFunc {
 	return RequestSizeLimiter(DefaultMaxSize)
 }
