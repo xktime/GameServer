@@ -114,3 +114,29 @@ func TestBulkSave(t *testing.T) {
 
 	log.Release("批量保存测试成功")
 }
+
+type M struct {
+	ID   string            `bson:"_id"`
+	Name map[string]string `bson:"name"`
+	Age  int               `bson:"age"`
+}
+
+func (m M) AddName(name string) {
+	m.Name[name] = name
+}
+
+func (m M) ChangeAge(age int) {
+	m.Age = age
+}
+
+func TestM(t *testing.T) {
+	m := M{
+		ID:   "1",
+		Name: make(map[string]string),
+		Age:  18,
+	}
+
+	m.AddName("123")
+	m.ChangeAge(1)
+	fmt.Println(m)
+}

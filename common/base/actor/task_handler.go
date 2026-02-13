@@ -500,7 +500,7 @@ func (b *TaskHandler) RemoveActor(a any) {
 
 	// 如果没有 Actor 了，异步停止 TaskHandler（避免死锁）
 	if shouldStop {
-		b.Stop() // 使用 goroutine 异步停止，避免死锁
+		b.Stop()
 	}
 }
 
@@ -543,6 +543,8 @@ func getTaskHandler(ActorGroup ActorGroup, uniqueID interface{}, a IActor) *Task
 	id := getUniqueId(ActorGroup, uniqueID)
 	actorName := getActorName(a)
 	if taskHandler, ok := GetHandler(id); ok && !taskHandler.IsStopped() {
+		taskHandler.mu.Lock()
+		defer taskHandler.mu.Unlock()
 		taskHandler.actors[actorName] = a
 		return taskHandler
 	} else {

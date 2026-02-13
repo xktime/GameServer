@@ -2093,3 +2093,74 @@ func TestNewActorSystem_AsyncNoBlocking(t *testing.T) {
 
 	testActor.Stop()
 }
+
+// TestNewActorSystem_StopWithQueuedTasks 测试Actor关闭后队列中的任务会继续执行完成，但不接受新任务
+func TestNewActorSystem_StopWithQueuedTasks(t *testing.T) {
+	actor.Init(2000)
+
+	testActor := actor.RegisterActor[*NewTestActor](actor.Test1, "stop_queued_test")
+
+	fmt.Printf("=== Actor关闭后队列任务处理测试 ===\n")
+
+	// 发送大量异步任务到队列
+	taskCount := 100
+	for i := 0; i < taskCount; i++ {
+		index := i
+		success := testActor.SendTaskAsync(func() {
+			// 模拟一些处理时间
+			time.Sleep(5 * time.Millisecond)
+			testActor.addMessage(fmt.Sprintf("queued_msg_%03d", index))
+		})
+		assert.True(t, success, "SendTaskAsync should succeed before Stop")
+	}
+
+	fmt.Printf("已发送 %d 个任务到队列\n", taskCount)
+
+	// 立即调用Stop（此时队列中还有很多任务未处理）
+	go func() {
+		time.Sleep(50 * time.Millisecond) // 让一些任务开始处理
+		fmt.Printf("调用Stop，此时队列中还有任务未处理\n")
+		testActor.Stop()
+		fmt.Printf("Stop调用完成\n")
+	}()
+
+	// 等待Stop被调用
+	time.Sleep(100 * time.Millisecond)
+
+	// 尝试发送新任务（应该失败，因为Actor正在停止或已停止）
+	response := testActor.SendTask(func() *actor.Response {
+		testActor.addMessage("new_task_after_stop")
+		return &actor.Response{
+			Result: []interface{}{"should_not_work"},
+		}
+	})
+
+	// 验证新任务被拒绝
+	e, ok := response.(error)
+	assert.True(t, ok, "SendTask after Stop should return error")
+	assert.Error(t, e, "Should get error when sending task after Stop")
+	fmt.Printf("新任务被正确拒绝: %v\n", e)
+
+	// 等待所有队列中的任务完成
+	time.Sleep(2 * time.Second)
+
+	// 验证队列中的任务都被处理完成
+	messages := testActor.GetMessages()
+	fmt.Printf("处理的消息数量: %d\n", len(messages))
+
+	// 验证所有队列中的任务都被执行（不包括Stop后发送的任务）
+	assert.Equal(t, taskCount, len(messages), "All queued tasks should be processed")
+
+	// 验证没有"new_task_after_stop"消息
+	for _, msg := range messages {
+		assert.NotEqual(t, "new_task_after_stop", msg, "New task after Stop should not be processed")
+	}
+
+	// 验证消息顺序正确
+	for i := 0; i < taskCount; i++ {
+		expected := fmt.Sprintf("queued_msg_%03d", i)
+		assert.Equal(t, expected, messages[i], "Message order should be preserved")
+	}
+
+	fmt.Printf("Actor关闭后队列任务处理测试完成：队列中的%d个任务全部执行完成，新任务被拒绝\n", taskCount)
+}

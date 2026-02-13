@@ -49,4 +49,4 @@ coverage.txt
 dist/
 
 
-**.exe
+**.exe**
