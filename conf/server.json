@@ -24,7 +24,7 @@
         "IsSandBox": 0
     },
     "MongoDB": {
-        "Host": "mongodb://localhost:27017",
+        "Host": "mongodb://root:1234@localhost:27017/?authSource=admin",
         "Database": "test",
         "MinPoolSize": 10,
         "MaxPoolSize": 100

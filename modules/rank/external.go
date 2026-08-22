@@ -4,6 +4,7 @@ import (
 	"gameserver/common/event_dispatcher"
 	"gameserver/core/chanrpc"
 	"gameserver/core/module"
+	"gameserver/modules/game"
 	"gameserver/modules/rank/internal"
 	"gameserver/modules/rank/internal/managers"
 )
@@ -19,7 +20,7 @@ var External = &RankExternal{}
 func (m *RankExternal) InitExternal() {
 	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
-	m.RankManager = managers.GetRankManager()
+	m.RankManager = managers.RegisterRankManager(game.NewRankPlayerReader())
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 }
 

@@ -6,8 +6,8 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
 	"gameserver/core/log"
-	"gameserver/modules/game"
 	"gameserver/modules/rank/internal/models"
+	"gameserver/modules/rank/playerread"
 	"math"
 	"strconv"
 	"sync"
@@ -25,6 +25,7 @@ var types = []message.RankType{
 // RankManager 使用TaskHandler实现，确保排行榜操作按顺序执行
 type RankManager struct {
 	actor.BaseActor
+	players playerread.PlayerReader
 
 	// 内存缓存
 	PersistId          int64                                             `bson:"_id"`
@@ -34,20 +35,94 @@ type RankManager struct {
 	rankListCache      map[int64]map[message.RankType][]*models.RankItem `-`                           // playerId -> rankType -> rankData
 }
 
+type rankManagerFactory func(playerread.PlayerReader) *RankManager
+
+type rankManagerRegistry struct {
+	mu      sync.Mutex
+	started bool
+	ready   chan struct{}
+	manager *RankManager
+	failure any
+}
+
 var (
-	rankManager     *RankManager
-	rankManagerOnce sync.Once
+	rankManagerRegistration                    = &rankManagerRegistry{}
+	registerRankActor       rankManagerFactory = func(players playerread.PlayerReader) *RankManager {
+		return actor.RegisterActor[*RankManager](actor.Rank, "1", players)
+	}
 )
 
-func GetRankManager() *RankManager {
-	rankManagerOnce.Do(func() {
-		rankManager = actor.RegisterActor[*RankManager](actor.Rank, "1")
+func (r *rankManagerRegistry) register(create func() *RankManager) (manager *RankManager) {
+	r.mu.Lock()
+	if r.started {
+		r.mu.Unlock()
+		panic("rank: RegisterRankManager called more than once")
+	}
+	r.started = true
+	r.ready = make(chan struct{})
+	r.mu.Unlock()
+
+	defer func() {
+		failure := recover()
+		r.mu.Lock()
+		if failure == nil {
+			r.manager = manager
+		} else {
+			r.failure = failure
+		}
+		close(r.ready)
+		r.mu.Unlock()
+		if failure != nil {
+			panic(failure)
+		}
+	}()
+
+	manager = create()
+	return manager
+}
+
+func (r *rankManagerRegistry) get() *RankManager {
+	r.mu.Lock()
+	if !r.started {
+		r.mu.Unlock()
+		panic("rank: GetRankManager called before RegisterRankManager")
+	}
+	ready := r.ready
+	r.mu.Unlock()
+
+	<-ready
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failure != nil {
+		panic(r.failure)
+	}
+	return r.manager
+}
+
+func RegisterRankManager(players playerread.PlayerReader) *RankManager {
+	return rankManagerRegistration.register(func() *RankManager {
+		if players == nil {
+			panic("rank: RegisterRankManager requires PlayerReader")
+		}
+		return registerRankActor(players)
 	})
-	return rankManager
+}
+
+func GetRankManager() *RankManager {
+	return rankManagerRegistration.get()
 }
 
 // Init 初始化RankManager
 func (m *RankManager) Init(args ...any) {
+	if len(args) != 1 {
+		panic("rank: RankManager.Init requires PlayerReader")
+	}
+	players, ok := args[0].(playerread.PlayerReader)
+	if !ok || players == nil {
+		panic("rank: RankManager.Init received invalid PlayerReader")
+	}
+	m.players = players
+
 	// 从数据库加载排行榜数据
 	m.loadRankDataFromDB()
 
@@ -114,8 +189,8 @@ func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_Upda
 
 // doHandleUpdateRankData 更新排行榜数据的同步实现
 func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) *message.S2C_UpdateRankData {
-	player := game.External.UserManager.GetPlayer(playerId)
-	if player == nil {
+	playerSnapshot, ok := r.players.FindOnline(playerId)
+	if !ok {
 		return &message.S2C_UpdateRankData{Success: false}
 	}
 
@@ -129,10 +204,10 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 	// 创建新的排行榜项目
 	newItem := &models.RankItem{
 		PlayerId:   playerId,
-		PlayerName: player.PlayerInfo.PlayerName,
+		PlayerName: playerSnapshot.Name,
 		Score:      int64(req.Score),
-		Avatar:     player.PlayerInfo.GetAvatarURL(),
-		Level:      player.PlayerInfo.Level,
+		Avatar:     playerSnapshot.AvatarURL,
+		Level:      playerSnapshot.Level,
 		UpdateTime: time.Now(),
 		OtherInfos: make([]*message.OtherInfo, 0),
 	}
@@ -255,8 +330,7 @@ func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRank
 
 // doHandleGetRankList 获取排行榜列表的同步实现
 func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRankList) *message.S2C_GetRankList {
-	player := game.External.UserManager.GetPlayer(playerId)
-	if player == nil {
+	if _, ok := r.players.FindOnline(playerId); !ok {
 		return nil
 	}
 	// 参数验证
@@ -498,9 +572,8 @@ func (r *RankManager) HandleGetMyRank(playerId int64, rankType message.RankType,
 
 // doHandleGetMyRank 获取我的排名的同步实现
 func (r *RankManager) doHandleGetMyRank(playerId int64, rankType message.RankType, season int32) *message.S2C_GetMyRank {
-	player := game.External.UserManager.GetPlayer(playerId)
 	response := &message.S2C_GetMyRank{RankType: rankType}
-	if player == nil {
+	if _, ok := r.players.FindOnline(playerId); !ok {
 		return response
 	}
 	rankData := r.GetRankDataBySeason(message.RankType(rankType), season)

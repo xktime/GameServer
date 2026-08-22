@@ -4,6 +4,7 @@ import (
 	"gameserver/common/event_dispatcher"
 	"gameserver/core/chanrpc"
 	"gameserver/core/module"
+	"gameserver/modules/game"
 	"gameserver/modules/match/internal"
 	"gameserver/modules/match/internal/managers"
 )
@@ -19,7 +20,7 @@ var External = &MatchExternal{}
 func (m *MatchExternal) InitExternal() {
 	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
-	m.MatchManager = managers.GetMatchManager()
+	m.MatchManager = managers.RegisterMatchManager(game.NewMatchPlayerReader())
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 }
 

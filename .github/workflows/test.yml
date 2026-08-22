@@ -1,0 +1,38 @@
+name: Go tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: "1234"
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --username root --password 1234 --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test
+        env:
+          MONGODB_REQUIRED: "1"
+        run: go test ./...
+      - name: Race test critical packages
+        run: go test -race ./common/models ./modules/game ./modules/rank/internal/managers

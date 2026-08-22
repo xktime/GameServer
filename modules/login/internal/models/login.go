@@ -19,14 +19,13 @@ type LoginRequest struct {
 // - Unionid：用户在第三方平台下的全局唯一标识（同一用户在不同应用下的唯一ID），用于多应用间用户身份的统一。
 type LoginResponse struct {
 	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
+	ErrMsg        string `protobuf:"bytes,2,opt,name=errMsg,proto3" json:"errMsg,omitempty"`
+	SessionKey    string `protobuf:"bytes,3,opt,name=sessionKey,proto3" json:"sessionKey,omitempty"`
+	Openid        string `protobuf:"bytes,4,opt,name=openid,proto3" json:"openid,omitempty"`
+	Unionid       string `protobuf:"bytes,5,opt,name=unionid,proto3" json:"unionid,omitempty"`
 	unknownFields protoimpl.UnknownFields
-
-	ErrCode    int32  `protobuf:"varint,1,opt,name=errCode,proto3" json:"errCode,omitempty"`
-	ErrMsg     string `protobuf:"bytes,2,opt,name=errMsg,proto3" json:"errMsg,omitempty"`
-	SessionKey string `protobuf:"bytes,3,opt,name=sessionKey,proto3" json:"sessionKey,omitempty"`
-	Openid     string `protobuf:"bytes,4,opt,name=openid,proto3" json:"openid,omitempty"`
-	Unionid    string `protobuf:"bytes,5,opt,name=unionid,proto3" json:"unionid,omitempty"`
+	sizeCache     protoimpl.SizeCache
+	ErrCode       int32 `protobuf:"varint,1,opt,name=errCode,proto3" json:"errCode,omitempty"`
 }
 
 // 抖音登录

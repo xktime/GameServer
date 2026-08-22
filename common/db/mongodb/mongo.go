@@ -54,6 +54,18 @@ func Init(uri, dbName string, minPoolSize, maxPoolSize uint64) error {
 	return nil
 }
 
+// Close 在调用方停止数据库操作后断开全局 MongoDB 客户端；重复关闭不会报错。
+func Close(ctx context.Context) error {
+	if mongoInstance == nil {
+		return nil
+	}
+	if err := mongoInstance.client.Disconnect(ctx); err != nil {
+		return err
+	}
+	mongoInstance = nil
+	return nil
+}
+
 // 查询单条
 func FindOne[T PersistData](filter interface{}) (*T, error) {
 	collection := getCollectionNameByType[T]()

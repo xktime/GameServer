@@ -8,23 +8,22 @@ import (
 )
 
 type TCPClient struct {
-	sync.Mutex
+	NewAgent        func(*TCPConn) Agent
+	conns           ConnSet
+	msgParser       *MsgParser
 	Addr            string
+	wg              sync.WaitGroup
 	ConnNum         int
 	ConnectInterval time.Duration
 	PendingWriteNum int
-	AutoReconnect   bool
-	NewAgent        func(*TCPConn) Agent
-	conns           ConnSet
-	wg              sync.WaitGroup
-	closeFlag       bool
-
 	// msg parser
-	LenMsgLen    int
-	MinMsgLen    uint32
-	MaxMsgLen    uint32
-	LittleEndian bool
-	msgParser    *MsgParser
+	LenMsgLen int
+	sync.Mutex
+	MinMsgLen     uint32
+	MaxMsgLen     uint32
+	AutoReconnect bool
+	closeFlag     bool
+	LittleEndian  bool
 }
 
 func (client *TCPClient) Start() {

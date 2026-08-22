@@ -48,5 +48,10 @@ coverage.txt
 # Distribution files
 dist/
 
+# Local agent tooling
+.claude/
+.gitnexus/
+AGENTS.md
+CLAUDE.md
 
 **.exe**

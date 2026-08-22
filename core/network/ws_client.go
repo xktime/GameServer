@@ -9,19 +9,19 @@ import (
 )
 
 type WSClient struct {
-	sync.Mutex
+	dialer           websocket.Dialer
+	NewAgent         func(*WSConn) Agent
+	conns            WebsocketConnSet
 	Addr             string
+	wg               sync.WaitGroup
 	ConnNum          int
 	ConnectInterval  time.Duration
 	PendingWriteNum  int
-	MaxMsgLen        uint32
 	HandshakeTimeout time.Duration
-	AutoReconnect    bool
-	NewAgent         func(*WSConn) Agent
-	dialer           websocket.Dialer
-	conns            WebsocketConnSet
-	wg               sync.WaitGroup
-	closeFlag        bool
+	sync.Mutex
+	MaxMsgLen     uint32
+	AutoReconnect bool
+	closeFlag     bool
 }
 
 func (client *WSClient) Start() {

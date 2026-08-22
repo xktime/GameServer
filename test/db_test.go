@@ -6,50 +6,69 @@ import (
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
-	"gameserver/core/log"
+	"os"
 	"testing"
+	"time"
 
-	"github.com/go-redis/redis"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// 普通测试
-func TestDB_TestConnect(t *testing.T) {
-	ctx := context.Background()
+const defaultTestMongoURI = "mongodb://root:1234@localhost:27017/?authSource=admin"
 
-	// 连接本地 Redis
-	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+func initMongoTest(t *testing.T) {
+	t.Helper()
+
+	mongoURI := os.Getenv("MONGODB_URI")
+	if mongoURI == "" {
+		mongoURI = defaultTestMongoURI
+	}
+	databaseName := fmt.Sprintf("gameserver_test_%d", time.Now().UnixNano())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().
+		ApplyURI(mongoURI).
+		SetServerSelectionTimeout(2*time.Second))
+	if err == nil {
+		err = client.Ping(ctx, nil)
+	}
+	if err != nil {
+		if client != nil {
+			_ = client.Disconnect(context.Background())
+		}
+		if os.Getenv("MONGODB_REQUIRED") == "1" {
+			t.Fatalf("MongoDB 必须可用: %v", err)
+		}
+		t.Skipf("MongoDB 不可用: %v", err)
+	}
+
+	if err := mongodb.Init(mongoURI, databaseName, 0, 5); err != nil {
+		t.Fatalf("初始化 MongoDB 测试库失败: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		database := client.Database(databaseName)
+		collectionNames, err := database.ListCollectionNames(cleanupCtx, bson.M{})
+		if err != nil {
+			t.Errorf("列出 MongoDB 测试集合失败: %v", err)
+		} else {
+			for _, collectionName := range collectionNames {
+				if err := database.Collection(collectionName).Drop(cleanupCtx); err != nil {
+					t.Errorf("清理 MongoDB 测试集合 %s 失败: %v", collectionName, err)
+				}
+			}
+		}
+		if err := mongodb.Close(cleanupCtx); err != nil {
+			t.Errorf("断开 MongoDB 全局测试连接失败: %v", err)
+		}
+		if err := client.Disconnect(cleanupCtx); err != nil {
+			t.Errorf("断开 MongoDB 测试连接失败: %v", err)
+		}
 	})
-	defer rdb.Close()
-
-	err := rdb.Set("key", "value", 0).Err()
-	if err != nil {
-		panic(err)
-	}
-	val, err := rdb.Get("key").Result()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("redis value:", val)
-
-	// 连接本地 MongoDB
-	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
-	if err != nil {
-		panic(err)
-	}
-
-	defer mongoClient.Disconnect(ctx)
-
-	collection := mongoClient.Database("testdb").Collection("testcol")
-	doc := map[string]string{"hello": "world"}
-	insertResult, err := collection.InsertOne(ctx, doc)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("mongo insert id:", insertResult.InsertedID)
 }
 
 type User struct {
@@ -63,26 +82,57 @@ func (u User) GetPersistId() interface{} {
 }
 
 func TestDB_TestMongo(t *testing.T) {
-	mongodb.Init("mongodb://localhost:27017", "testdb", 10, 100)
-	// 查询单个
-	mongodb.Save(&User{ID: "1", Name: "张三", Age: 20})
-	user, _ := mongodb.FindOneById[User]("1")
-	fmt.Println("mongo FindOne id:", user)
-	mongodb.Save(&User{ID: "2", Name: "李四", Age: 20})
-	users, _ := mongodb.FindAll[User](bson.M{})
-	fmt.Println("mongo InsertOne id:", users)
-	// 删除
-	mongodb.DeleteByID[User]("2")
-	users, _ = mongodb.FindAll[User](bson.M{})
-	fmt.Println("mongo DeleteByID id:", users)
-	mongodb.Save(&User{ID: "1", Name: "张三123", Age: 21})
-	user, _ = mongodb.FindOneById[User]("1")
-	fmt.Println("mongo UpsertByID id:", user)
+	initMongoTest(t)
+
+	if _, err := mongodb.Save(&User{ID: "1", Name: "张三", Age: 20}); err != nil {
+		t.Fatalf("保存用户失败: %v", err)
+	}
+	user, err := mongodb.FindOneById[User]("1")
+	if err != nil {
+		t.Fatalf("查询用户失败: %v", err)
+	}
+	if user == nil || user.Name != "张三" || user.Age != 20 {
+		t.Fatalf("查询结果不符合预期: %#v", user)
+	}
+
+	if _, err := mongodb.Save(&User{ID: "2", Name: "李四", Age: 20}); err != nil {
+		t.Fatalf("保存第二个用户失败: %v", err)
+	}
+	users, err := mongodb.FindAll[User](bson.M{})
+	if err != nil {
+		t.Fatalf("查询全部用户失败: %v", err)
+	}
+	if len(users) != 2 {
+		t.Fatalf("用户数量 = %d，期望 2", len(users))
+	}
+
+	if _, err := mongodb.DeleteByID[User]("2"); err != nil {
+		t.Fatalf("删除用户失败: %v", err)
+	}
+	deletedUser, err := mongodb.FindOneById[User]("2")
+	if err != nil {
+		t.Fatalf("查询已删除用户失败: %v", err)
+	}
+	if deletedUser != nil {
+		t.Fatalf("用户删除后仍可查询: %#v", deletedUser)
+	}
+
+	if _, err := mongodb.Save(&User{ID: "1", Name: "张三123", Age: 21}); err != nil {
+		t.Fatalf("更新用户失败: %v", err)
+	}
+	user, err = mongodb.FindOneById[User]("1")
+	if err != nil {
+		t.Fatalf("查询更新后的用户失败: %v", err)
+	}
+	if user == nil || user.Name != "张三123" || user.Age != 21 {
+		t.Fatalf("更新结果不符合预期: %#v", user)
+	}
 }
 
 // TestBulkSave 测试批量保存功能
 func TestBulkSave(t *testing.T) {
-	mongodb.Init("mongodb://localhost:27017", "testMongo", 50, 50)
+	initMongoTest(t)
+
 	// 初始化测试数据
 	users := []mongodb.PersistData{
 		&models.User{AccountId: "test1", ServerId: 2, OpenId: "open1", PlayerId: 1001, Platform: message.LoginType_DouYin},
@@ -92,9 +142,12 @@ func TestBulkSave(t *testing.T) {
 	}
 
 	// 测试批量保存
-	_, err := mongodb.BulkSave(users)
+	result, err := mongodb.BulkSave(users)
 	if err != nil {
-		log.Fatal("批量保存失败: %v", err)
+		t.Fatalf("批量保存失败: %v", err)
+	}
+	if result == nil || result.UpsertedCount != int64(len(users)) {
+		t.Fatalf("批量保存结果不符合预期: %#v", result)
 	}
 
 	// 验证保存结果
@@ -102,17 +155,15 @@ func TestBulkSave(t *testing.T) {
 		user := data.(*models.User)
 		savedUser, err := mongodb.FindOneById[models.User](user.AccountId)
 		if err != nil {
-			log.Fatal("查询用户失败: %v", err)
+			t.Fatalf("查询用户失败: %v", err)
 		}
 		if savedUser == nil {
-			log.Fatal("用户不存在: %s", user.AccountId)
+			t.Fatalf("用户不存在: %s", user.AccountId)
 		}
 		if savedUser.PlayerId != user.PlayerId || savedUser.Platform != user.Platform {
-			log.Fatal("用户数据不匹配: 期望PlayerId=%d, 实际PlayerId=%d", user.PlayerId, savedUser.PlayerId)
+			t.Fatalf("用户数据不匹配: 期望PlayerId=%d, 实际PlayerId=%d", user.PlayerId, savedUser.PlayerId)
 		}
 	}
-
-	log.Release("批量保存测试成功")
 }
 
 type M struct {

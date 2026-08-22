@@ -10,22 +10,20 @@ import (
 )
 
 type Gate struct {
+	Processor    network.Processor
+	AgentChanRPC *chanrpc.Server
+	// websocket
+	WSAddr   string
+	CertFile string
+	KeyFile  string
+	// tcp
+	TCPAddr         string
 	MaxConnNum      int
 	PendingWriteNum int
+	HTTPTimeout     time.Duration
+	LenMsgLen       int
 	MaxMsgLen       uint32
-	Processor       network.Processor
-	AgentChanRPC    *chanrpc.Server
-
-	// websocket
-	WSAddr      string
-	HTTPTimeout time.Duration
-	CertFile    string
-	KeyFile     string
-
-	// tcp
-	TCPAddr      string
-	LenMsgLen    int
-	LittleEndian bool
+	LittleEndian    bool
 }
 
 func (gate *Gate) Run(closeSig chan bool) {

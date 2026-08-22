@@ -11,12 +11,12 @@ import (
 
 // 队伍匹配请求结构
 type TeamMatchRequest struct {
-	TeamId    int64     `json:"team_id"`    // 队伍ID
-	PlayerIds []int64   `json:"player_ids"` // 队伍中的所有玩家ID
-	MatchType int32     `json:"match_type"` // 匹配类型
 	JoinTime  time.Time `json:"join_time"`  // 加入时间
-	IsRobot   bool      `json:"is_robot"`   // 是否是机器人队伍
+	PlayerIds []int64   `json:"player_ids"` // 队伍中的所有玩家ID
+	TeamId    int64     `json:"team_id"`    // 队伍ID
 	TeamSize  int       `json:"team_size"`  // 队伍大小
+	MatchType int32     `json:"match_type"` // 匹配类型
+	IsRobot   bool      `json:"is_robot"`   // 是否是机器人队伍
 }
 
 // 匹配队列结构
@@ -161,9 +161,9 @@ func (q *MatchQueue) ProcessTeamMatchResults(matchedGroups [][]*TeamMatchRequest
 
 // 为了向后兼容，保留原有的玩家匹配请求结构
 type MatchRequest struct {
+	JoinTime  time.Time `json:"join_time"`
 	PlayerId  int64     `json:"player_id"`
 	TeamId    int64     `json:"team_id"`
 	MatchType int32     `json:"match_type"`
-	JoinTime  time.Time `json:"join_time"`
 	IsRobot   bool      `json:"is_robot"`
 }

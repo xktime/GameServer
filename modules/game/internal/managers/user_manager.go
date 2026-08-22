@@ -94,29 +94,20 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 	}
 
 	isNew := user == nil
+	loginTime := time.Now().Unix()
 	if isNew {
 		// 新注册流程
 		user = &models.User{
-			AccountId:      accountId,
-			OpenId:         openId,
-			ServerId:       serverId,
-			PlayerId:       utils.FlakeId(),
-			Platform:       loginType,
-			TotalLoginDays: 1,
-			CreateTime:     time.Now().Unix(),
-		}
-	} else {
-		// 老用户流程
-		if utils.IsCrossDay(user.LastOfflineTime, time.Now().Unix()) {
-			user.TotalLoginDays++
-		}
-		// 老用户流程
-		if utils.IsCrossDay(user.LastOfflineTime, time.Now().Unix()) {
-			user.TotalLoginDays++
+			AccountId:  accountId,
+			OpenId:     openId,
+			ServerId:   serverId,
+			PlayerId:   utils.FlakeId(),
+			Platform:   loginType,
+			CreateTime: loginTime,
 		}
 	}
 
-	user.LoginTime = time.Now().Unix()
+	user.RecordLogin(loginTime)
 	log.Debug("user login: %s, isNew: %v", user.AccountId, isNew)
 
 	// 设置用户数据到agent
