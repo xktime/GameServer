@@ -49,6 +49,7 @@ func (f *fakeMatchPlayerReader) FindOnlineTeam(playerID int64) (playerread.TeamS
 func newMatchTestManager(players playerread.PlayerReader) *MatchManager {
 	return &MatchManager{
 		players: players,
+		now:     time.Now,
 		matchQueues: map[int32]*matchmodels.MatchQueue{
 			1: matchmodels.NewMatchQueue(),
 		},
@@ -86,6 +87,31 @@ func TestMatchManagerStartsAndCancelsMatchFromSnapshots(t *testing.T) {
 	}
 	if manager.matchQueues[1].IsTeamInQueue(7) {
 		t.Fatal("取消后 Team 不应留在匹配队列")
+	}
+}
+
+func TestMatchManagerUsesInjectedClockForQueueAndTimeout(t *testing.T) {
+	now := time.Date(2026, time.August, 23, 12, 0, 0, 0, time.UTC)
+	players := &fakeMatchPlayerReader{
+		players: map[int64]playerread.PlayerSnapshot{42: {TeamID: 7}},
+		teams:   map[int64]playerread.TeamSnapshot{42: {MemberIDs: []int64{42}}},
+	}
+	manager := newMatchTestManager(players)
+	manager.now = func() time.Time { return now }
+
+	teamID, response := manager.doHandleMatch(matchTestAgent(42), &message.C2S_StartMatch{Type: 1})
+	request := manager.matchQueues[1].TeamRequests[7]
+	if response == nil || !response.Result || teamID != 7 || request == nil {
+		t.Fatalf("开始匹配结果 = %d, %#v，请求 = %#v", teamID, response, request)
+	}
+	if !request.JoinTime.Equal(now) {
+		t.Fatalf("加入时间 = %s，期望注入时间 %s", request.JoinTime, now)
+	}
+
+	now = now.Add(5*time.Minute + time.Nanosecond)
+	manager.ProcessTimeoutRequests()
+	if manager.matchQueues[1].IsTeamInQueue(7) {
+		t.Fatal("超过五分钟的请求应由注入时钟判定为过期")
 	}
 }
 
@@ -139,7 +165,9 @@ func TestMatchManagerRejectsUnavailableParticipants(t *testing.T) {
 }
 
 func TestMatchManagerBuildsSyntheticRobotTeams(t *testing.T) {
+	now := time.Date(2026, time.August, 23, 12, 0, 0, 0, time.UTC)
 	manager := newMatchTestManager(&fakeMatchPlayerReader{})
+	manager.now = func() time.Time { return now }
 
 	teams := manager.syntheticRobotTeams(1, 2)
 	if len(teams) != 2 {
@@ -150,6 +178,9 @@ func TestMatchManagerBuildsSyntheticRobotTeams(t *testing.T) {
 	}
 	if !teams[0].IsRobot || !teams[1].IsRobot || teams[0].TeamId != -1 || teams[1].TeamId != -3 {
 		t.Fatalf("机器人 Team 属性不正确: %#v", teams)
+	}
+	if !teams[0].JoinTime.Equal(now) || !teams[1].JoinTime.Equal(now) {
+		t.Fatalf("机器人加入时间未使用注入时钟: %#v", teams)
 	}
 }
 
@@ -264,7 +295,7 @@ func matchPanicValue(f func()) (recovered any) {
 }
 
 func TestGetMatchManagerBeforeRegistrationPanics(t *testing.T) {
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager {
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
 		return &MatchManager{}
 	})
 
@@ -277,7 +308,7 @@ func TestMatchManagerRegistrationWaitsUntilReady(t *testing.T) {
 	registrationStarted := make(chan struct{})
 	finishRegistration := make(chan struct{})
 	want := &MatchManager{}
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager {
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
 		close(registrationStarted)
 		<-finishRegistration
 		return want
@@ -287,7 +318,7 @@ func TestMatchManagerRegistrationWaitsUntilReady(t *testing.T) {
 
 	registered := make(chan *MatchManager, 1)
 	go func() {
-		registered <- RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID)
+		registered <- RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now)
 	}()
 	<-registrationStarted
 
@@ -318,39 +349,39 @@ func TestMatchManagerRegistrationWaitsUntilReady(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("GetMatchManager 未在注册完成后唤醒")
 	}
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID) }); got != "match: RegisterMatchManager called more than once" {
+	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now) }); got != "match: RegisterMatchManager called more than once" {
 		t.Fatalf("重复注册 panic = %#v", got)
 	}
 }
 
 func TestMatchManagerRegistrationFailureIsTerminal(t *testing.T) {
 	wantPanic := &struct{ reason string }{reason: "boom"}
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager {
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
 		panic(wantPanic)
 	})
 	rooms := &fakeRoomAcceptor{}
 	newMatchID := func() string { return "match-1" }
 
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID) }); got != wantPanic {
+	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now) }); got != wantPanic {
 		t.Fatalf("注册调用收到 panic %#v，期望 %#v", got, wantPanic)
 	}
 	if got := matchPanicValue(func() { GetMatchManager() }); got != wantPanic {
 		t.Fatalf("失败后的 GetMatchManager panic = %#v，期望 %#v", got, wantPanic)
 	}
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID) }); got != "match: RegisterMatchManager called more than once" {
+	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now) }); got != "match: RegisterMatchManager called more than once" {
 		t.Fatalf("失败后重试注册 panic = %#v", got)
 	}
 }
 
 func TestRegisterMatchManagerNilReaderIsTerminal(t *testing.T) {
 	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager {
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
 		factoryCalled = true
 		return &MatchManager{}
 	})
 
 	wantPanic := "match: RegisterMatchManager requires PlayerReader"
-	if got := matchPanicValue(func() { RegisterMatchManager(nil, &fakeRoomAcceptor{}, func() string { return "match-1" }) }); got != wantPanic {
+	if got := matchPanicValue(func() { RegisterMatchManager(nil, &fakeRoomAcceptor{}, func() string { return "match-1" }, time.Now) }); got != wantPanic {
 		t.Fatalf("nil PlayerReader 注册 panic = %#v，期望 %#v", got, wantPanic)
 	}
 	if factoryCalled {
@@ -363,13 +394,15 @@ func TestRegisterMatchManagerNilReaderIsTerminal(t *testing.T) {
 
 func TestRegisterMatchManagerRejectsMissingRoomAcceptor(t *testing.T) {
 	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager {
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
 		factoryCalled = true
 		return &MatchManager{}
 	})
 
 	wantPanic := "match: RegisterMatchManager requires Room Acceptor"
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, nil, func() string { return "match-1" }) }); got != wantPanic {
+	if got := matchPanicValue(func() {
+		RegisterMatchManager(&fakeMatchPlayerReader{}, nil, func() string { return "match-1" }, time.Now)
+	}); got != wantPanic {
 		t.Fatalf("nil Room Acceptor panic = %#v，期望 %#v", got, wantPanic)
 	}
 	if factoryCalled {
@@ -379,13 +412,13 @@ func TestRegisterMatchManagerRejectsMissingRoomAcceptor(t *testing.T) {
 
 func TestRegisterMatchManagerRejectsMissingMatchIDGenerator(t *testing.T) {
 	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager {
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
 		factoryCalled = true
 		return &MatchManager{}
 	})
 
 	wantPanic := "match: RegisterMatchManager requires MatchID generator"
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, &fakeRoomAcceptor{}, nil) }); got != wantPanic {
+	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, &fakeRoomAcceptor{}, nil, time.Now) }); got != wantPanic {
 		t.Fatalf("nil MatchID generator panic = %#v，期望 %#v", got, wantPanic)
 	}
 	if factoryCalled {
@@ -393,15 +426,34 @@ func TestRegisterMatchManagerRejectsMissingMatchIDGenerator(t *testing.T) {
 	}
 }
 
+func TestRegisterMatchManagerRejectsMissingClock(t *testing.T) {
+	factoryCalled := false
+	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
+		factoryCalled = true
+		return &MatchManager{}
+	})
+
+	wantPanic := "match: RegisterMatchManager requires Clock"
+	if got := matchPanicValue(func() {
+		RegisterMatchManager(&fakeMatchPlayerReader{}, &fakeRoomAcceptor{}, func() string { return "match-1" }, nil)
+	}); got != wantPanic {
+		t.Fatalf("nil Clock panic = %#v，期望 %#v", got, wantPanic)
+	}
+	if factoryCalled {
+		t.Fatal("nil Clock 不应调用 MatchManager factory")
+	}
+}
+
 func TestMatchManagerInitStoresRequiredDependencies(t *testing.T) {
 	players := &fakeMatchPlayerReader{}
 	rooms := &fakeRoomAcceptor{}
 	newMatchID := func() string { return "match-1" }
+	now := func() time.Time { return time.Unix(1, 0) }
 	manager := &MatchManager{}
 
-	manager.Init(players, rooms, newMatchID)
+	manager.Init(players, rooms, newMatchID, now)
 
-	if manager.players != players || manager.rooms != rooms || manager.newMatchID == nil || manager.matchQueues[1] == nil || manager.settlements == nil {
+	if manager.players != players || manager.rooms != rooms || manager.newMatchID == nil || manager.now == nil || manager.matchQueues[1] == nil || manager.settlements == nil {
 		t.Fatalf("initialized manager = %#v", manager)
 	}
 }

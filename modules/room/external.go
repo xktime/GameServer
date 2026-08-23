@@ -2,6 +2,7 @@ package room
 
 import (
 	"gameserver/common/event_dispatcher"
+	"gameserver/common/schedule"
 	"gameserver/core/chanrpc"
 	"gameserver/core/module"
 	"gameserver/modules/game"
@@ -25,7 +26,6 @@ func (m *RoomExternal) InitExternal() {
 	if game.External.TeamManager == nil {
 		panic("room: RoomExternal.InitExternal called before GameExternal.InitExternal")
 	}
-	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
 	m.RoomManager = managers.RegisterRoomManager(
 		game.NewRoomTeamProjection(game.External.TeamManager),
@@ -33,6 +33,7 @@ func (m *RoomExternal) InitExternal() {
 		time.Now,
 		uuid.NewString,
 	)
+	m.Module = internal.NewModule(schedule.NewScheduler(), m.RoomManager)
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 }
 

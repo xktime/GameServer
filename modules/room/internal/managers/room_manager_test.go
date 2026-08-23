@@ -419,6 +419,35 @@ func TestClosedMatchIDIsRejectedUntilTombstoneExpires(t *testing.T) {
 	}
 }
 
+func TestMaintainProactivelyPrunesExpiredMatchTombstones(t *testing.T) {
+	actor.Init(1000)
+	t.Cleanup(actor.StopAll)
+	now := time.Unix(100, 0)
+	manager := NewRoomManager(
+		&fakeTeamRoomProjection{},
+		&fakePlayerMessenger{},
+		func() time.Time { return now },
+		func() string { return "room-1" },
+	)
+	manager.AcceptMatch(matchentry.Admission{
+		MatchID: "match-1",
+		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+	})
+	manager.CloseRoom("room-1")
+
+	now = now.Add(MatchTombstoneTTL - time.Nanosecond)
+	manager.Maintain()
+	if len(manager.closedMatches) != 1 {
+		t.Fatalf("到期前 tombstones = %#v", manager.closedMatches)
+	}
+
+	now = now.Add(time.Nanosecond)
+	manager.Maintain()
+	if len(manager.closedMatches) != 0 {
+		t.Fatalf("到期时 tombstones = %#v", manager.closedMatches)
+	}
+}
+
 func TestHandleRecordOperateAuthorizesCanonicalMembership(t *testing.T) {
 	actor.Init(1000)
 	t.Cleanup(actor.StopAll)

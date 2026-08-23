@@ -21,6 +21,7 @@ type MatchManager struct {
 	players         playerread.PlayerReader
 	rooms           roomaccept.Acceptor
 	newMatchID      func() string
+	now             func() time.Time
 	matchQueues     map[int32]*match_models.MatchQueue `bson:"-"`
 	settlements     map[string]*matchSettlement
 	nextSyntheticID int64
@@ -31,7 +32,7 @@ type matchSettlement struct {
 	admission matchentry.Admission
 }
 
-type matchManagerFactory func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager
+type matchManagerFactory func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager
 
 type matchManagerRegistry struct {
 	mu      sync.Mutex
@@ -42,8 +43,8 @@ type matchManagerRegistry struct {
 
 var (
 	matchManagerRegistration                     = &matchManagerRegistry{}
-	registerMatchActor       matchManagerFactory = func(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string) *MatchManager {
-		return actor.RegisterActor[*MatchManager](actor.Match, "1", players, rooms, newMatchID)
+	registerMatchActor       matchManagerFactory = func(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string, now func() time.Time) *MatchManager {
+		return actor.RegisterActor[*MatchManager](actor.Match, "1", players, rooms, newMatchID, now)
 	}
 )
 
@@ -78,7 +79,7 @@ func (r *matchManagerRegistry) get() *MatchManager {
 	return r.manager
 }
 
-func RegisterMatchManager(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string) *MatchManager {
+func RegisterMatchManager(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string, now func() time.Time) *MatchManager {
 	return matchManagerRegistration.register(func() *MatchManager {
 		if players == nil {
 			panic("match: RegisterMatchManager requires PlayerReader")
@@ -89,7 +90,10 @@ func RegisterMatchManager(players playerread.PlayerReader, rooms roomaccept.Acce
 		if newMatchID == nil {
 			panic("match: RegisterMatchManager requires MatchID generator")
 		}
-		return registerMatchActor(players, rooms, newMatchID)
+		if now == nil {
+			panic("match: RegisterMatchManager requires Clock")
+		}
+		return registerMatchActor(players, rooms, newMatchID, now)
 	})
 }
 
@@ -99,8 +103,8 @@ func GetMatchManager() *MatchManager {
 
 // Init 初始化匹配管理器
 func (m *MatchManager) Init(args ...any) {
-	if len(args) != 3 {
-		panic("match: MatchManager.Init requires PlayerReader, Room Acceptor, and MatchID generator")
+	if len(args) != 4 {
+		panic("match: MatchManager.Init requires PlayerReader, Room Acceptor, MatchID generator, and Clock")
 	}
 	players, ok := args[0].(playerread.PlayerReader)
 	if !ok || players == nil {
@@ -114,9 +118,14 @@ func (m *MatchManager) Init(args ...any) {
 	if !ok || newMatchID == nil {
 		panic("match: MatchManager.Init received invalid MatchID generator")
 	}
+	now, ok := args[3].(func() time.Time)
+	if !ok || now == nil {
+		panic("match: MatchManager.Init received invalid Clock")
+	}
 	m.players = players
 	m.rooms = rooms
 	m.newMatchID = newMatchID
+	m.now = now
 	m.matchQueues = make(map[int32]*match_models.MatchQueue)
 	m.matchQueues[1] = match_models.NewMatchQueue()
 	m.settlements = make(map[string]*matchSettlement)
@@ -290,7 +299,7 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 		TeamId:    teamId,
 		PlayerIds: teamSnapshot.MemberIDs,
 		MatchType: msg.Type,
-		JoinTime:  time.Now(),
+		JoinTime:  m.now(),
 		IsRobot:   false,
 		TeamSize:  len(teamSnapshot.MemberIDs),
 	}
@@ -474,7 +483,7 @@ func (m *MatchManager) syntheticRobotTeams(matchType int32, needRobots int) []*m
 			TeamSize:  1,
 			TeamId:    teamID,
 			MatchType: matchType,
-			JoinTime:  time.Now(),
+			JoinTime:  m.now(),
 		}
 		robotTeams = append(robotTeams, robotTeam)
 		log.Debug("生成合成机器人队伍，队伍ID: %d，当前填充数量: %d", robotTeam.TeamId, i)
@@ -484,7 +493,7 @@ func (m *MatchManager) syntheticRobotTeams(matchType int32, needRobots int) []*m
 
 // ProcessTimeoutRequests 处理超时的匹配请求
 func (m *MatchManager) ProcessTimeoutRequests() {
-	expiredTime := time.Now().Add(-5 * time.Minute)
+	expiredTime := m.now().Add(-5 * time.Minute)
 	for _, q := range m.matchQueues {
 		var expiredTeams []int64
 		for teamId, req := range q.TeamRequests {

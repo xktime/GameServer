@@ -1,6 +1,7 @@
 package match
 
 import (
+	"gameserver/common/schedule"
 	"gameserver/common/utils"
 	"gameserver/core/chanrpc"
 	"gameserver/core/module"
@@ -9,6 +10,7 @@ import (
 	"gameserver/modules/match/internal/managers"
 	"gameserver/modules/room"
 	"strconv"
+	"time"
 )
 
 type MatchExternal struct {
@@ -20,13 +22,14 @@ type MatchExternal struct {
 var External = &MatchExternal{}
 
 func (m *MatchExternal) InitExternal() {
-	m.Module = new(internal.Module)
 	m.ChanRPC = internal.ChanRPC
 	m.MatchManager = managers.RegisterMatchManager(
 		game.NewMatchPlayerReader(),
 		room.External,
 		func() string { return strconv.FormatInt(utils.FlakeId(), 10) },
+		time.Now,
 	)
+	m.Module = internal.NewModule(schedule.NewScheduler(), m.MatchManager)
 }
 
 func (m *MatchExternal) GetModule() module.Module {

@@ -231,6 +231,25 @@ func (m *RoomManager) CloseExpired() int {
 	return len(roomIDs)
 }
 
+func (m *RoomManager) Maintain() {
+	m.CloseExpired()
+	m.ReconcileProjections()
+	m.pruneExpiredMatchTombstones()
+}
+
+func (m *RoomManager) pruneExpiredMatchTombstones() {
+	now := m.now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for matchID, closedAt := range m.closedMatches {
+		if now.Before(closedAt.Add(MatchTombstoneTTL)) {
+			continue
+		}
+		delete(m.closedMatches, matchID)
+	}
+}
+
 func (m *RoomManager) Stop() {
 	m.mu.Lock()
 	roomIDs := make([]string, 0, len(m.rooms))
