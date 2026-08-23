@@ -61,28 +61,18 @@ func (t *Team) doJoinTeam(playerId int64) {
 	log.Debug("玩家 %d 成功加入队伍 %d，当前成员数量: %d", playerId, t.TeamId, len(t.TeamMembers))
 }
 
-func (t *Team) JoinRoom(roomId string) {
-	t.SendTaskAsync(func() {
-		t.doJoinRoom(roomId)
+func (t *Team) SetRoomProjection(roomID string) bool {
+	result := t.SendTask(func() bool {
+		t.RoomId = roomID
+		return true
 	})
+	if err, ok := result.(error); ok {
+		log.Error("设置队伍 %d 的房间投影失败: %v", t.TeamId, err)
+		return false
+	}
+	applied, ok := result.(bool)
+	return ok && applied
 }
-
-func (t *Team) doJoinRoom(roomId string) {
-	t.RoomId = roomId
-	log.Debug("队伍 %d 成功加入房间 %s", t.TeamId, roomId)
-}
-
-func (t *Team) LeaveRoom() {
-	t.SendTaskAsync(func() {
-		t.doLeaveRoom()
-	})
-}
-
-func (t *Team) doLeaveRoom() {
-	t.RoomId = ""
-	log.Debug("队伍 %d 成功离开房间", t.TeamId)
-}
-
 func (t *Team) LeaveTeam(playerId int64) {
 	t.SendTaskAsync(func() {
 		t.doLeaveTeam(playerId)

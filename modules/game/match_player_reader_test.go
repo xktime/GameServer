@@ -8,15 +8,10 @@ import (
 
 type fakeMatchPlayerFinder struct {
 	players map[int64]*managerplayer.Player
-	random  *managerplayer.Player
 }
 
 func (f fakeMatchPlayerFinder) GetPlayer(playerID int64) *managerplayer.Player {
 	return f.players[playerID]
-}
-
-func (f fakeMatchPlayerFinder) GetRandomPlayer([]int64) *managerplayer.Player {
-	return f.random
 }
 
 type fakeMatchTeamFinder map[int64]*team.Team
@@ -31,7 +26,6 @@ func TestMatchPlayerReaderCopiesOnlineSnapshots(t *testing.T) {
 	reader := matchPlayerReader{
 		players: fakeMatchPlayerFinder{
 			players: map[int64]*managerplayer.Player{42: player},
-			random:  player,
 		},
 		teams: fakeMatchTeamFinder{42: teamInfo},
 	}
@@ -50,10 +44,6 @@ func TestMatchPlayerReaderCopiesOnlineSnapshots(t *testing.T) {
 		t.Fatal("修改 TeamSnapshot 不应改写 Game Team")
 	}
 
-	randomPlayerID, ok := reader.FindRandomOnline([]int64{1, 2})
-	if !ok || randomPlayerID != 42 {
-		t.Fatalf("随机在线 Player = %d, %v", randomPlayerID, ok)
-	}
 }
 
 func TestMatchPlayerReaderRejectsMissingOnlineData(t *testing.T) {
@@ -67,8 +57,5 @@ func TestMatchPlayerReaderRejectsMissingOnlineData(t *testing.T) {
 	}
 	if snapshot, ok := reader.FindOnlineTeam(42); ok {
 		t.Fatalf("缺失 Team 不应返回快照: %#v", snapshot)
-	}
-	if playerID, ok := reader.FindRandomOnline(nil); ok {
-		t.Fatalf("无候选 Player 时不应返回 %d", playerID)
 	}
 }

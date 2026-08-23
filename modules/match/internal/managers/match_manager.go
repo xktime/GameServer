@@ -4,11 +4,13 @@ import (
 	"gameserver/common/base/actor"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
-	"gameserver/common/utils"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	match_models "gameserver/modules/match/internal/models"
 	"gameserver/modules/match/playerread"
+	"gameserver/modules/match/roomaccept"
+	"gameserver/modules/room/matchentry"
+	"sort"
 	"sync"
 	"time"
 )
@@ -16,11 +18,20 @@ import (
 // MatchManager 匹配管理器
 type MatchManager struct {
 	actor.BaseActor
-	players     playerread.PlayerReader
-	matchQueues map[int32]*match_models.MatchQueue `bson:"-"`
+	players         playerread.PlayerReader
+	rooms           roomaccept.Acceptor
+	newMatchID      func() string
+	matchQueues     map[int32]*match_models.MatchQueue `bson:"-"`
+	settlements     map[string]*matchSettlement
+	nextSyntheticID int64
 }
 
-type matchManagerFactory func(playerread.PlayerReader) *MatchManager
+type matchSettlement struct {
+	matchType int32
+	admission matchentry.Admission
+}
+
+type matchManagerFactory func(playerread.PlayerReader, roomaccept.Acceptor, func() string) *MatchManager
 
 type matchManagerRegistry struct {
 	mu      sync.Mutex
@@ -31,8 +42,8 @@ type matchManagerRegistry struct {
 
 var (
 	matchManagerRegistration                     = &matchManagerRegistry{}
-	registerMatchActor       matchManagerFactory = func(players playerread.PlayerReader) *MatchManager {
-		return actor.RegisterActor[*MatchManager](actor.Match, "1", players)
+	registerMatchActor       matchManagerFactory = func(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string) *MatchManager {
+		return actor.RegisterActor[*MatchManager](actor.Match, "1", players, rooms, newMatchID)
 	}
 )
 
@@ -67,12 +78,18 @@ func (r *matchManagerRegistry) get() *MatchManager {
 	return r.manager
 }
 
-func RegisterMatchManager(players playerread.PlayerReader) *MatchManager {
+func RegisterMatchManager(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string) *MatchManager {
 	return matchManagerRegistration.register(func() *MatchManager {
 		if players == nil {
 			panic("match: RegisterMatchManager requires PlayerReader")
 		}
-		return registerMatchActor(players)
+		if rooms == nil {
+			panic("match: RegisterMatchManager requires Room Acceptor")
+		}
+		if newMatchID == nil {
+			panic("match: RegisterMatchManager requires MatchID generator")
+		}
+		return registerMatchActor(players, rooms, newMatchID)
 	})
 }
 
@@ -82,16 +99,27 @@ func GetMatchManager() *MatchManager {
 
 // Init 初始化匹配管理器
 func (m *MatchManager) Init(args ...any) {
-	if len(args) != 1 {
-		panic("match: MatchManager.Init requires PlayerReader")
+	if len(args) != 3 {
+		panic("match: MatchManager.Init requires PlayerReader, Room Acceptor, and MatchID generator")
 	}
 	players, ok := args[0].(playerread.PlayerReader)
 	if !ok || players == nil {
 		panic("match: MatchManager.Init received invalid PlayerReader")
 	}
+	rooms, ok := args[1].(roomaccept.Acceptor)
+	if !ok || rooms == nil {
+		panic("match: MatchManager.Init received invalid Room Acceptor")
+	}
+	newMatchID, ok := args[2].(func() string)
+	if !ok || newMatchID == nil {
+		panic("match: MatchManager.Init received invalid MatchID generator")
+	}
 	m.players = players
+	m.rooms = rooms
+	m.newMatchID = newMatchID
 	m.matchQueues = make(map[int32]*match_models.MatchQueue)
 	m.matchQueues[1] = match_models.NewMatchQueue()
+	m.settlements = make(map[string]*matchSettlement)
 }
 
 // Stop 停止MatchManager
@@ -113,6 +141,7 @@ func (m *MatchManager) OnTimer() {
 // Matching 定时任务，每10秒执行一次匹配
 func (m *MatchManager) Matching() {
 	log.Debug("开始执行匹配任务")
+	m.retrySettlements()
 
 	for matchType, q := range m.matchQueues {
 		if q.GetQueueSize() == 0 {
@@ -122,9 +151,72 @@ func (m *MatchManager) Matching() {
 		if len(groups) == 0 {
 			continue
 		}
-		q.ProcessTeamMatchResults(groups)
+		for _, group := range groups {
+			m.startSettlement(q, matchType, group)
+		}
 		log.Debug("匹配任务完成，处理了 %d 个匹配组，匹配类型: %d", len(groups), matchType)
 	}
+}
+
+func (m *MatchManager) retrySettlements() {
+	matchIDs := make([]string, 0, len(m.settlements))
+	for matchID := range m.settlements {
+		matchIDs = append(matchIDs, matchID)
+	}
+	sort.Strings(matchIDs)
+	for _, matchID := range matchIDs {
+		m.settle(m.settlements[matchID])
+	}
+}
+
+func (m *MatchManager) startSettlement(q *match_models.MatchQueue, matchType int32, group []*match_models.TeamMatchRequest) {
+	teamIDs := make([]int64, 0, len(group))
+	teams := make([]matchentry.MatchedTeam, 0, len(group))
+	for _, request := range group {
+		if !request.IsRobot {
+			teamIDs = append(teamIDs, request.TeamId)
+		}
+		teams = append(teams, matchentry.MatchedTeam{
+			TeamID:    request.TeamId,
+			PlayerIDs: append([]int64(nil), request.PlayerIds...),
+			IsRobot:   request.IsRobot,
+		})
+	}
+	matchID := m.newMatchID()
+	if !q.MarkSettling(teamIDs, matchID) {
+		return
+	}
+	settlement := &matchSettlement{
+		matchType: matchType,
+		admission: matchentry.Admission{MatchID: matchID, Teams: teams},
+	}
+	m.settlements[matchID] = settlement
+	m.settle(settlement)
+}
+
+func (m *MatchManager) settle(settlement *matchSettlement) {
+	result := m.rooms.AcceptMatch(copyAdmission(settlement.admission))
+	switch result.Status {
+	case matchentry.Accepted, matchentry.AlreadyAccepted:
+		m.matchQueues[settlement.matchType].RemoveSettledMatch(settlement.admission.MatchID)
+		delete(m.settlements, settlement.admission.MatchID)
+	case matchentry.Rejected:
+		queue := m.matchQueues[settlement.matchType]
+		queue.RemoveSettledTeams(settlement.admission.MatchID, result.RejectedTeamIDs)
+		queue.RequeueMatch(settlement.admission.MatchID)
+		delete(m.settlements, settlement.admission.MatchID)
+	case matchentry.Retryable:
+		return
+	}
+}
+
+func copyAdmission(admission matchentry.Admission) matchentry.Admission {
+	copied := matchentry.Admission{MatchID: admission.MatchID, Teams: make([]matchentry.MatchedTeam, len(admission.Teams))}
+	for index, team := range admission.Teams {
+		copied.Teams[index] = team
+		copied.Teams[index].PlayerIDs = append([]int64(nil), team.PlayerIDs...)
+	}
+	return copied
 }
 
 // HandleMatch 处理队伍开始匹配请求
@@ -346,12 +438,8 @@ func (m *MatchManager) fillGroupWithRobots(group []*match_models.TeamMatchReques
 	if len(group) > 0 {
 		matchType = group[0].MatchType
 	}
-	allPlayerIds := make([]int64, 0)
-	for _, team := range group {
-		allPlayerIds = append(allPlayerIds, team.PlayerIds...)
-	}
 	// 生成机器人队伍来填充
-	robotTeam := m.randomRobotTeams(matchType, needRobots, allPlayerIds)
+	robotTeam := m.syntheticRobotTeams(matchType, needRobots)
 	group = append(group, robotTeam...)
 	return group
 }
@@ -373,25 +461,23 @@ func sortTeamsBySize(teams []*match_models.TeamMatchRequest) []*match_models.Tea
 	return sorted
 }
 
-func (m *MatchManager) randomRobotTeams(matchType int32, needRobots int, exceptPlayerId []int64) []*match_models.TeamMatchRequest {
-	var robotTeams []*match_models.TeamMatchRequest
+func (m *MatchManager) syntheticRobotTeams(matchType int32, needRobots int) []*match_models.TeamMatchRequest {
+	robotTeams := make([]*match_models.TeamMatchRequest, 0, needRobots)
 	for i := 0; i < needRobots; i++ {
-		playerId, ok := m.players.FindRandomOnline(exceptPlayerId)
-		if !ok {
-			log.Error("没有找到机器人玩家，当前填充数量: %d", i)
-			continue
-		}
-		exceptPlayerId = append(exceptPlayerId, playerId)
+		m.nextSyntheticID--
+		teamID := m.nextSyntheticID
+		m.nextSyntheticID--
+		playerID := m.nextSyntheticID
 		robotTeam := &match_models.TeamMatchRequest{
-			PlayerIds: []int64{playerId},
+			PlayerIds: []int64{playerID},
 			IsRobot:   true,
 			TeamSize:  1,
-			TeamId:    utils.FlakeId(),
+			TeamId:    teamID,
 			MatchType: matchType,
 			JoinTime:  time.Now(),
 		}
 		robotTeams = append(robotTeams, robotTeam)
-		log.Debug("生成机器人队伍填充，队伍ID: %d，当前填充数量: %d", robotTeam.TeamId, i)
+		log.Debug("生成合成机器人队伍，队伍ID: %d，当前填充数量: %d", robotTeam.TeamId, i)
 	}
 	return robotTeams
 }
@@ -402,7 +488,7 @@ func (m *MatchManager) ProcessTimeoutRequests() {
 	for _, q := range m.matchQueues {
 		var expiredTeams []int64
 		for teamId, req := range q.TeamRequests {
-			if req.JoinTime.Before(expiredTime) {
+			if req.MatchID == "" && req.JoinTime.Before(expiredTime) {
 				expiredTeams = append(expiredTeams, teamId)
 			}
 		}
