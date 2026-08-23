@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare PR"
+  short_description: "Organize local changes, commit, push, and open a PR"
+  default_prompt: "Use $prepare-pr to organize the current local changes and open a pull request."
