@@ -19,3 +19,15 @@ _避免使用_: Player、User、Agent
 **Team**:
 一组共同参与组队行为的 Player；进入匹配时作为不可拆分的整体，并共享 Room 归属。
 _避免使用_: Group、Party、Room
+
+**Match Attempt**:
+一次把已匹配 Team 交付为 Room 的幂等尝试，由唯一 MatchID 标识。
+_避免使用_: Match Result、Room Request
+
+**Room**:
+由 Match Attempt 创建的临时对局容器，是 Player 与 Team 当前 Room 归属的权威来源。
+_避免使用_: Match、Lobby、Team
+
+**Robot**:
+Match 为补齐对局人数创建的合成参与者，不对应任何 User、Player、Player Session 或 Team。
+_避免使用_: Online Player、Bot Player

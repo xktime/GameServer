@@ -11,7 +11,6 @@ import (
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
 	"gameserver/modules/game/internal/managers/team"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -464,41 +463,6 @@ func (m *UserManager) removePlayerCache(playerId int64) {
 		delete(m.playerCache, playerId)
 		log.Debug("Removed player cache: %d", playerId)
 	}
-}
-
-// GetPlayers 获取所有缓存的玩家
-func (m *UserManager) GetPlayers() []*player.Player {
-	var players []*player.Player
-	for _, playerInstance := range m.playerCache {
-		players = append(players, playerInstance)
-	}
-	return players
-}
-
-// GetRandomPlayer 获取随机玩家
-func (m *UserManager) GetRandomPlayer(exceptPlayerId []int64) *player.Player {
-	// 先筛选出不在exceptPlayerId中的玩家
-	var filteredPlayers []*player.Player
-	players := m.GetPlayers()
-	for _, p := range players {
-		exist := false
-		for _, id := range exceptPlayerId {
-			if p.PlayerId == id {
-				exist = true
-				break
-			}
-		}
-		if !exist {
-			filteredPlayers = append(filteredPlayers, p)
-		}
-	}
-	// 如果没有可选玩家，返回nil
-	if len(filteredPlayers) == 0 {
-		return nil
-	}
-	// 随机返回一个玩家
-	randIdx := rand.Intn(len(filteredPlayers))
-	return filteredPlayers[randIdx]
 }
 
 // GetPlayer 获取缓存的玩家（优先从缓存获取，缓存没有则从Actor获取）

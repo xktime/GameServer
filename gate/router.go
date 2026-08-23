@@ -7,6 +7,7 @@ import (
 	"gameserver/modules/login"
 	"gameserver/modules/match"
 	"gameserver/modules/rank"
+	"gameserver/modules/room"
 )
 
 func InitRouter() {
@@ -25,7 +26,7 @@ func InitRouter() {
 	msg.Processor.SetRouter(&message.C2S_UpdateRankData{}, rank.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_GetMyRank{}, rank.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_GetRankList{}, rank.External.ChanRPC)
-	msg.Processor.SetRouter(&message.C2S_RecordGameOperate{}, match.External.ChanRPC)
+	msg.Processor.SetRouter(&message.C2S_RecordGameOperate{}, room.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_CancelMatch{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_StartMatch{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Login{}, login.External.ChanRPC)

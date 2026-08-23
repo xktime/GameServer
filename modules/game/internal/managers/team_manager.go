@@ -66,40 +66,20 @@ func (t *TeamManager) doGetTeamByPlayerId(playerId int64) *team.Team {
 	return teamInfo
 }
 
-// JoinRoom 加入房间 - 异步执行
-func (t *TeamManager) JoinRoom(playerId int64, roomId string) {
-	t.SendTaskAsync(func() {
-		t.doJoinRoom(playerId, roomId)
+func (t *TeamManager) SetRoomProjection(teamID int64, roomID string) bool {
+	result := t.SendTask(func() bool {
+		teamActor, ok := actor.GetActor[team.Team](actor.Team, teamID)
+		if !ok {
+			return false
+		}
+		return teamActor.SetRoomProjection(roomID)
 	})
-}
-
-// doJoinRoom 加入房间的同步实现
-func (t *TeamManager) doJoinRoom(playerId int64, roomId string) {
-	player := GetUserManager().GetPlayer(playerId)
-	if player == nil {
-		return
+	if err, ok := result.(error); ok {
+		log.Error("设置队伍 %d 的房间投影失败: %v", teamID, err)
+		return false
 	}
-	teamInfo, ok := actor.GetActor[team.Team](actor.Team, player.TeamId)
-	if !ok {
-		return
-	}
-	teamInfo.JoinRoom(roomId)
-}
-
-// LeaveRoom 离开房间 - 异步执行
-func (t *TeamManager) LeaveRoom(teamId int64) {
-	t.SendTaskAsync(func() {
-		t.doLeaveRoom(teamId)
-	})
-}
-
-// doLeaveRoom 离开房间的同步实现
-func (t *TeamManager) doLeaveRoom(teamId int64) {
-	team, ok := actor.GetActor[team.Team](actor.Team, teamId)
-	if !ok {
-		return
-	}
-	team.LeaveRoom()
+	applied, ok := result.(bool)
+	return ok && applied
 }
 
 // SendMessage 发送消息给队伍 - 异步执行

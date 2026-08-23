@@ -8,7 +8,6 @@ import (
 
 type matchPlayerFinder interface {
 	GetPlayer(playerID int64) *managerplayer.Player
-	GetRandomPlayer(excludedPlayerIDs []int64) *managerplayer.Player
 }
 
 type matchTeamFinder interface {
@@ -48,12 +47,4 @@ func (r matchPlayerReader) FindOnlineTeam(playerID int64) (playerread.TeamSnapsh
 	return playerread.TeamSnapshot{
 		MemberIDs: append([]int64(nil), teamInfo.TeamMembers...),
 	}, true
-}
-
-func (r matchPlayerReader) FindRandomOnline(excludedPlayerIDs []int64) (int64, bool) {
-	player := r.players.GetRandomPlayer(excludedPlayerIDs)
-	if player == nil {
-		return 0, false
-	}
-	return player.PlayerId, true
 }
