@@ -1,6 +1,8 @@
 package room
 
 import (
+	"fmt"
+	"gameserver/common/base/actor"
 	"gameserver/common/event_dispatcher"
 	"gameserver/common/schedule"
 	"gameserver/core/chanrpc"
@@ -22,19 +24,31 @@ type RoomExternal struct {
 
 var External = &RoomExternal{}
 
-func (m *RoomExternal) InitExternal() {
+func (m *RoomExternal) InitExternal(system *actor.ActorSystem) error {
+	if system == nil {
+		return fmt.Errorf("room: ActorSystem is nil")
+	}
 	if game.External.TeamManager == nil {
-		panic("room: RoomExternal.InitExternal called before GameExternal.InitExternal")
+		return fmt.Errorf("room: GameExternal is not initialized")
+	}
+	scope, err := system.NewScope("room")
+	if err != nil {
+		return err
 	}
 	m.ChanRPC = internal.ChanRPC
-	m.RoomManager = managers.RegisterRoomManager(
+	m.RoomManager, err = managers.NewRoomManager(
+		scope,
 		game.NewRoomTeamProjection(game.External.TeamManager),
-		game.NewRoomPlayerMessenger(),
+		game.NewRoomPlayerMessenger(game.External.UserManager),
 		time.Now,
 		uuid.NewString,
 	)
-	m.Module = internal.NewModule(schedule.NewScheduler(), m.RoomManager)
+	if err != nil {
+		return err
+	}
+	m.Module = internal.NewModule(scope, schedule.NewScheduler(), m.RoomManager)
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)
+	return nil
 }
 
 func (m *RoomExternal) GetModule() module.Module {

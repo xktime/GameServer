@@ -4,11 +4,10 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/rank/internal/managers"
 )
 
 // C2S_GeneratorChanllengeCodeHandler 处理C2S_GeneratorChanllengeCode消息
-func C2S_GeneratorChanllengeCodeHandler(args []interface{}) {
+func C2S_GeneratorChanllengeCodeHandler(manager RankManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_GeneratorChanllengeCodeHandler: 参数不足")
 		return
@@ -33,6 +32,6 @@ func C2S_GeneratorChanllengeCodeHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_GeneratorChanllengeCode消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	response := managers.GetRankManager().GeneratorChallengeCode(msg)
+	response := manager.GeneratorChallengeCode(msg)
 	agent.WriteMsgWithSeq(response, seq)
 }

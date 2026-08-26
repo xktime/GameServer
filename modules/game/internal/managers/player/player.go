@@ -1,99 +1,167 @@
 package player
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
-	"gameserver/common/bucket"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
-	"gameserver/common/utils"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
-	"gameserver/modules/game/internal/models/player"
-	"path/filepath"
-	"strconv"
+	playermodel "gameserver/modules/game/internal/models/player"
 
 	"google.golang.org/protobuf/proto"
 )
 
 type Player struct {
 	actor.BaseActor `bson:"-"`
-	PlayerId        int64              `bson:"_id"`
-	PlayerInfo      *player.PlayerInfo `bson:"player_info"`
-	TeamId          int64              `bson:"team_id"`
-	TowerLevel      int32              `bson:"tower_level"`
-	agent           gate.Agent         `bson:"-"`
+	PlayerId        int64                   `bson:"_id"`
+	PlayerInfo      *playermodel.PlayerInfo `bson:"player_info"`
+	TeamId          int64                   `bson:"team_id"`
+	TowerLevel      int32                   `bson:"tower_level"`
+	agent           gate.Agent              `bson:"-"`
+	teams           *team.Registry          `bson:"-"`
+}
+
+type Snapshot struct {
+	PlayerID   int64
+	TeamID     int64
+	TowerLevel int32
+	PlayerInfo *playermodel.PlayerInfo
+}
+
+type Registry struct {
+	definition *actor.Definition[*Player, int64]
+	teams      *team.Registry
+}
+
+func NewRegistry(scope *actor.Scope, teams *team.Registry) (*Registry, error) {
+	if teams == nil {
+		return nil, fmt.Errorf("game: Team Registry is nil")
+	}
+	registry := &Registry{teams: teams}
+	definition, err := actor.Define(scope, actor.Player, func(context.Context, int64) (*Player, error) {
+		return &Player{teams: teams}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	registry.definition = definition
+	return registry, nil
+}
+
+func (r *Registry) Login(ctx context.Context, agent gate.Agent, user models.User, isNew bool) error {
+	if agent == nil {
+		return fmt.Errorf("game: Agent is nil")
+	}
+	if existing, err := r.definition.Lookup(ctx, user.PlayerId); err == nil {
+		log.Error("玩家 Actor 已存在，停止旧代实例: %v", user.PlayerId)
+		if err := existing.Ref().Stop(ctx); err != nil {
+			return fmt.Errorf("stop existing player %d: %w", user.PlayerId, err)
+		}
+	}
+
+	instance, err := r.definition.GetOrCreate(ctx, user.PlayerId)
+	if err != nil {
+		return err
+	}
+	_, err = actor.Call(ctx, instance.Ref(), func(execution actor.Context) (struct{}, error) {
+		instance.agent = agent
+		if err := instance.InitPlayerData(user.PlayerId, user, isNew); err != nil {
+			return struct{}{}, err
+		}
+		if err := instance.initTeam(execution); err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		if !errors.Is(err, actor.ErrOutcomeUnknown) {
+			_ = instance.Ref().ForceStop(context.Background())
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *Registry) lookup(ctx context.Context, playerID int64) (*Player, error) {
+	return r.definition.Lookup(ctx, playerID)
+}
+
+func (r *Registry) Snapshot(ctx context.Context, playerID int64) (Snapshot, error) {
+	instance, err := r.lookup(ctx, playerID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return instance.Snapshot(ctx)
+}
+
+func (r *Registry) ModifyName(ctx context.Context, playerID int64, name string) (message.Result, string, error) {
+	instance, err := r.lookup(ctx, playerID)
+	if err != nil {
+		return message.Result_Fail, "", err
+	}
+	return instance.ModifyName(ctx, name)
+}
+
+func (r *Registry) ModifyAvatarSuffix(ctx context.Context, playerID int64, avatar string) (message.Result, string, error) {
+	instance, err := r.lookup(ctx, playerID)
+	if err != nil {
+		return message.Result_Fail, "", err
+	}
+	return instance.ModifyAvatarSuffix(ctx, avatar)
+}
+
+func (r *Registry) SendToClient(ctx context.Context, playerID int64, msg proto.Message) error {
+	instance, err := r.lookup(ctx, playerID)
+	if err != nil {
+		return err
+	}
+	return instance.SendToClient(ctx, msg)
+}
+
+func (r *Registry) SendToClientSeq(ctx context.Context, playerID int64, msg proto.Message, seq uint32) error {
+	instance, err := r.lookup(ctx, playerID)
+	if err != nil {
+		return err
+	}
+	return instance.SendToClientSeq(ctx, msg, seq)
+}
+
+func (r *Registry) Stop(ctx context.Context, playerID int64) error {
+	instance, err := r.lookup(ctx, playerID)
+	if errors.Is(err, actor.ErrActorStopped) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return instance.Ref().Stop(ctx)
 }
 
 func (p Player) GetPersistId() interface{} {
 	return p.PlayerId
 }
 
-func DoPlayerLogin(agent gate.Agent, isNew bool) *Player {
-	p := initPlayer(agent, isNew)
-	if p == nil {
-		agent.WriteMsg(&message.S2C_Login{
-			LoginResult: -1,
-		})
-		agent.Close()
-		log.Debug("UserLogin failed: %v", p)
-		return nil
+func (p *Player) OnStop(context.Context) error {
+	if _, err := mongodb.Save(p); err != nil {
+		return err
 	}
-	p.InitModules()
-	return p
-}
-
-// 玩家模块
-func initPlayer(agent gate.Agent, isNew bool) *Player {
-	user := agent.UserData().(models.User)
-	playerId := user.PlayerId
-
-	// 检查是否已存在Actor
-	if existingPlayer := GetPlayerActor(playerId); existingPlayer != nil {
-		log.Error("玩家Actor已存在，可能是离线未正常清理: %v", playerId)
-		existingPlayer.Stop()
+	if p.agent != nil {
+		p.agent.SetUserData(nil)
+		p.agent.Close()
 	}
-
-	return actor.RegisterActor[*Player](actor.Player, playerId, agent, user, isNew)
+	return nil
 }
 
-func (p *Player) Init(args ...any) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("初始化玩家数据失败: %v", r)
-			p.PlayerId = 0
-		}
-	}()
-	agent := args[0].(gate.Agent)
-	user := args[1].(models.User)
-	isNew := args[2].(bool)
-	playerId := user.PlayerId
-	// 初始化玩家数据
-	err := p.InitPlayerData(playerId, user, isNew)
-	if err != nil {
-		log.Error("初始化玩家数据失败: %v", err)
-		return
-	}
-	p.agent = agent
-}
-
-// InitModules 初始化玩家模块
-func (p *Player) InitModules() {
-	// 自己的actor里面可以放队列里初始化
-	// 其他actor需要同步初始化，避免快速请求还未加载完成
-	p.SendTaskAsync(func() {
-	})
-	p.InitTeam()
-}
-
-// initPlayerData 初始化玩家数据
-func (p *Player) InitPlayerData(playerId int64, user models.User, isNew bool) error {
+func (p *Player) InitPlayerData(playerID int64, user models.User, isNew bool) error {
 	if isNew {
-		// 新玩家：创建初始数据
-		playerInfo := &player.PlayerInfo{
-			PlayerId:      playerId,
+		p.PlayerId = playerID
+		p.PlayerInfo = &playermodel.PlayerInfo{
+			PlayerId:      playerID,
 			ServerId:      user.ServerId,
 			PlayerName:    user.OpenId,
 			Level:         1,
@@ -101,147 +169,92 @@ func (p *Player) InitPlayerData(playerId int64, user models.User, isNew bool) er
 			TotalRecharge: 0,
 			VipLevel:      0,
 		}
-
-		// 创建新玩家数据
-		newPlayer := &Player{
-			PlayerId:   playerId,
-			PlayerInfo: playerInfo,
-		}
-		p.PlayerId = playerId
-		p.PlayerInfo = playerInfo
-
-		// newPlayer.initAvatar()
-		// 保存新玩家数据
-		if _, err := mongodb.Save(newPlayer); err != nil {
-			return err
-		}
-	} else {
-		// 老玩家：从数据库加载数据
-		existingPlayer, err := mongodb.FindOneById[Player](playerId)
-		if err != nil {
-			return err
-		}
-		if existingPlayer == nil {
-			return fmt.Errorf("老玩家数据不存在: %v", playerId)
-		}
-
-		p.PlayerInfo = existingPlayer.PlayerInfo
-		p.TeamId = existingPlayer.TeamId
-		p.TowerLevel = existingPlayer.TowerLevel
-		p.PlayerId = existingPlayer.PlayerId
+		return nil
 	}
-	fmt.Println("InitPlayerData", p.PlayerInfo.GetAvatarURL())
+
+	existing, err := mongodb.FindOneById[Player](playerID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return fmt.Errorf("老玩家数据不存在: %v", playerID)
+	}
+	p.PlayerId = existing.PlayerId
+	p.PlayerInfo = existing.PlayerInfo
+	p.TeamId = existing.TeamId
+	p.TowerLevel = existing.TowerLevel
 	return nil
 }
 
-func (p *Player) ModifyName(name string) message.Result {
-	result := p.SendTask(func() message.Result {
-		return p.doModifyName(name)
-	})
-
-	if err, ok := result.(error); ok {
-		log.Error("修改名字失败: %v", err)
-		return message.Result_Fail
-	}
-
-	if typedResult, ok := result.(message.Result); ok {
-		return typedResult
-	}
-	return message.Result_Fail
-}
-
-func (p *Player) doModifyName(name string) message.Result {
-	if len(name) < 2 || len(name) > 20 {
-		return message.Result_Illegal
-	}
-	p.PlayerInfo.PlayerName = name
-	return message.Result_Success
-}
-
-func (p *Player) InitTeam() {
+func (p *Player) initTeam(ctx context.Context) error {
 	if p.TeamId != 0 {
-		teamActor, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
-		// team还存在
-		if ok {
-			if teamActor.RoomId != "" {
-				// todo 重连逻辑
-				return
-			}
-			return
+		if _, err := p.teams.Snapshot(ctx, p.TeamId); err == nil {
+			return nil
+		} else if !errors.Is(err, actor.ErrActorStopped) {
+			return err
 		}
 	}
-	teamInfo := team.InitTeam(p.agent)
-	p.TeamId = teamInfo.TeamId
-	teamInfo.JoinTeam(p.PlayerId)
-}
-
-func SendToClient(playerId int64, message proto.Message) {
-	player := GetPlayerActor(playerId)
-	if player == nil {
-		return
-	}
-	player.SendToClient(message)
-}
-
-func (p *Player) SendToClient(message proto.Message) {
-	p.SendTask(func() {
-		p.DoSendToClient(message)
-	})
-}
-
-func (p *Player) SendToClientSeq(message proto.Message, seq uint32) {
-	p.SendTaskAsync(func() {
-		p.agent.WriteMsgWithSeq(message, seq)
-	})
-}
-
-func (p *Player) DoSendToClient(message proto.Message) {
-	p.agent.WriteMsg(message)
-}
-
-func (p *Player) Stop() {
-	// 避免重复事件
-	if p.agent != nil {
-		p.agent.SetUserData(nil)
-		p.agent.Close()
-	}
-
-	p.TaskHandler.Stop()
-}
-
-func (p *Player) GetUser() (models.User, bool) {
-	userData := p.agent.UserData()
-	if userData == nil {
-		return models.User{}, false
-	}
-	return userData.(models.User), true
-}
-
-func (p *Player) initAvatar() {
-	objects, err := bucket.GetOSSClient().GetObjects("avatar/", 10)
+	teamInfo, err := p.teams.Create(ctx, p.PlayerId)
 	if err != nil {
-		fmt.Printf("获取OSS对象列表失败: %v\n", err)
-		return
+		return err
 	}
-	pathName := objects[utils.RandByArray(objects)].Key
-	_, err = bucket.GetOSSClient().CopyObject(pathName, strconv.FormatInt(p.PlayerId, 10))
-	if err == nil {
-		p.PlayerInfo.AvatarSuffix = filepath.Ext(pathName)
-	}
+	p.TeamId = teamInfo.TeamID
+	return p.teams.Join(ctx, teamInfo.TeamID, p.PlayerId)
 }
 
-func (p *Player) ModifyAvatarSuffix(avatar string) message.Result {
-	response := p.SendTask(func() message.Result {
-		return p.doModifyAvatarSuffix(avatar)
+func (p *Player) ModifyName(ctx context.Context, name string) (message.Result, string, error) {
+	type result struct {
+		status message.Result
+		name   string
+	}
+	response, err := actor.Call(ctx, p.Ref(), func(actor.Context) (result, error) {
+		if len(name) < 2 || len(name) > 20 {
+			return result{status: message.Result_Illegal, name: p.PlayerInfo.PlayerName}, nil
+		}
+		p.PlayerInfo.PlayerName = name
+		return result{status: message.Result_Success, name: name}, nil
 	})
-
-	if _, ok := response.(error); ok {
-		return message.Result_Fail
-	}
-	return response.(message.Result)
+	return response.status, response.name, err
 }
 
-func (p *Player) doModifyAvatarSuffix(avatar string) message.Result {
-	p.PlayerInfo.AvatarSuffix = "." + avatar
-	return message.Result_Success
+func (p *Player) ModifyAvatarSuffix(ctx context.Context, avatar string) (message.Result, string, error) {
+	type result struct {
+		status message.Result
+		avatar string
+	}
+	response, err := actor.Call(ctx, p.Ref(), func(actor.Context) (result, error) {
+		p.PlayerInfo.AvatarSuffix = "." + avatar
+		return result{status: message.Result_Success, avatar: p.PlayerInfo.AvatarSuffix}, nil
+	})
+	return response.status, response.avatar, err
+}
+
+func (p *Player) SendToClient(ctx context.Context, msg proto.Message) error {
+	return actor.Tell(ctx, p.Ref(), func(actor.Context) error {
+		p.agent.WriteMsg(msg)
+		return nil
+	})
+}
+
+func (p *Player) SendToClientSeq(ctx context.Context, msg proto.Message, seq uint32) error {
+	return actor.Tell(ctx, p.Ref(), func(actor.Context) error {
+		p.agent.WriteMsgWithSeq(msg, seq)
+		return nil
+	})
+}
+
+func (p *Player) Snapshot(ctx context.Context) (Snapshot, error) {
+	return actor.Call(ctx, p.Ref(), func(actor.Context) (Snapshot, error) {
+		var info *playermodel.PlayerInfo
+		if p.PlayerInfo != nil {
+			copyOfInfo := *p.PlayerInfo
+			info = &copyOfInfo
+		}
+		return Snapshot{
+			PlayerID:   p.PlayerId,
+			TeamID:     p.TeamId,
+			TowerLevel: p.TowerLevel,
+			PlayerInfo: info,
+		}, nil
+	})
 }

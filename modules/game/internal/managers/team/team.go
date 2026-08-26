@@ -1,11 +1,10 @@
 package team
 
 import (
+	"context"
 	"gameserver/common/base/actor"
 	"gameserver/common/db/mongodb"
-	"gameserver/common/models"
 	"gameserver/common/utils"
-	"gameserver/core/gate"
 	"gameserver/core/log"
 	"slices"
 )
@@ -16,142 +15,145 @@ type Team struct {
 	LeaderId        int64   `bson:"leader_id"`
 	TeamMembers     []int64 `bson:"team_members"`
 	RoomId          string  `bson:"room_id"`
+	deleted         bool    `bson:"-"`
+}
+
+type Snapshot struct {
+	TeamID    int64
+	LeaderID  int64
+	MemberIDs []int64
+	RoomID    string
+}
+
+type Registry struct {
+	definition *actor.Definition[*Team, int64]
+}
+
+func NewRegistry(scope *actor.Scope) (*Registry, error) {
+	definition, err := actor.Define(scope, actor.Team, func(context.Context, int64) (*Team, error) {
+		return &Team{}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Registry{definition: definition}, nil
+}
+
+func (r *Registry) Create(ctx context.Context, leaderID int64) (Snapshot, error) {
+	return r.GetOrCreate(ctx, utils.FlakeId(), leaderID)
+}
+
+func (r *Registry) GetOrCreate(ctx context.Context, teamID int64, leaderID int64) (Snapshot, error) {
+	team, err := r.definition.GetOrCreate(ctx, teamID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return actor.Call(ctx, team.Ref(), func(actor.Context) (Snapshot, error) {
+		if team.TeamId == 0 {
+			team.TeamId = teamID
+			team.LeaderId = leaderID
+		}
+		return team.snapshot(), nil
+	})
+}
+
+func (r *Registry) lookup(ctx context.Context, teamID int64) (*Team, error) {
+	return r.definition.Lookup(ctx, teamID)
+}
+
+func (r *Registry) Snapshot(ctx context.Context, teamID int64) (Snapshot, error) {
+	team, err := r.lookup(ctx, teamID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return actor.Call(ctx, team.Ref(), func(actor.Context) (Snapshot, error) {
+		return team.snapshot(), nil
+	})
+}
+
+func (r *Registry) Join(ctx context.Context, teamID int64, playerID int64) error {
+	team, err := r.lookup(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	_, err = actor.Call(ctx, team.Ref(), func(actor.Context) (struct{}, error) {
+		if slices.Contains(team.TeamMembers, playerID) {
+			return struct{}{}, nil
+		}
+		if team.LeaderId == 0 {
+			team.LeaderId = playerID
+		}
+		team.TeamMembers = append(team.TeamMembers, playerID)
+		log.Debug("玩家 %d 成功加入队伍 %d，当前成员数量: %d", playerID, team.TeamId, len(team.TeamMembers))
+		return struct{}{}, nil
+	})
+	return err
+}
+
+func (r *Registry) Leave(ctx context.Context, teamID int64, playerID int64) error {
+	team, err := r.lookup(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	empty, err := actor.Call(ctx, team.Ref(), func(actor.Context) (bool, error) {
+		log.Debug("玩家 %d 请求离开队伍 %d", playerID, team.TeamId)
+		if team.LeaderId == playerID {
+			team.LeaderId = 0
+		}
+		for index, memberID := range team.TeamMembers {
+			if memberID == playerID {
+				team.TeamMembers = append(team.TeamMembers[:index], team.TeamMembers[index+1:]...)
+				break
+			}
+		}
+		if len(team.TeamMembers) == 0 {
+			team.deleted = true
+			return true, nil
+		}
+		if team.LeaderId == 0 {
+			team.LeaderId = team.TeamMembers[0]
+		}
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	if empty {
+		return team.Ref().Stop(ctx)
+	}
+	return nil
+}
+
+func (r *Registry) SetRoomProjection(ctx context.Context, teamID int64, roomID string) (bool, error) {
+	team, err := r.lookup(ctx, teamID)
+	if err != nil {
+		return false, err
+	}
+	_, err = actor.Call(ctx, team.Ref(), func(actor.Context) (struct{}, error) {
+		team.RoomId = roomID
+		return struct{}{}, nil
+	})
+	return err == nil, err
 }
 
 func (t Team) GetPersistId() interface{} {
 	return t.TeamId
 }
 
-// 初始化队伍
-func InitTeam(agent gate.Agent) *Team {
-	user := agent.UserData().(models.User)
-	playerId := user.PlayerId
-
-	teamId := utils.FlakeId()
-	log.Debug("开始初始化队伍，玩家ID: %d, 队伍ID: %d", playerId, teamId)
-
-	return actor.RegisterActor[*Team](actor.Team, teamId, teamId, playerId)
+func (t *Team) OnStop(context.Context) error {
+	if t.deleted {
+		_, err := mongodb.DeleteByID[Team](t.TeamId)
+		return err
+	}
+	_, err := mongodb.Save(t)
+	return err
 }
 
-func (t *Team) Init(args ...any) {
-	if teamId, ok := args[0].(int64); ok {
-		t.TeamId = teamId
+func (t *Team) snapshot() Snapshot {
+	return Snapshot{
+		TeamID:    t.TeamId,
+		LeaderID:  t.LeaderId,
+		MemberIDs: append([]int64(nil), t.TeamMembers...),
+		RoomID:    t.RoomId,
 	}
-	if leaderId, ok := args[1].(int64); ok {
-		t.LeaderId = leaderId
-	}
-}
-
-func (t *Team) Stop() {
-	t.RemoveActor(t)
-}
-
-func (t *Team) JoinTeam(playerId int64) {
-	t.SendTaskAsync(func() {
-		t.doJoinTeam(playerId)
-	})
-}
-
-func (t *Team) doJoinTeam(playerId int64) {
-	if t.LeaderId == 0 {
-		t.LeaderId = playerId
-	}
-
-	t.TeamMembers = append(t.TeamMembers, playerId)
-	log.Debug("玩家 %d 成功加入队伍 %d，当前成员数量: %d", playerId, t.TeamId, len(t.TeamMembers))
-}
-
-func (t *Team) SetRoomProjection(roomID string) bool {
-	result := t.SendTask(func() bool {
-		t.RoomId = roomID
-		return true
-	})
-	if err, ok := result.(error); ok {
-		log.Error("设置队伍 %d 的房间投影失败: %v", t.TeamId, err)
-		return false
-	}
-	applied, ok := result.(bool)
-	return ok && applied
-}
-func (t *Team) LeaveTeam(playerId int64) {
-	t.SendTaskAsync(func() {
-		t.doLeaveTeam(playerId)
-	})
-}
-
-func (t *Team) doLeaveTeam(playerId int64) {
-	log.Debug("玩家 %d 请求离开队伍 %d", playerId, t.TeamId)
-
-	// 检查是否是队长离开
-	if t.IsLeader(playerId) {
-		t.LeaderId = 0
-		log.Debug("队伍 %d 的队长 %d 离开，队长职位空缺", t.TeamId, playerId)
-	}
-
-	// 从成员列表中移除
-	for i, v := range t.TeamMembers {
-		if v == playerId {
-			t.TeamMembers = append(t.TeamMembers[:i], t.TeamMembers[i+1:]...)
-			log.Debug("从队伍 %d 中移除玩家 %d", t.TeamId, playerId)
-			break
-		}
-	}
-
-	// 检查队伍是否为空
-	if len(t.TeamMembers) == 0 {
-		log.Debug("队伍 %d 已无成员，停止队伍Actor", t.TeamId)
-		t.Stop()
-		mongodb.DeleteByID[Team](t.TeamId)
-		return
-	}
-
-	// 如果队长职位空缺，选择第一个成员作为新队长
-	if t.LeaderId == 0 && len(t.TeamMembers) > 0 {
-		t.LeaderId = t.TeamMembers[0]
-		log.Debug("队伍 %d 选择新队长: %d", t.TeamId, t.LeaderId)
-	}
-
-	log.Debug("玩家 %d 离开队伍 %d 完成，剩余成员数量: %d", playerId, t.TeamId, len(t.TeamMembers))
-}
-
-// IsMember 检查玩家是否是队伍成员
-func (t *Team) IsMember(playerId int64) bool {
-	result := t.SendTask(func() bool {
-		return t.doIsMember(playerId)
-	})
-
-	if err, ok := result.(error); ok {
-		log.Error("检查队员失败: %v", err)
-		return false
-	}
-
-	if typedResult, ok := result.(bool); ok {
-		return typedResult
-	}
-	return false
-}
-
-func (t *Team) doIsMember(playerId int64) bool {
-	return slices.Contains(t.TeamMembers, playerId)
-}
-
-// IsLeader 检查玩家是否是队长
-func (t *Team) IsLeader(playerId int64) bool {
-	result := t.SendTask(func() bool {
-		return t.doIsLeader(playerId)
-	})
-
-	if err, ok := result.(error); ok {
-		log.Error("检查队长失败: %v", err)
-		return false
-	}
-
-	if typedResult, ok := result.(bool); ok {
-		return typedResult
-	}
-	return false
-}
-
-func (t *Team) doIsLeader(playerId int64) bool {
-	return t.LeaderId == playerId
 }

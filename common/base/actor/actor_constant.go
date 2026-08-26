@@ -11,7 +11,6 @@ const (
 	Room     ActorGroup = "Room"
 	Rank     ActorGroup = "Rank"
 	Match    ActorGroup = "match"
-	Season   ActorGroup = "season"
 	// 测试用的ActorGroup
 	Test1 ActorGroup = "test1"
 	Test2 ActorGroup = "test2"

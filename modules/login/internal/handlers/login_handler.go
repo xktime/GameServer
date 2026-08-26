@@ -4,11 +4,19 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/login/internal/managers"
 )
 
+type LoginManager interface {
+	HandleLogin(*message.C2S_Login, gate.Agent) *message.S2C_Login
+}
+
+type ConnectManager interface {
+	UpdateHeartbeat(gate.Agent)
+	RemoveClient(string)
+}
+
 // C2S_LoginHandler 处理C2S_Login消息
-func C2S_LoginHandler(args []interface{}) {
+func C2S_LoginHandler(login LoginManager, connections ConnectManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_LoginHandler: 参数不足")
 		return
@@ -27,8 +35,8 @@ func C2S_LoginHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_Login消息: %v, agent: %v", msg, agent)
-	managers.GetConnectManager().UpdateHeartbeat(agent)
-	loginResp := managers.GetLoginManager().HandleLogin(msg, agent)
+	connections.UpdateHeartbeat(agent)
+	loginResp := login.HandleLogin(msg, agent)
 	if loginResp == nil {
 		log.Error("C2S_LoginHandler: loginResp is nil: %v", loginResp)
 		return

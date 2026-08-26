@@ -7,27 +7,29 @@ import (
 )
 
 type fakeMatchPlayerFinder struct {
-	players map[int64]*managerplayer.Player
+	players map[int64]managerplayer.Snapshot
 }
 
-func (f fakeMatchPlayerFinder) GetPlayer(playerID int64) *managerplayer.Player {
-	return f.players[playerID]
+func (f fakeMatchPlayerFinder) GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool) {
+	snapshot, found := f.players[playerID]
+	return snapshot, found
 }
 
-type fakeMatchTeamFinder map[int64]*team.Team
+type fakeMatchTeamFinder map[int64]team.Snapshot
 
-func (f fakeMatchTeamFinder) GetTeamByPlayerId(playerID int64) *team.Team {
-	return f[playerID]
+func (f fakeMatchTeamFinder) GetTeamByPlayerID(playerID int64) (team.Snapshot, bool) {
+	snapshot, found := f[playerID]
+	return snapshot, found
 }
 
 func TestMatchPlayerReaderCopiesOnlineSnapshots(t *testing.T) {
-	player := &managerplayer.Player{PlayerId: 42, TeamId: 7}
-	teamInfo := &team.Team{TeamId: 7, TeamMembers: []int64{42, 43}}
+	playerSnapshotData := managerplayer.Snapshot{PlayerID: 42, TeamID: 7}
+	teamSnapshotData := team.Snapshot{TeamID: 7, MemberIDs: []int64{42, 43}}
 	reader := matchPlayerReader{
 		players: fakeMatchPlayerFinder{
-			players: map[int64]*managerplayer.Player{42: player},
+			players: map[int64]managerplayer.Snapshot{42: playerSnapshotData},
 		},
-		teams: fakeMatchTeamFinder{42: teamInfo},
+		teams: fakeMatchTeamFinder{42: teamSnapshotData},
 	}
 
 	playerSnapshot, ok := reader.FindOnline(42)
@@ -40,7 +42,7 @@ func TestMatchPlayerReaderCopiesOnlineSnapshots(t *testing.T) {
 		t.Fatalf("在线 Team 快照 = %#v, %v", teamSnapshot, ok)
 	}
 	teamSnapshot.MemberIDs[0] = 99
-	if teamInfo.TeamMembers[0] != 42 {
+	if teamSnapshotData.MemberIDs[0] != 42 {
 		t.Fatal("修改 TeamSnapshot 不应改写 Game Team")
 	}
 
@@ -48,7 +50,7 @@ func TestMatchPlayerReaderCopiesOnlineSnapshots(t *testing.T) {
 
 func TestMatchPlayerReaderRejectsMissingOnlineData(t *testing.T) {
 	reader := matchPlayerReader{
-		players: fakeMatchPlayerFinder{players: map[int64]*managerplayer.Player{}},
+		players: fakeMatchPlayerFinder{players: map[int64]managerplayer.Snapshot{}},
 		teams:   fakeMatchTeamFinder{},
 	}
 

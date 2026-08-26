@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"errors"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
@@ -74,12 +75,6 @@ type unrelatedRoomTestActor struct {
 	actor.BaseActor
 }
 
-func (a *unrelatedRoomTestActor) Init(...any) {}
-
-func (a *unrelatedRoomTestActor) Stop() {
-	a.RemoveActor(a)
-}
-
 func (f *fakePlayerMessenger) Send(playerIDs []int64, msg proto.Message) {
 	f.delivered = append(f.delivered, deliveredRoomMessage{
 		playerIDs: append([]int64(nil), playerIDs...),
@@ -95,12 +90,35 @@ func (f *fakePlayerMessenger) SendExcept(playerIDs []int64, excludedPlayerID int
 	})
 }
 
+func newTestRoomManager(
+	t *testing.T,
+	projection participant.TeamRoomProjection,
+	messenger participant.PlayerMessenger,
+	now func() time.Time,
+	newRoomID func() string,
+) *RoomManager {
+	t.Helper()
+	system := actor.NewActorSystem(time.Second)
+	scope, err := system.NewScope("room-test")
+	if err != nil {
+		t.Fatalf("NewScope: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := system.Stop(context.Background()); err != nil {
+			t.Errorf("Stop ActorSystem: %v", err)
+		}
+	})
+	manager, err := NewRoomManager(scope, projection, messenger, now, newRoomID)
+	if err != nil {
+		t.Fatalf("NewRoomManager: %v", err)
+	}
+	return manager
+}
+
 func TestAcceptMatchCommitsRoomAndNotifiesOnlyRealPlayers(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &fakeTeamRoomProjection{}
 	messenger := &fakePlayerMessenger{}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -135,12 +153,10 @@ func TestAcceptMatchCommitsRoomAndNotifiesOnlyRealPlayers(t *testing.T) {
 }
 
 func TestAcceptMatchReturnsExistingRoomForDuplicateMatchID(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &fakeTeamRoomProjection{}
 	messenger := &fakePlayerMessenger{}
 	roomIDs := []string{"room-1", "room-2"}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -167,12 +183,10 @@ func TestAcceptMatchReturnsExistingRoomForDuplicateMatchID(t *testing.T) {
 }
 
 func TestAcceptMatchRejectsParticipantAlreadyInActiveRoom(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &fakeTeamRoomProjection{}
 	messenger := &fakePlayerMessenger{}
 	roomNumber := 0
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -216,11 +230,9 @@ func TestAcceptMatchRejectsStructurallyInvalidAdmission(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actor.Init(1000)
-			t.Cleanup(actor.StopAll)
 			projection := &fakeTeamRoomProjection{}
 			messenger := &fakePlayerMessenger{}
-			manager := NewRoomManager(
+			manager := newTestRoomManager(t,
 				projection,
 				messenger,
 				func() time.Time { return time.Unix(100, 0) },
@@ -240,11 +252,9 @@ func TestAcceptMatchRejectsStructurallyInvalidAdmission(t *testing.T) {
 }
 
 func TestAcceptMatchKeepsFailedTeamProjectionForReconciliation(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &fakeTeamRoomProjection{err: errors.New("projection unavailable")}
 	messenger := &fakePlayerMessenger{}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -270,12 +280,10 @@ func TestAcceptMatchKeepsFailedTeamProjectionForReconciliation(t *testing.T) {
 }
 
 func TestCloseRoomReleasesMembershipAndIsIdempotent(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &fakeTeamRoomProjection{}
 	messenger := &fakePlayerMessenger{}
 	roomIDs := []string{"room-1", "room-2"}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -318,10 +326,8 @@ func TestCloseRoomReleasesMembershipAndIsIdempotent(t *testing.T) {
 }
 
 func TestCloseRoomCoalescesPendingProjectionToLatestDesiredRoom(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &fakeTeamRoomProjection{err: errors.New("projection unavailable")}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		&fakePlayerMessenger{},
 		func() time.Time { return time.Unix(100, 0) },
@@ -344,13 +350,11 @@ func TestCloseRoomCoalescesPendingProjectionToLatestDesiredRoom(t *testing.T) {
 }
 
 func TestCloseRoomReappliesLatestProjectionAfterStaleJoinCompletes(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	projection := &reorderedTeamRoomProjection{
 		joinStarted: make(chan struct{}),
 		releaseJoin: make(chan struct{}),
 	}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		projection,
 		&fakePlayerMessenger{},
 		func() time.Time { return time.Unix(100, 0) },
@@ -385,11 +389,9 @@ func TestCloseRoomReappliesLatestProjectionAfterStaleJoinCompletes(t *testing.T)
 }
 
 func TestClosedMatchIDIsRejectedUntilTombstoneExpires(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	now := time.Unix(100, 0)
 	roomIDs := []string{"room-1", "room-2"}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		&fakeTeamRoomProjection{},
 		&fakePlayerMessenger{},
 		func() time.Time { return now },
@@ -420,10 +422,8 @@ func TestClosedMatchIDIsRejectedUntilTombstoneExpires(t *testing.T) {
 }
 
 func TestMaintainProactivelyPrunesExpiredMatchTombstones(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	now := time.Unix(100, 0)
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		&fakeTeamRoomProjection{},
 		&fakePlayerMessenger{},
 		func() time.Time { return now },
@@ -449,10 +449,8 @@ func TestMaintainProactivelyPrunesExpiredMatchTombstones(t *testing.T) {
 }
 
 func TestHandleRecordOperateAuthorizesCanonicalMembership(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	messenger := &fakePlayerMessenger{}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		&fakeTeamRoomProjection{},
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -487,10 +485,8 @@ func TestHandleRecordOperateAuthorizesCanonicalMembership(t *testing.T) {
 }
 
 func TestPlayerOfflineNotifiesOthersWithoutRemovingMembership(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	messenger := &fakePlayerMessenger{}
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		&fakeTeamRoomProjection{},
 		messenger,
 		func() time.Time { return time.Unix(100, 0) },
@@ -526,12 +522,10 @@ func TestPlayerOfflineNotifiesOthersWithoutRemovingMembership(t *testing.T) {
 }
 
 func TestCloseExpiredClosesOnlyRoomsAtMaximumLifetime(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
 	createdAt := time.Unix(100, 0)
 	now := createdAt
 	roomNumber := 0
-	manager := NewRoomManager(
+	manager := newTestRoomManager(t,
 		&fakeTeamRoomProjection{},
 		&fakePlayerMessenger{},
 		func() time.Time { return now },
@@ -567,16 +561,40 @@ func TestCloseExpiredClosesOnlyRoomsAtMaximumLifetime(t *testing.T) {
 }
 
 func TestRoomManagerStopClosesOwnedRoomsWithoutStoppingOtherActors(t *testing.T) {
-	actor.Init(1000)
-	t.Cleanup(actor.StopAll)
-	actor.RegisterActor[*unrelatedRoomTestActor](actor.Test1, "other")
+	system := actor.NewActorSystem(time.Second)
+	roomScope, err := system.NewScope("room-test")
+	if err != nil {
+		t.Fatalf("NewScope room: %v", err)
+	}
+	otherScope, err := system.NewScope("other-test")
+	if err != nil {
+		t.Fatalf("NewScope other: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := system.Stop(context.Background()); err != nil {
+			t.Errorf("Stop ActorSystem: %v", err)
+		}
+	})
+	otherDefinition, err := actor.Define(otherScope, actor.Test1, func(context.Context, string) (*unrelatedRoomTestActor, error) {
+		return &unrelatedRoomTestActor{}, nil
+	})
+	if err != nil {
+		t.Fatalf("Define unrelated actor: %v", err)
+	}
+	unrelated, err := otherDefinition.GetOrCreate(context.Background(), "other")
+	if err != nil {
+		t.Fatalf("create unrelated actor: %v", err)
+	}
 	projection := &fakeTeamRoomProjection{}
-	manager := NewRoomManager(
+	manager, err := NewRoomManager(roomScope,
 		projection,
 		&fakePlayerMessenger{},
 		func() time.Time { return time.Unix(100, 0) },
 		func() string { return "room-1" },
 	)
+	if err != nil {
+		t.Fatalf("NewRoomManager: %v", err)
+	}
 	manager.AcceptMatch(matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
@@ -585,8 +603,10 @@ func TestRoomManagerStopClosesOwnedRoomsWithoutStoppingOtherActors(t *testing.T)
 	manager.Stop()
 	manager.Stop()
 
-	if _, ok := actor.GetActor[unrelatedRoomTestActor](actor.Test1, "other"); !ok {
-		t.Fatal("RoomManager.Stop stopped an unrelated actor")
+	if _, err := actor.Call(context.Background(), unrelated.Ref(), func(actor.Context) (struct{}, error) {
+		return struct{}{}, nil
+	}); err != nil {
+		t.Fatalf("RoomManager.Stop affected unrelated actor: %v", err)
 	}
 	wantClear := []participant.DesiredTeamRoom{{TeamID: 7, RoomID: ""}}
 	if len(projection.applied) != 2 || !slices.Equal(projection.applied[1], wantClear) {
@@ -594,79 +614,29 @@ func TestRoomManagerStopClosesOwnedRoomsWithoutStoppingOtherActors(t *testing.T)
 	}
 }
 
-func useRoomManagerFactory(t *testing.T, factory roomManagerFactory) {
-	t.Helper()
-	previousRegistration := roomManagerRegistration
-	previousFactory := createRegisteredRoomManager
-	roomManagerRegistration = &roomManagerRegistry{}
-	createRegisteredRoomManager = factory
-	t.Cleanup(func() {
-		roomManagerRegistration = previousRegistration
-		createRegisteredRoomManager = previousFactory
-	})
-}
-
-func roomPanicValue(f func()) (recovered any) {
-	defer func() {
-		recovered = recover()
-	}()
-	f()
-	return nil
-}
-
-func TestRoomManagerRegistrationRequiresDependenciesAndRunsOnce(t *testing.T) {
-	want := &RoomManager{}
-	factoryCalls := 0
-	useRoomManagerFactory(t, func(participant.TeamRoomProjection, participant.PlayerMessenger, func() time.Time, func() string) *RoomManager {
-		factoryCalls++
-		return want
-	})
-
-	if got := roomPanicValue(func() { GetRoomManager() }); got != "room: GetRoomManager called before RegisterRoomManager" {
-		t.Fatalf("registration-before-get panic = %#v", got)
-	}
-	projection := &fakeTeamRoomProjection{}
-	messenger := &fakePlayerMessenger{}
-	registered := RegisterRoomManager(projection, messenger, time.Now, func() string { return "room-1" })
-	if registered != want || GetRoomManager() != want || factoryCalls != 1 {
-		t.Fatalf("registration = %#v get = %#v calls = %d", registered, GetRoomManager(), factoryCalls)
-	}
-	if got := roomPanicValue(func() { RegisterRoomManager(projection, messenger, time.Now, func() string { return "room-2" }) }); got != "room: RegisterRoomManager called more than once" {
-		t.Fatalf("duplicate registration panic = %#v", got)
-	}
-}
-
-func TestRegisterRoomManagerMissingDependencyIsTerminal(t *testing.T) {
+func TestNewRoomManagerRejectsMissingDependency(t *testing.T) {
 	tests := []struct {
 		name       string
 		projection participant.TeamRoomProjection
 		messenger  participant.PlayerMessenger
 		now        func() time.Time
 		newRoomID  func() string
-		wantPanic  string
 	}{
-		{name: "projection", messenger: &fakePlayerMessenger{}, now: time.Now, newRoomID: func() string { return "room-1" }, wantPanic: "room: RegisterRoomManager requires TeamRoomProjection"},
-		{name: "messenger", projection: &fakeTeamRoomProjection{}, now: time.Now, newRoomID: func() string { return "room-1" }, wantPanic: "room: RegisterRoomManager requires PlayerMessenger"},
-		{name: "clock", projection: &fakeTeamRoomProjection{}, messenger: &fakePlayerMessenger{}, newRoomID: func() string { return "room-1" }, wantPanic: "room: RegisterRoomManager requires Clock"},
-		{name: "RoomID generator", projection: &fakeTeamRoomProjection{}, messenger: &fakePlayerMessenger{}, now: time.Now, wantPanic: "room: RegisterRoomManager requires RoomID generator"},
+		{name: "projection", messenger: &fakePlayerMessenger{}, now: time.Now, newRoomID: func() string { return "room-1" }},
+		{name: "messenger", projection: &fakeTeamRoomProjection{}, now: time.Now, newRoomID: func() string { return "room-1" }},
+		{name: "clock", projection: &fakeTeamRoomProjection{}, messenger: &fakePlayerMessenger{}, newRoomID: func() string { return "room-1" }},
+		{name: "RoomID generator", projection: &fakeTeamRoomProjection{}, messenger: &fakePlayerMessenger{}, now: time.Now},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			factoryCalled := false
-			useRoomManagerFactory(t, func(participant.TeamRoomProjection, participant.PlayerMessenger, func() time.Time, func() string) *RoomManager {
-				factoryCalled = true
-				return &RoomManager{}
-			})
-
-			if got := roomPanicValue(func() { RegisterRoomManager(test.projection, test.messenger, test.now, test.newRoomID) }); got != test.wantPanic {
-				t.Fatalf("missing dependency panic = %#v", got)
+			system := actor.NewActorSystem(time.Second)
+			scope, err := system.NewScope("room-test")
+			if err != nil {
+				t.Fatalf("NewScope: %v", err)
 			}
-			if factoryCalled {
-				t.Fatal("missing dependency called RoomManager factory")
-			}
-			if got := roomPanicValue(func() { GetRoomManager() }); got != test.wantPanic {
-				t.Fatalf("terminal registration panic = %#v", got)
+			if _, err := NewRoomManager(scope, test.projection, test.messenger, test.now, test.newRoomID); err == nil {
+				t.Fatal("NewRoomManager accepted missing dependency")
 			}
 		})
 	}

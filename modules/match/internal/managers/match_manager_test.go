@@ -1,12 +1,13 @@
 package managers
 
 import (
+	"context"
+	"gameserver/common/base/actor"
 	commonmodels "gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	matchmodels "gameserver/modules/match/internal/models"
 	"gameserver/modules/match/playerread"
-	"gameserver/modules/match/roomaccept"
 	"gameserver/modules/room/matchentry"
 	"net"
 	"reflect"
@@ -274,186 +275,27 @@ func TestMatchingRemovesRejectedTeamsAndRequeuesTheRest(t *testing.T) {
 	}
 }
 
-func useMatchManagerFactory(t *testing.T, factory matchManagerFactory) {
-	t.Helper()
-	previousRegistration := matchManagerRegistration
-	previousFactory := registerMatchActor
-	matchManagerRegistration = &matchManagerRegistry{}
-	registerMatchActor = factory
-	t.Cleanup(func() {
-		matchManagerRegistration = previousRegistration
-		registerMatchActor = previousFactory
-	})
-}
-
-func matchPanicValue(f func()) (recovered any) {
-	defer func() {
-		recovered = recover()
-	}()
-	f()
-	return nil
-}
-
-func TestGetMatchManagerBeforeRegistrationPanics(t *testing.T) {
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		return &MatchManager{}
-	})
-
-	if got := matchPanicValue(func() { GetMatchManager() }); got != "match: GetMatchManager called before RegisterMatchManager" {
-		t.Fatalf("注册前 GetMatchManager panic = %#v", got)
+func TestNewMatchManagerRegistersReadyActorInScope(t *testing.T) {
+	system := actor.NewActorSystem(time.Second)
+	scope, err := system.NewScope("match-test")
+	if err != nil {
+		t.Fatalf("NewScope: %v", err)
 	}
-}
-
-func TestMatchManagerRegistrationWaitsUntilReady(t *testing.T) {
-	registrationStarted := make(chan struct{})
-	finishRegistration := make(chan struct{})
-	want := &MatchManager{}
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		close(registrationStarted)
-		<-finishRegistration
-		return want
-	})
-	rooms := &fakeRoomAcceptor{}
-	newMatchID := func() string { return "match-1" }
-
-	registered := make(chan *MatchManager, 1)
-	go func() {
-		registered <- RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now)
-	}()
-	<-registrationStarted
-
-	gotManager := make(chan *MatchManager, 1)
-	go func() {
-		gotManager <- GetMatchManager()
-	}()
-	select {
-	case got := <-gotManager:
-		t.Fatalf("注册完成前 GetMatchManager 返回了 %#v", got)
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	close(finishRegistration)
-	select {
-	case got := <-registered:
-		if got != want {
-			t.Fatalf("RegisterMatchManager 返回 %#v，期望 %#v", got, want)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("RegisterMatchManager 未在注册完成后返回")
-	}
-	select {
-	case got := <-gotManager:
-		if got != want {
-			t.Fatalf("GetMatchManager 返回 %#v，期望 %#v", got, want)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("GetMatchManager 未在注册完成后唤醒")
-	}
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now) }); got != "match: RegisterMatchManager called more than once" {
-		t.Fatalf("重复注册 panic = %#v", got)
-	}
-}
-
-func TestMatchManagerRegistrationFailureIsTerminal(t *testing.T) {
-	wantPanic := &struct{ reason string }{reason: "boom"}
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		panic(wantPanic)
-	})
-	rooms := &fakeRoomAcceptor{}
-	newMatchID := func() string { return "match-1" }
-
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now) }); got != wantPanic {
-		t.Fatalf("注册调用收到 panic %#v，期望 %#v", got, wantPanic)
-	}
-	if got := matchPanicValue(func() { GetMatchManager() }); got != wantPanic {
-		t.Fatalf("失败后的 GetMatchManager panic = %#v，期望 %#v", got, wantPanic)
-	}
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, rooms, newMatchID, time.Now) }); got != "match: RegisterMatchManager called more than once" {
-		t.Fatalf("失败后重试注册 panic = %#v", got)
-	}
-}
-
-func TestRegisterMatchManagerNilReaderIsTerminal(t *testing.T) {
-	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		factoryCalled = true
-		return &MatchManager{}
-	})
-
-	wantPanic := "match: RegisterMatchManager requires PlayerReader"
-	if got := matchPanicValue(func() { RegisterMatchManager(nil, &fakeRoomAcceptor{}, func() string { return "match-1" }, time.Now) }); got != wantPanic {
-		t.Fatalf("nil PlayerReader 注册 panic = %#v，期望 %#v", got, wantPanic)
-	}
-	if factoryCalled {
-		t.Fatal("nil PlayerReader 不应调用 MatchManager factory")
-	}
-	if got := matchPanicValue(func() { GetMatchManager() }); got != wantPanic {
-		t.Fatalf("nil 注册失败后的 GetMatchManager panic = %#v，期望 %#v", got, wantPanic)
-	}
-}
-
-func TestRegisterMatchManagerRejectsMissingRoomAcceptor(t *testing.T) {
-	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		factoryCalled = true
-		return &MatchManager{}
-	})
-
-	wantPanic := "match: RegisterMatchManager requires Room Acceptor"
-	if got := matchPanicValue(func() {
-		RegisterMatchManager(&fakeMatchPlayerReader{}, nil, func() string { return "match-1" }, time.Now)
-	}); got != wantPanic {
-		t.Fatalf("nil Room Acceptor panic = %#v，期望 %#v", got, wantPanic)
-	}
-	if factoryCalled {
-		t.Fatal("nil Room Acceptor 不应调用 MatchManager factory")
-	}
-}
-
-func TestRegisterMatchManagerRejectsMissingMatchIDGenerator(t *testing.T) {
-	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		factoryCalled = true
-		return &MatchManager{}
-	})
-
-	wantPanic := "match: RegisterMatchManager requires MatchID generator"
-	if got := matchPanicValue(func() { RegisterMatchManager(&fakeMatchPlayerReader{}, &fakeRoomAcceptor{}, nil, time.Now) }); got != wantPanic {
-		t.Fatalf("nil MatchID generator panic = %#v，期望 %#v", got, wantPanic)
-	}
-	if factoryCalled {
-		t.Fatal("nil MatchID generator 不应调用 MatchManager factory")
-	}
-}
-
-func TestRegisterMatchManagerRejectsMissingClock(t *testing.T) {
-	factoryCalled := false
-	useMatchManagerFactory(t, func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager {
-		factoryCalled = true
-		return &MatchManager{}
-	})
-
-	wantPanic := "match: RegisterMatchManager requires Clock"
-	if got := matchPanicValue(func() {
-		RegisterMatchManager(&fakeMatchPlayerReader{}, &fakeRoomAcceptor{}, func() string { return "match-1" }, nil)
-	}); got != wantPanic {
-		t.Fatalf("nil Clock panic = %#v，期望 %#v", got, wantPanic)
-	}
-	if factoryCalled {
-		t.Fatal("nil Clock 不应调用 MatchManager factory")
-	}
-}
-
-func TestMatchManagerInitStoresRequiredDependencies(t *testing.T) {
 	players := &fakeMatchPlayerReader{}
 	rooms := &fakeRoomAcceptor{}
 	newMatchID := func() string { return "match-1" }
 	now := func() time.Time { return time.Unix(1, 0) }
-	manager := &MatchManager{}
-
-	manager.Init(players, rooms, newMatchID, now)
+	manager, err := NewMatchManager(context.Background(), scope, players, rooms, newMatchID, now)
+	if err != nil {
+		t.Fatalf("NewMatchManager: %v", err)
+	}
 
 	if manager.players != players || manager.rooms != rooms || manager.newMatchID == nil || manager.now == nil || manager.matchQueues[1] == nil || manager.settlements == nil {
 		t.Fatalf("initialized manager = %#v", manager)
+	}
+	if _, err := actor.Call(context.Background(), manager.Ref(), func(actor.Context) (struct{}, error) {
+		return struct{}{}, nil
+	}); err != nil {
+		t.Fatalf("Call ready manager: %v", err)
 	}
 }

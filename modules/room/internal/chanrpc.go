@@ -3,14 +3,19 @@ package internal
 import (
 	"gameserver/common/models"
 	"gameserver/core/gate"
-	"gameserver/modules/room/internal/managers"
 )
 
-func init() {
-	skeleton.RegisterChanRPC("CloseAgent", rpcCloseAgent)
+type roomOfflineHandler interface {
+	PlayerOffline(int64) bool
 }
 
-func rpcCloseAgent(args []interface{}) {
+func registerCloseAgent(manager roomOfflineHandler) {
+	skeleton.RegisterChanRPC("CloseAgent", func(args []interface{}) {
+		rpcCloseAgent(manager, args)
+	})
+}
+
+func rpcCloseAgent(manager roomOfflineHandler, args []interface{}) {
 	if len(args) == 0 {
 		return
 	}
@@ -22,5 +27,5 @@ func rpcCloseAgent(args []interface{}) {
 	if !ok {
 		return
 	}
-	managers.GetRoomManager().PlayerOffline(user.PlayerId)
+	manager.PlayerOffline(user.PlayerId)
 }

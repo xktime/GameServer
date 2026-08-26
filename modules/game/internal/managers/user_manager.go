@@ -1,6 +1,8 @@
 package managers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/db/mongodb"
@@ -11,124 +13,182 @@ import (
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
 	"gameserver/modules/game/internal/managers/team"
-	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"google.golang.org/protobuf/proto"
 )
 
-// UserManager 使用BaseActor实现，确保缓存操作按顺序执行
+const managerInitializationRetryDelay = 100 * time.Millisecond
+
 type UserManager struct {
 	actor.BaseActor
-	memCache        map[string]*models.User  // 用户缓存
-	playerCache     map[int64]*player.Player // 玩家缓存
-	nameCache       map[string]bool          // 名称缓存，key: playerName, value: bool (true表示已存在)
-	nameBloomFilter *utils.BloomFilter       // 布隆过滤器，用于快速判断名称是否可能重复
+	players         *player.Registry
+	teams           *team.Registry
+	memCache        map[string]*models.User
+	nameCache       map[string]bool
+	nameBloomFilter *utils.BloomFilter
+	loadPlayers     func() ([]player.Player, error) `bson:"-"`
+	initialized     bool                            `bson:"-"`
 }
 
-var (
-	userManager     *UserManager
-	userManagerOnce sync.Once
-)
+func NewManagers(ctx context.Context, scope *actor.Scope) (*UserManager, *TeamManager, error) {
+	teams, err := team.NewRegistry(scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	players, err := player.NewRegistry(scope, teams)
+	if err != nil {
+		return nil, nil, err
+	}
+	users, err := NewUserManager(ctx, scope, players, teams)
+	if err != nil {
+		return nil, nil, err
+	}
+	teamManager, err := NewTeamManager(ctx, scope, players, teams)
+	if err != nil {
+		return nil, nil, err
+	}
+	return users, teamManager, nil
+}
 
-func GetUserManager() *UserManager {
-	userManagerOnce.Do(func() {
-		userManager = actor.RegisterActor[*UserManager](actor.User, "1")
+func NewUserManager(ctx context.Context, scope *actor.Scope, players *player.Registry, teams *team.Registry) (*UserManager, error) {
+	return newUserManager(ctx, scope, players, teams, func() ([]player.Player, error) {
+		return mongodb.FindAll[player.Player](bson.M{})
 	})
-	return userManager
 }
 
-func (m *UserManager) Init(args ...any) {
-	m.memCache = make(map[string]*models.User)
-	m.playerCache = make(map[int64]*player.Player)
-	m.nameCache = make(map[string]bool)
-	// 假设最多支持100万个名称，误判率控制在1%以内
-	m.nameBloomFilter = utils.NewBloomFilter(1000000, 7)
-	m.PreloadNames()
-}
-
-// Stop 停止UserManager
-func (m *UserManager) Stop() {
-	m.RemoveActor(m)
-}
-
-func (m *UserManager) GetInterval() int {
-	return 5
-}
-
-// UserLogin 用户登录 - 异步执行
-func (m *UserManager) UserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) *message.S2C_Login {
-	result := m.SendTask(func() *message.S2C_Login {
-		return m.doUserLogin(agent, openId, serverId, loginType)
+func newUserManager(
+	ctx context.Context,
+	scope *actor.Scope,
+	players *player.Registry,
+	teams *team.Registry,
+	loadPlayers func() ([]player.Player, error),
+) (*UserManager, error) {
+	if players == nil {
+		return nil, fmt.Errorf("game: Player Registry is nil")
+	}
+	if teams == nil {
+		return nil, fmt.Errorf("game: Team Registry is nil")
+	}
+	if loadPlayers == nil {
+		return nil, fmt.Errorf("game: Player loader is nil")
+	}
+	definition, err := actor.Define(scope, actor.User, func(context.Context, string) (*UserManager, error) {
+		manager := &UserManager{
+			players:         players,
+			teams:           teams,
+			memCache:        make(map[string]*models.User),
+			nameCache:       make(map[string]bool),
+			nameBloomFilter: utils.NewBloomFilter(1000000, 7),
+			loadPlayers:     loadPlayers,
+		}
+		return manager, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	manager, err := definition.GetOrCreate(ctx, "singleton")
+	if err != nil {
+		return nil, err
+	}
+	if err := manager.initializeUntilReady(ctx); err != nil {
+		return nil, err
+	}
+	return manager, nil
+}
 
-	if err, ok := result.(error); ok {
-		log.Error("用户登录失败: %v", err)
+func (m *UserManager) initializeUntilReady(ctx context.Context) error {
+	for {
+		err := m.initialize(ctx)
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-time.After(managerInitializationRetryDelay):
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		}
+	}
+}
+
+func (m *UserManager) initialize(ctx context.Context) error {
+	_, err := actor.Call(ctx, m.Ref(), func(actor.Context) (struct{}, error) {
+		if m.initialized {
+			return struct{}{}, nil
+		}
+		if err := m.preloadNames(); err != nil {
+			return struct{}{}, err
+		}
+		m.initialized = true
+		return struct{}{}, nil
+	})
+	return err
+}
+
+func (m *UserManager) OnStop(context.Context) error {
+	if !m.initialized {
 		return nil
 	}
-
-	if loginResp, ok := result.(*message.S2C_Login); ok {
-		return loginResp
+	now := time.Now().Unix()
+	stopErrors := make([]error, 0)
+	for _, user := range m.memCache {
+		user.LastOfflineTime = now
+		if _, err := mongodb.Save(user); err != nil {
+			stopErrors = append(stopErrors, err)
+		}
 	}
-	return nil
+	return errors.Join(stopErrors...)
 }
 
-// userLoginSync 用户登录的同步实现
-func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int32, loginType message.LoginType) *message.S2C_Login {
-	// 1. 优先从缓存查找用户（检测顶号操作）
-	accountId := fmt.Sprintf("%d_%s", serverId, openId)
-	if existingUser, exists := m.getUserFromCache(accountId); exists {
-		log.Debug("UserLogin: user already online (顶号操作): %s", accountId)
-		// 处理顶号逻辑：先让旧用户下线
-		m.doUserOffline(*existingUser, true)
-	}
-
-	// 2. 从数据库查询用户
-	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openId, "ServerId": serverId})
+func (m *UserManager) UserLogin(agent gate.Agent, openID string, serverID int32, loginType message.LoginType) *message.S2C_Login {
+	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (*message.S2C_Login, error) {
+		return m.doUserLogin(execution, agent, openID, serverID, loginType)
+	})
 	if err != nil {
-		log.Error("UserLogin find user failed: %v", err)
-		return &message.S2C_Login{
-			LoginResult: -1,
+		log.Error("用户登录失败: %v", err)
+		return &message.S2C_Login{LoginResult: -1}
+	}
+	return response
+}
+
+func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID string, serverID int32, loginType message.LoginType) (*message.S2C_Login, error) {
+	accountID := fmt.Sprintf("%d_%s", serverID, openID)
+	if existingUser, exists := m.memCache[accountID]; exists {
+		log.Debug("UserLogin: user already online (顶号操作): %s", accountID)
+		if err := m.doUserOffline(ctx, *existingUser, true); err != nil {
+			return nil, err
 		}
 	}
 
+	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openID, "ServerId": serverID})
+	if err != nil {
+		return nil, err
+	}
 	isNew := user == nil
 	loginTime := time.Now().Unix()
 	if isNew {
-		// 新注册流程
 		user = &models.User{
-			AccountId:  accountId,
-			OpenId:     openId,
-			ServerId:   serverId,
+			AccountId:  accountID,
+			OpenId:     openID,
+			ServerId:   serverID,
 			PlayerId:   utils.FlakeId(),
 			Platform:   loginType,
 			CreateTime: loginTime,
 		}
 	}
-
 	user.RecordLogin(loginTime)
-	log.Debug("user login: %s, isNew: %v", user.AccountId, isNew)
-
-	// 设置用户数据到agent
 	agent.SetUserData(*user)
+	m.memCache[user.AccountId] = user
 
-	// 更新缓存
-	m.updateUserCache(user)
-
-	// 调用玩家登录
-	p := player.DoPlayerLogin(agent, isNew)
-	if p == nil {
-		return &message.S2C_Login{
-			LoginResult: -1,
-		}
+	if err := m.players.Login(ctx, agent, *user, isNew); err != nil {
+		delete(m.memCache, user.AccountId)
+		agent.SetUserData(nil)
+		return nil, err
 	}
-	m.updatePlayerCache(p)
-	// 手动保存一下user
-	go func() {
-		if _, err := mongodb.Save(user); err != nil {
-			log.Error("Failed to save new user [openId: %s, serverId: %d]: %v", openId, serverId, err)
-		}
-	}()
+	if _, err := mongodb.Save(user); err != nil {
+		log.Error("保存登录用户 %s 失败: %v", accountID, err)
+	}
 	return &message.S2C_Login{
 		LoginResult: 1,
 		LoginInfo: &message.LoginInfo{
@@ -137,411 +197,170 @@ func (m *UserManager) doUserLogin(agent gate.Agent, openId string, serverId int3
 			TotalDays:     user.TotalLoginDays,
 			IsAccept:      false,
 		},
+	}, nil
+}
+
+func (m *UserManager) UserOffline(user models.User) {
+	if err := actor.Tell(context.Background(), m.Ref(), func(execution actor.Context) error {
+		return m.doUserOffline(execution, user, true)
+	}); err != nil {
+		log.Error("提交用户 %s 下线失败: %v", user.AccountId, err)
 	}
 }
 
-// ModifyName 修改名称 - 异步执行
-func (m *UserManager) ModifyName(playerId int64, name string) (message.Result, string) {
-	result := m.SendTask(func() (message.Result, string) {
-		return m.doModifyName(playerId, name)
-	})
-
-	if err, ok := result.(error); ok {
-		log.Error("修改名字失败: %v", err)
-		return message.Result_Fail, ""
+func (m *UserManager) doUserOffline(ctx context.Context, user models.User, save bool) error {
+	offlineErrors := make([]error, 0)
+	if save {
+		user.LastOfflineTime = time.Now().Unix()
+		if _, err := mongodb.Save(user); err != nil {
+			offlineErrors = append(offlineErrors, err)
+		}
 	}
 
-	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
-		if typedResult, ok := results[0].(message.Result); ok {
-			if typedName, ok := results[1].(string); ok {
-				return typedResult, typedName
+	playerSnapshot, err := m.players.Snapshot(ctx, user.PlayerId)
+	if err == nil {
+		if sendErr := m.players.SendToClient(ctx, user.PlayerId, &message.S2C_Logout{}); sendErr != nil {
+			offlineErrors = append(offlineErrors, sendErr)
+		}
+		if stopErr := m.players.Stop(ctx, user.PlayerId); stopErr != nil {
+			offlineErrors = append(offlineErrors, stopErr)
+		}
+		if playerSnapshot.TeamID != 0 {
+			if leaveErr := m.teams.Leave(ctx, playerSnapshot.TeamID, user.PlayerId); leaveErr != nil &&
+				!errors.Is(leaveErr, actor.ErrActorStopped) {
+				offlineErrors = append(offlineErrors, leaveErr)
 			}
 		}
+	} else if !errors.Is(err, actor.ErrActorStopped) {
+		offlineErrors = append(offlineErrors, err)
 	}
-	return message.Result_Fail, ""
-}
-
-// modifyNameSync 修改名称的同步实现
-func (m *UserManager) doModifyName(playerId int64, name string) (message.Result, string) {
-	p := m.getPlayerFromCache(playerId)
-	if p != nil {
-		result := p.ModifyName(name)
-		if result == message.Result_Success {
-			m.AddNameToCache(name)
-			return message.Result_Success, name
-		}
-		return result, p.PlayerInfo.PlayerName
-	}
-	return message.Result_Illegal, ""
-}
-
-// UserOffline 玩家下线处理 - 异步执行
-func (m *UserManager) UserOffline(user models.User) {
-	m.SendTaskAsync(func() {
-		m.doUserOffline(user, true)
-	})
-}
-
-// UserOfflineSync 玩家下线处理的同步实现
-func (m *UserManager) doUserOffline(user models.User, save bool) {
-	if save {
-		// user不是actor，需要手动保存
-		user.LastOfflineTime = time.Now().Unix()
-		mongodb.Save(user)
-	}
-
-	// 先从缓存获取玩家信息
-	p := m.getPlayerFromCache(user.PlayerId)
-	if p != nil {
-		// 清理玩家缓存
-		m.removePlayerCache(user.PlayerId)
-
-		p.DoSendToClient(&message.S2C_Logout{})
-
-		p.Stop()
-
-		// todo 玩家离线是否需要离开队伍？有可能需要重连房间
-		teamInfo, ok := actor.GetActor[team.Team](actor.Team, p.TeamId)
-		if ok {
-			teamInfo.LeaveTeam(p.PlayerId)
-		}
-	}
-
-	// 清理用户缓存
-	m.removeUserCache(user.AccountId)
-
+	delete(m.memCache, user.AccountId)
 	log.Debug("User offline: %s, PlayerId: %d", user.AccountId, user.PlayerId)
+	return errors.Join(offlineErrors...)
 }
 
-// CheckName 检查名称 - 异步执行
-func (m *UserManager) CheckName(playerName string) message.Result {
-	response := m.SendTask(func() message.Result {
-		return m.checkNameSync(playerName)
+func (m *UserManager) ModifyName(playerID int64, name string) (message.Result, string) {
+	type result struct {
+		status message.Result
+		name   string
+	}
+	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (result, error) {
+		status, appliedName, err := m.players.ModifyName(execution, playerID, name)
+		if err != nil {
+			return result{}, err
+		}
+		if status == message.Result_Success {
+			m.addNameToCache(appliedName)
+		}
+		return result{status: status, name: appliedName}, nil
 	})
+	if err != nil {
+		log.Error("修改玩家 %d 名称失败: %v", playerID, err)
+		return message.Result_Fail, ""
+	}
+	return response.status, response.name
+}
 
-	if err, ok := response.(error); ok {
+func (m *UserManager) CheckName(playerName string) message.Result {
+	response, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (message.Result, error) {
+		return m.checkName(playerName), nil
+	})
+	if err != nil {
 		log.Error("检查名字失败: %v", err)
 		return message.Result_Fail
 	}
-
-	if result, ok := response.(message.Result); ok {
-		return result
-	}
-	return message.Result_Fail
+	return response
 }
 
-// checkNameSync 检查名称的同步实现
-func (m *UserManager) checkNameSync(playerName string) message.Result {
-	// 1. 校验名称合法性
-	if !m.isValidPlayerName(playerName) {
+func (m *UserManager) checkName(playerName string) message.Result {
+	if len(playerName) < 2 || len(playerName) > 20 {
 		return message.Result_Illegal
 	}
-
-	// 2. 布隆过滤器快速检查（可能误判，但不会漏判）
 	if !m.nameBloomFilter.Contains(playerName) {
-		// 布隆过滤器显示名称一定不存在，直接返回成功
 		return message.Result_Success
 	}
-
-	// 3. 检查内存缓存
-	if value, exists := m.nameCache[playerName]; exists {
-		if isDuplicate := value; isDuplicate {
+	if duplicate, exists := m.nameCache[playerName]; exists {
+		if duplicate {
 			return message.Result_Duplicate
-		} else {
-			return message.Result_Success
 		}
+		return message.Result_Success
 	}
-
-	// 4. 缓存未命中，查询数据库
 	existingPlayer, err := mongodb.FindOne[player.Player](bson.M{"player_info.player_name": playerName})
 	if err != nil {
 		log.Error("CheckName query database failed: %v", err)
 		return message.Result_Fail
 	}
-
-	// 5. 更新缓存和布隆过滤器
+	m.nameCache[playerName] = existingPlayer != nil
+	m.nameBloomFilter.Add(playerName)
 	if existingPlayer != nil {
-		// 名称已存在
-		m.nameCache[playerName] = true
-		m.nameBloomFilter.Add(playerName)
 		return message.Result_Duplicate
-	} else {
-		// 名称可用
-		m.nameCache[playerName] = false
-		m.nameBloomFilter.Add(playerName)
-		return message.Result_Success
 	}
+	return message.Result_Success
 }
 
-// 校验玩家名称合法性
-func (m *UserManager) isValidPlayerName(name string) bool {
-	// 名称长度检查（2-20个字符）
-	if len(name) < 2 || len(name) > 20 {
-		return false
+func (m *UserManager) ModifyAvatarSuffix(playerID int64, avatar string) (message.Result, string) {
+	type result struct {
+		status message.Result
+		avatar string
 	}
-	// todo 还有其他合法性校验
-	return true
-}
-
-// GetUserByOpenId 通过openId和serverId获取用户 - 异步执行
-func (m *UserManager) GetUserByOpenId(openId string, serverId int32) (models.User, bool) {
-	result := m.SendTask(func() (models.User, bool) {
-		return m.doGetUserByOpenId(openId, serverId)
+	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (result, error) {
+		status, appliedAvatar, err := m.players.ModifyAvatarSuffix(execution, playerID, avatar)
+		return result{status: status, avatar: appliedAvatar}, err
 	})
-
-	if err, ok := result.(error); ok {
-		log.Error("获取用户失败: %v", err)
-		return models.User{}, false
-	}
-
-	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
-		if user, ok := results[0].(models.User); ok {
-			if exists, ok := results[1].(bool); ok {
-				return user, exists
-			}
-		}
-	}
-	return models.User{}, false
-}
-
-// getUserByOpenIdSync 通过openId和serverId获取用户的同步实现
-func (m *UserManager) doGetUserByOpenId(openId string, serverId int32) (models.User, bool) {
-	accountId := fmt.Sprintf("%d_%s", serverId, openId)
-
-	// 1. 优先从缓存获取
-	if user, exists := m.getUserFromCache(accountId); exists {
-		return *user, true
-	}
-
-	// 2. 缓存不存在，从数据库查询
-	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openId, "ServerId": serverId})
 	if err != nil {
-		log.Error("GetUserByOpenId query database failed for openId %s, serverId %d: %v", openId, serverId, err)
-		return models.User{}, false
+		log.Error("修改玩家 %d 头像失败: %v", playerID, err)
+		return message.Result_Fail, ""
 	}
-
-	if user == nil {
-		log.Debug("User not found in database for openId %s, serverId %d", openId, serverId)
-		return models.User{}, false
-	}
-
-	// 3. 查询到用户，更新缓存
-	log.Debug("GetUserByOpenId found user in database: %s, updating cache", accountId)
-	m.updateUserCache(user)
-
-	return *user, true
+	return response.status, response.avatar
 }
 
-// GetUser 通过accountId获取用户（仅从缓存获取）
-func (m *UserManager) GetUser(accountId string) (models.User, bool) {
-	result := m.SendTask(func() (models.User, bool) {
-		user, exists := m.getUserFromCache(accountId)
-		if user != nil {
-			return *user, exists
+func (m *UserManager) GetPlayerSnapshot(playerID int64) (player.Snapshot, bool) {
+	snapshot, err := m.players.Snapshot(context.Background(), playerID)
+	if err != nil {
+		if !errors.Is(err, actor.ErrActorStopped) {
+			log.Error("获取玩家 %d 快照失败: %v", playerID, err)
 		}
-		return models.User{}, exists
-	})
-
-	if err, ok := result.(error); ok {
-		log.Error("获取用户失败: %v", err)
-		return models.User{}, false
+		return player.Snapshot{}, false
 	}
+	return snapshot, true
+}
 
-	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
-		if user, ok := results[0].(models.User); ok {
-			if exists, ok := results[1].(bool); ok {
-				return user, exists
-			}
+func (m *UserManager) GetPlayerInfo(playerID int64) (*message.PlayerInfo, bool) {
+	if snapshot, found := m.GetPlayerSnapshot(playerID); found && snapshot.PlayerInfo != nil {
+		return snapshot.PlayerInfo.ToMsg(), true
+	}
+	offlinePlayer, err := mongodb.FindOneById[player.Player](playerID)
+	if err != nil {
+		log.Error("获取离线玩家 %d 失败: %v", playerID, err)
+		return nil, false
+	}
+	if offlinePlayer == nil || offlinePlayer.PlayerInfo == nil {
+		return nil, false
+	}
+	return offlinePlayer.PlayerInfo.ToMsg(), true
+}
+
+func (m *UserManager) SendToPlayer(playerID int64, msg proto.Message) {
+	if err := m.players.SendToClient(context.Background(), playerID, msg); err != nil && !errors.Is(err, actor.ErrActorStopped) {
+		log.Error("发送消息给玩家 %d 失败: %v", playerID, err)
+	}
+}
+
+func (m *UserManager) preloadNames() error {
+	players, err := m.loadPlayers()
+	if err != nil {
+		return fmt.Errorf("preload player names: %w", err)
+	}
+	for _, playerData := range players {
+		if playerData.PlayerInfo != nil && playerData.PlayerInfo.PlayerName != "" {
+			m.addNameToCache(playerData.PlayerInfo.PlayerName)
 		}
 	}
-	return models.User{}, false
-
-}
-
-func (m *UserManager) GetUsers() []models.User {
-	result := m.SendTask(func() []models.User {
-		users := []models.User{}
-		for _, user := range m.memCache {
-			users = append(users, *user)
-		}
-		return users
-	})
-	if err, ok := result.(error); ok {
-		log.Error("获取所有用户失败: %v", err)
-		return []models.User{}
-	}
-
-	if users, ok := result.([]models.User); ok {
-		return users
-	}
-	return []models.User{}
-}
-
-// ClearAllCache 强制清理所有缓存（用于维护或重启）
-func (m *UserManager) ClearAllCache() {
-	m.SendTaskAsync(func() {
-		m.doClearAllCache()
-	})
-}
-
-// clearAllCacheSync 强制清理所有缓存的同步实现
-func (m *UserManager) doClearAllCache() {
-	// 统计清理前的数量
-	userCount := 0
-	playerCount := 0
-
-	for range m.memCache {
-		userCount++
-	}
-
-	for range m.playerCache {
-		playerCount++
-	}
-
-	// 清理所有缓存
-	m.memCache = make(map[string]*models.User)
-	m.playerCache = make(map[int64]*player.Player)
-	log.Debug("Cleared all caches - users: %d, players: %d", userCount, playerCount)
-}
-
-// IsUserOnline 检查用户是否在线
-func (m *UserManager) IsUserOnline(accountId string) bool {
-	result := m.SendTask(func() bool {
-		_, exists := m.memCache[accountId]
-		return exists
-	})
-	if err, ok := result.(error); ok {
-		log.Error("检查用户存在失败: %v", err)
-		return false
-	}
-
-	if exists, ok := result.(bool); ok {
-		return exists
-	}
-	return false
-}
-
-// 更新用户缓存
-func (m *UserManager) updateUserCache(user *models.User) {
-	m.memCache[user.AccountId] = user
-}
-
-// 移除用户缓存
-func (m *UserManager) removeUserCache(accountId string) {
-	if _, exists := m.memCache[accountId]; exists {
-		delete(m.memCache, accountId)
-		log.Debug("Removed user cache: %s", accountId)
-	}
-}
-
-// 从缓存获取用户（内部方法）
-func (m *UserManager) getUserFromCache(accountId string) (*models.User, bool) {
-	if user, exists := m.memCache[accountId]; exists {
-		return user, true
-	}
-	return nil, false
-}
-
-// 更新玩家缓存
-func (m *UserManager) updatePlayerCache(playerInstance *player.Player) {
-	m.SendTaskAsync(func() {
-		m.playerCache[playerInstance.PlayerId] = playerInstance
-	})
-}
-
-// 从缓存获取玩家
-func (m *UserManager) getPlayerFromCache(playerId int64) *player.Player {
-	if playerInstance, exists := m.playerCache[playerId]; exists {
-		return playerInstance
-	}
+	log.Debug("Preloaded %d names from database", len(m.nameCache))
 	return nil
 }
 
-// 移除玩家缓存
-func (m *UserManager) removePlayerCache(playerId int64) {
-	if _, exists := m.playerCache[playerId]; exists {
-		delete(m.playerCache, playerId)
-		log.Debug("Removed player cache: %d", playerId)
-	}
-}
-
-// GetPlayer 获取缓存的玩家（优先从缓存获取，缓存没有则从Actor获取）
-func (m *UserManager) GetPlayer(playerId int64) *player.Player {
-	result := m.SendTask(func() *player.Player {
-		// 优先从缓存获取
-		return m.getPlayerFromCache(playerId)
-	})
-	if err, ok := result.(error); ok {
-		log.Error("从缓存获取玩家失败: %v", err)
-		return nil
-	}
-
-	if player, ok := result.(*player.Player); ok {
-		return player
-	}
-	// 缓存中没有，从Actor获取
-	if actorPlayer := player.GetPlayerActor(playerId); actorPlayer != nil {
-		// 获取到后更新缓存
-		m.updatePlayerCache(actorPlayer)
-		return actorPlayer
-	}
-	return nil
-}
-
-// GetOfflinePlayer 获取离线玩家
-func (m *UserManager) GetOfflinePlayer(playerId int64) *player.Player {
-	player, err := mongodb.FindOneById[player.Player](playerId)
-	if err != nil {
-		log.Error("获取非在线玩家Info异常: %v, err: %v", playerId, err)
-		return nil
-	}
-	if player == nil {
-		log.Error("获取非在线玩家Info玩家数据不存在: %v", playerId)
-		return nil
-	}
-	return player
-}
-
-// AddNameToCache 添加名称到缓存（用于预加载或批量导入）
-func (m *UserManager) AddNameToCache(playerName string) {
+func (m *UserManager) addNameToCache(playerName string) {
 	m.nameCache[playerName] = true
 	m.nameBloomFilter.Add(playerName)
-}
-
-// RemoveNameFromCache 从名称缓存中移除（用于清理过期数据）
-func (m *UserManager) RemoveNameFromCache(playerName string) {
-	delete(m.nameCache, playerName)
-	// 注意：布隆过滤器不支持删除，这里只清理内存缓存
-}
-
-// PreloadNames 预加载名称到缓存（启动时调用，从数据库加载所有已存在的名称）
-func (m *UserManager) PreloadNames() {
-	log.Debug("Starting to preload player names from database...")
-
-	// 查询所有玩家名称
-	players, err := mongodb.FindAll[player.Player](bson.M{})
-	if err != nil {
-		log.Error("Failed to preload names: %v", err)
-		return
-	}
-
-	// 批量添加到缓存
-	count := 0
-	for _, p := range players {
-		if p.PlayerInfo != nil && p.PlayerInfo.PlayerName != "" {
-			m.AddNameToCache(p.PlayerInfo.PlayerName)
-			count++
-		}
-	}
-
-	log.Debug("Preloaded %d names from database", count)
-}
-
-func (m *UserManager) ModifyAvatarSuffix(playerId int64, avatar string) (message.Result, string) {
-	p := m.getPlayerFromCache(playerId)
-	if p != nil {
-		result := p.ModifyAvatarSuffix(avatar)
-		return result, p.PlayerInfo.AvatarSuffix
-	}
-	return message.Result_Illegal, ""
 }

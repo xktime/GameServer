@@ -6,12 +6,11 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/game/internal/managers"
 	"strconv"
 )
 
 // C2S_GetUploadUrlHandler 处理C2S_GetUploadUrl消息
-func C2S_GetUploadUrlHandler(args []interface{}) {
+func C2S_GetUploadUrlHandler(users UserManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_GetUploadUrlHandler: 参数不足")
 		return
@@ -42,8 +41,7 @@ func C2S_GetUploadUrlHandler(args []interface{}) {
 		log.Error("C2S_GetUploadUrlHandler: 生成上传URL失败: %v", err)
 		return
 	}
-	userManager := managers.GetUserManager()
-	userManager.ModifyAvatarSuffix(playerId, msg.SuffixName)
+	users.ModifyAvatarSuffix(playerId, msg.SuffixName)
 	resultMsg := &message.S2C_GetUploadUrl{
 		Url: url,
 	}

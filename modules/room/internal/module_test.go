@@ -2,6 +2,8 @@ package internal
 
 import (
 	"gameserver/common"
+	"gameserver/common/base/actor"
+	"gameserver/common/msg/message"
 	"gameserver/common/schedule"
 	"slices"
 	"testing"
@@ -51,14 +53,27 @@ func (m *fakeRoomMaintenance) Stop() {
 	*m.events = append(*m.events, "maintenance.stop")
 }
 
+func (m *fakeRoomMaintenance) HandleRecordOperate(int64, string, string) *message.S2C_RecordGameOperate {
+	return &message.S2C_RecordGameOperate{}
+}
+
+func (m *fakeRoomMaintenance) PlayerOffline(int64) bool {
+	return false
+}
+
 func TestModuleOwnsTenSecondRoomMaintenance(t *testing.T) {
 	previousSkeleton := skeleton
 	skeleton = common.NewSkeleton()
 	t.Cleanup(func() { skeleton = previousSkeleton })
 	events := make([]string, 0, 2)
+	system := actor.NewActorSystem(time.Second)
+	scope, err := system.NewScope("room-test")
+	if err != nil {
+		t.Fatalf("NewScope: %v", err)
+	}
 	scheduler := &fakeRoomScheduler{events: &events}
 	maintenance := &fakeRoomMaintenance{events: &events}
-	roomModule := NewModule(scheduler, maintenance)
+	roomModule := NewModule(scope, scheduler, maintenance)
 
 	roomModule.OnInit()
 	if scheduler.interval != 10*time.Second {

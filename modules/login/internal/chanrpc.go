@@ -2,12 +2,14 @@ package internal
 
 import (
 	"gameserver/core/gate"
-	"gameserver/modules/login/internal/managers"
+	"gameserver/modules/login/internal/handlers"
 )
 
-func init() {
+func registerAgentRPC(connections handlers.ConnectManager) {
 	skeleton.RegisterChanRPC("NewAgent", rpcNewAgent)
-	skeleton.RegisterChanRPC("CloseAgent", rpcCloseAgent)
+	skeleton.RegisterChanRPC("CloseAgent", func(args []interface{}) {
+		rpcCloseAgent(connections, args)
+	})
 }
 
 func rpcNewAgent(args []interface{}) {
@@ -15,11 +17,11 @@ func rpcNewAgent(args []interface{}) {
 	_ = a
 }
 
-func rpcCloseAgent(args []interface{}) {
+func rpcCloseAgent(connections handlers.ConnectManager, args []interface{}) {
 	a := args[0].(gate.Agent)
 	if a == nil {
 		return
 	}
-	managers.GetConnectManager().RemoveClient(a.RemoteAddr().String())
+	connections.RemoveClient(a.RemoteAddr().String())
 	_ = a
 }

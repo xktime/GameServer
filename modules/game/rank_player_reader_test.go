@@ -6,16 +6,17 @@ import (
 	"testing"
 )
 
-type fakeOnlinePlayerFinder map[int64]*managerplayer.Player
+type fakeOnlinePlayerFinder map[int64]managerplayer.Snapshot
 
-func (f fakeOnlinePlayerFinder) GetPlayer(playerID int64) *managerplayer.Player {
-	return f[playerID]
+func (f fakeOnlinePlayerFinder) GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool) {
+	snapshot, found := f[playerID]
+	return snapshot, found
 }
 
 func TestRankPlayerReaderCopiesOnlinePlayerSnapshot(t *testing.T) {
 	reader := rankPlayerReader{players: fakeOnlinePlayerFinder{
 		42: {
-			PlayerId: 42,
+			PlayerID: 42,
 			PlayerInfo: &playermodel.PlayerInfo{
 				PlayerId:     42,
 				PlayerName:   "测试玩家",
@@ -43,7 +44,7 @@ func TestRankPlayerReaderCopiesOnlinePlayerSnapshot(t *testing.T) {
 
 func TestRankPlayerReaderRejectsPlayerWithoutInfo(t *testing.T) {
 	reader := rankPlayerReader{players: fakeOnlinePlayerFinder{
-		42: {PlayerId: 42},
+		42: {PlayerID: 42},
 	}}
 
 	if snapshot, ok := reader.FindOnline(42); ok {

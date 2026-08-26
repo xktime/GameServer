@@ -6,7 +6,7 @@ import (
 )
 
 type onlinePlayerFinder interface {
-	GetPlayer(playerID int64) *managerplayer.Player
+	GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool)
 }
 
 type rankPlayerReader struct {
@@ -23,14 +23,14 @@ func NewRankPlayerReader() playerread.PlayerReader {
 }
 
 func (r rankPlayerReader) FindOnline(playerID int64) (playerread.PlayerSnapshot, bool) {
-	player := r.players.GetPlayer(playerID)
-	if player == nil || player.PlayerInfo == nil {
+	playerSnapshot, found := r.players.GetPlayerSnapshot(playerID)
+	if !found || playerSnapshot.PlayerInfo == nil {
 		return playerread.PlayerSnapshot{}, false
 	}
 
 	return playerread.PlayerSnapshot{
-		Name:      player.PlayerInfo.PlayerName,
-		AvatarURL: player.PlayerInfo.GetAvatarURL(),
-		Level:     player.PlayerInfo.Level,
+		Name:      playerSnapshot.PlayerInfo.PlayerName,
+		AvatarURL: playerSnapshot.PlayerInfo.GetAvatarURL(),
+		Level:     playerSnapshot.PlayerInfo.Level,
 	}, true
 }

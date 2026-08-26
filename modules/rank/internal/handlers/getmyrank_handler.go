@@ -5,12 +5,11 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/rank/internal/managers"
 )
 
 // C2S_GetMyRankHandler 处理C2S_GetMyRank消息
-func C2S_GetMyRankHandler(args []interface{}) {
-	if len(args) < 2 {
+func C2S_GetMyRankHandler(manager RankManager, args []interface{}) {
+	if len(args) < 3 {
 		log.Error("C2S_GetMyRankHandler: 参数不足")
 		return
 	}
@@ -29,13 +28,10 @@ func C2S_GetMyRankHandler(args []interface{}) {
 
 	log.Debug("收到C2S_GetMyRank消息: %v, agent: %v", msg, agent)
 
-	// 获取排行榜管理器
-	rankManager := managers.GetRankManager()
-
 	playerId := agent.UserData().(models.User).PlayerId
 
 	// 获取我的排名
-	response := rankManager.HandleGetMyRank(playerId, msg.RankType, msg.Season)
+	response := manager.HandleGetMyRank(playerId, msg.RankType, msg.Season)
 	if response != nil {
 		agent.WriteMsgWithSeq(response, args[2].(uint32))
 	}

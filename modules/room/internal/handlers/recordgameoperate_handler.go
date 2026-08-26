@@ -5,10 +5,13 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/room/internal/managers"
 )
 
-func C2S_RecordGameOperateHandler(args []interface{}) {
+type RoomManager interface {
+	HandleRecordOperate(int64, string, string) *message.S2C_RecordGameOperate
+}
+
+func C2S_RecordGameOperateHandler(manager RoomManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_RecordGameOperateHandler: 参数不足")
 		return
@@ -34,6 +37,6 @@ func C2S_RecordGameOperateHandler(args []interface{}) {
 		return
 	}
 
-	response := managers.GetRoomManager().HandleRecordOperate(user.PlayerId, msg.RoomId, msg.OperateInfo)
+	response := manager.HandleRecordOperate(user.PlayerId, msg.RoomId, msg.OperateInfo)
 	agent.WriteMsgWithSeq(response, seq)
 }

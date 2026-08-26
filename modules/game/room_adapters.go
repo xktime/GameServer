@@ -3,7 +3,6 @@ package game
 import (
 	"fmt"
 	"gameserver/modules/game/internal/managers"
-	managerplayer "gameserver/modules/game/internal/managers/player"
 	"gameserver/modules/room/participant"
 
 	"google.golang.org/protobuf/proto"
@@ -42,8 +41,12 @@ type roomPlayerMessenger struct {
 	send func(playerID int64, msg proto.Message)
 }
 
-func NewRoomPlayerMessenger() participant.PlayerMessenger {
-	return newRoomPlayerMessenger(managerplayer.SendToClient)
+type roomPlayerSender interface {
+	SendToPlayer(playerID int64, msg proto.Message)
+}
+
+func NewRoomPlayerMessenger(players roomPlayerSender) participant.PlayerMessenger {
+	return newRoomPlayerMessenger(players.SendToPlayer)
 }
 
 func newRoomPlayerMessenger(send func(playerID int64, msg proto.Message)) participant.PlayerMessenger {

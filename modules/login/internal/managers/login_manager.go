@@ -2,49 +2,51 @@ package managers
 
 import (
 	"context"
+	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/game"
 	"gameserver/modules/login/internal/processor"
-	"sync"
 )
 
-// LoginManager 使用TaskHandler实现，确保登录操作按顺序执行
+// LoginManager 的请求由绑定的 Actor 队列串行处理。
 type LoginManager struct {
 	actor.BaseActor
+	users UserLoginService
 }
 
-var (
-	loginManager     *LoginManager
-	loginManagerOnce sync.Once
-)
+type UserLoginService interface {
+	UserLogin(gate.Agent, string, int32, message.LoginType) *message.S2C_Login
+}
 
-func GetLoginManager() *LoginManager {
-	loginManagerOnce.Do(func() {
-		loginManager = actor.RegisterActor[*LoginManager](actor.Login, "1")
+func NewLoginManager(ctx context.Context, scope *actor.Scope, users UserLoginService) (*LoginManager, error) {
+	if users == nil {
+		return nil, fmt.Errorf("login: UserLoginService is nil")
+	}
+	definition, err := actor.Define(scope, actor.Login, func(context.Context, string) (*LoginManager, error) {
+		return &LoginManager{users: users}, nil
 	})
-	return loginManager
+	if err != nil {
+		return nil, err
+	}
+	return definition.GetOrCreate(ctx, "singleton")
 }
 
-// Init 初始化LoginManager
-func (m *LoginManager) Init(args ...any) {
-	// 初始化逻辑
-}
-
-// Stop 停止LoginManager
-func (m *LoginManager) Stop() {
-	m.RemoveActor(m)
-}
-
-// HandleLogin 处理登录请求 - 异步执行
+// HandleLogin 同步等待串行化的登录结果。
 func (m *LoginManager) HandleLogin(msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
-	return m.doHandleLogin(msg, agent)
+	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (*message.S2C_Login, error) {
+		return m.doHandleLogin(execution, msg, agent), nil
+	})
+	if err != nil {
+		log.Error("处理登录失败: %v", err)
+		return nil
+	}
+	return response
 }
 
-// doHandleLogin 处理登录请求的同步实现
-func (m *LoginManager) doHandleLogin(msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
+// doHandleLogin 在 LoginManager Actor 内执行登录流程。
+func (m *LoginManager) doHandleLogin(ctx context.Context, msg *message.C2S_Login, agent gate.Agent) *message.S2C_Login {
 	loginProcessor := getLoginProcessor(msg.LoginType)
 	if loginProcessor == nil {
 		log.Error("loginProcessor is nil")
@@ -52,7 +54,7 @@ func (m *LoginManager) doHandleLogin(msg *message.C2S_Login, agent gate.Agent) *
 			LoginResult: -1,
 		}
 	}
-	loginResp := loginProcessor.ReqLogin(agent, context.Background(), msg)
+	loginResp := loginProcessor.ReqLogin(agent, ctx, msg)
 	log.Debug("loginResp %v", loginResp)
 	if loginResp.ErrCode != 0 {
 		log.Error("login failed %v", loginResp)
@@ -60,7 +62,7 @@ func (m *LoginManager) doHandleLogin(msg *message.C2S_Login, agent gate.Agent) *
 			LoginResult: -1,
 		}
 	}
-	return game.External.UserManager.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
+	return m.users.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
 }
 
 func getLoginProcessor(loginType message.LoginType) processor.BaseLoginProcessor {

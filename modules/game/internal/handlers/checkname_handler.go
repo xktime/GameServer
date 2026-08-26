@@ -4,11 +4,10 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/game/internal/managers"
 )
 
 // C2S_CheckNameHandler 处理C2S_CheckName消息
-func C2S_CheckNameHandler(args []interface{}) {
+func C2S_CheckNameHandler(users UserManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_CheckNameHandler: 参数不足")
 		return
@@ -28,7 +27,7 @@ func C2S_CheckNameHandler(args []interface{}) {
 
 	log.Debug("收到C2S_CheckName消息: %v, agent: %v", msg, agent)
 	playerName := msg.Name
-	result := managers.GetUserManager().CheckName(playerName)
+	result := users.CheckName(playerName)
 	agent.WriteMsgWithSeq(&message.S2C_CheckName{
 		Result: result,
 	}, args[2].(uint32))

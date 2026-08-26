@@ -5,11 +5,10 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/game/internal/managers"
 )
 
 // C2S_GetPlayerInfoHandler 处理C2S_GetPlayerInfo消息
-func C2S_GetPlayerInfoHandler(args []interface{}) {
+func C2S_GetPlayerInfoHandler(users UserManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_GetPlayerInfoHandler: 参数不足")
 		return
@@ -35,17 +34,7 @@ func C2S_GetPlayerInfoHandler(args []interface{}) {
 
 	log.Debug("收到C2S_GetPlayerInfo消息: %v, agent: %v", msg, agent)
 	playerId := agent.UserData().(models.User).PlayerId
-	userManager := managers.GetUserManager()
-	p := managers.GetUserManager().GetPlayer(playerId)
-
-	if p != nil {
-		playerInfo = p.PlayerInfo.ToMsg()
-	} else {
-		// 如果玩家不在线
-		existingPlayer := userManager.GetOfflinePlayer(playerId)
-		if existingPlayer == nil {
-			return
-		}
-		playerInfo = existingPlayer.PlayerInfo.ToMsg()
+	if info, found := users.GetPlayerInfo(playerId); found {
+		playerInfo = info
 	}
 }

@@ -5,11 +5,10 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/game/internal/managers"
 )
 
 // C2S_ModifyNameHandler 处理C2S_ModifyName消息
-func C2S_ModifyNameHandler(args []interface{}) {
+func C2S_ModifyNameHandler(users UserManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_ModifyNameHandler: 参数不足")
 		return
@@ -28,26 +27,18 @@ func C2S_ModifyNameHandler(args []interface{}) {
 	}
 
 	log.Debug("收到C2S_ModifyName消息: %v, agent: %v", msg, agent)
-	userManager := managers.GetUserManager()
 	playerId := agent.UserData().(models.User).PlayerId
-	p := userManager.GetPlayer(playerId)
 	resultMsg := &message.S2C_ModifyName{
 		Result: message.Result_Success,
 	}
-	defer p.SendToClientSeq(resultMsg, args[2].(uint32))
-	if p == nil {
-		log.Error("C2S_ModifyNameHandler: 玩家不在线")
-		resultMsg.Result = message.Result_Fail
-		resultMsg.Name = ""
-		return
-	}
-	result := userManager.CheckName(msg.Name)
+	defer agent.WriteMsgWithSeq(resultMsg, args[2].(uint32))
+	result := users.CheckName(msg.Name)
 	if result != message.Result_Success {
 		resultMsg.Result = result
 		resultMsg.Name = ""
 		return
 	}
-	result, name := userManager.ModifyName(playerId, msg.Name)
+	result, name := users.ModifyName(playerId, msg.Name)
 	resultMsg.Result = result
 	resultMsg.Name = name
 }

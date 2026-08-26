@@ -112,6 +112,10 @@ func FindAll[T PersistData](filter bson.M) ([]T, error) {
 
 // 删除
 func DeleteByID[T PersistData](id interface{}) (*mongo.DeleteResult, error) {
+	if mongoInstance == nil {
+		log.Debug("DeleteByID: MongoDB未初始化，跳过删除")
+		return nil, nil
+	}
 	collection := getCollectionNameByType[T]()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

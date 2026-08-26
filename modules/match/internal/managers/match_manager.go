@@ -1,6 +1,8 @@
 package managers
 
 import (
+	"context"
+	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
@@ -11,7 +13,6 @@ import (
 	"gameserver/modules/match/roomaccept"
 	"gameserver/modules/room/matchentry"
 	"sort"
-	"sync"
 	"time"
 )
 
@@ -32,119 +33,45 @@ type matchSettlement struct {
 	admission matchentry.Admission
 }
 
-type matchManagerFactory func(playerread.PlayerReader, roomaccept.Acceptor, func() string, func() time.Time) *MatchManager
-
-type matchManagerRegistry struct {
-	mu      sync.Mutex
-	started bool
-	manager *MatchManager
-	failure any
-}
-
-var (
-	matchManagerRegistration                     = &matchManagerRegistry{}
-	registerMatchActor       matchManagerFactory = func(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string, now func() time.Time) *MatchManager {
-		return actor.RegisterActor[*MatchManager](actor.Match, "1", players, rooms, newMatchID, now)
+// NewMatchManager registers the singleton definition in the module scope and
+// returns its fully initialized instance.
+func NewMatchManager(ctx context.Context, scope *actor.Scope, players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string, now func() time.Time) (*MatchManager, error) {
+	if players == nil {
+		return nil, fmt.Errorf("match: PlayerReader is nil")
 	}
-)
-
-func (r *matchManagerRegistry) register(create func() *MatchManager) (manager *MatchManager) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.started {
-		panic("match: RegisterMatchManager called more than once")
+	if rooms == nil {
+		return nil, fmt.Errorf("match: Room Acceptor is nil")
 	}
-	r.started = true
-
-	defer func() {
-		if failure := recover(); failure != nil {
-			r.failure = failure
-			panic(failure)
-		}
-	}()
-	manager = create()
-	r.manager = manager
-	return manager
-}
-
-func (r *matchManagerRegistry) get() *MatchManager {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.started {
-		panic("match: GetMatchManager called before RegisterMatchManager")
+	if newMatchID == nil {
+		return nil, fmt.Errorf("match: MatchID generator is nil")
 	}
-	if r.failure != nil {
-		panic(r.failure)
+	if now == nil {
+		return nil, fmt.Errorf("match: Clock is nil")
 	}
-	return r.manager
-}
-
-func RegisterMatchManager(players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string, now func() time.Time) *MatchManager {
-	return matchManagerRegistration.register(func() *MatchManager {
-		if players == nil {
-			panic("match: RegisterMatchManager requires PlayerReader")
-		}
-		if rooms == nil {
-			panic("match: RegisterMatchManager requires Room Acceptor")
-		}
-		if newMatchID == nil {
-			panic("match: RegisterMatchManager requires MatchID generator")
-		}
-		if now == nil {
-			panic("match: RegisterMatchManager requires Clock")
-		}
-		return registerMatchActor(players, rooms, newMatchID, now)
+	definition, err := actor.Define(scope, actor.Match, func(context.Context, string) (*MatchManager, error) {
+		return &MatchManager{
+			players:     players,
+			rooms:       rooms,
+			newMatchID:  newMatchID,
+			now:         now,
+			matchQueues: map[int32]*match_models.MatchQueue{1: match_models.NewMatchQueue()},
+			settlements: make(map[string]*matchSettlement),
+		}, nil
 	})
-}
-
-func GetMatchManager() *MatchManager {
-	return matchManagerRegistration.get()
-}
-
-// Init 初始化匹配管理器
-func (m *MatchManager) Init(args ...any) {
-	if len(args) != 4 {
-		panic("match: MatchManager.Init requires PlayerReader, Room Acceptor, MatchID generator, and Clock")
+	if err != nil {
+		return nil, err
 	}
-	players, ok := args[0].(playerread.PlayerReader)
-	if !ok || players == nil {
-		panic("match: MatchManager.Init received invalid PlayerReader")
-	}
-	rooms, ok := args[1].(roomaccept.Acceptor)
-	if !ok || rooms == nil {
-		panic("match: MatchManager.Init received invalid Room Acceptor")
-	}
-	newMatchID, ok := args[2].(func() string)
-	if !ok || newMatchID == nil {
-		panic("match: MatchManager.Init received invalid MatchID generator")
-	}
-	now, ok := args[3].(func() time.Time)
-	if !ok || now == nil {
-		panic("match: MatchManager.Init received invalid Clock")
-	}
-	m.players = players
-	m.rooms = rooms
-	m.newMatchID = newMatchID
-	m.now = now
-	m.matchQueues = make(map[int32]*match_models.MatchQueue)
-	m.matchQueues[1] = match_models.NewMatchQueue()
-	m.settlements = make(map[string]*matchSettlement)
-}
-
-// Stop 停止MatchManager
-func (m *MatchManager) Stop() {
-	m.RemoveActor(m)
-}
-
-func (m *MatchManager) GetInterval() int {
-	return 10
+	return definition.GetOrCreate(ctx, "singleton")
 }
 
 func (m *MatchManager) OnTimer() {
-	m.SendTaskAsync(func() {
+	if err := actor.Tell(context.Background(), m.Ref(), func(actor.Context) error {
 		m.Matching()
 		m.ProcessTimeoutRequests()
-	})
+		return nil
+	}); err != nil {
+		log.Error("提交匹配定时任务失败: %v", err)
+	}
 }
 
 // Matching 定时任务，每10秒执行一次匹配
@@ -230,23 +157,20 @@ func copyAdmission(admission matchentry.Admission) matchentry.Admission {
 
 // HandleMatch 处理队伍开始匹配请求
 func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
-	result := m.SendTask(func() (int64, *message.S2C_StartMatch) {
-		return m.doHandleMatch(agent, msg)
+	result, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (matchHandleResult, error) {
+		teamID, response := m.doHandleMatch(agent, msg)
+		return matchHandleResult{teamID: teamID, response: response}, nil
 	})
-
-	if err, ok := result.(error); ok {
+	if err != nil {
 		log.Error("处理匹配失败: %v", err)
 		return 0, nil
 	}
+	return result.teamID, result.response
+}
 
-	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
-		if teamId, ok := results[0].(int64); ok {
-			if item, ok := results[1].(*message.S2C_StartMatch); ok {
-				return teamId, item
-			}
-		}
-	}
-	return 0, nil
+type matchHandleResult struct {
+	teamID   int64
+	response *message.S2C_StartMatch
 }
 
 // doHandleMatch 处理队伍开始匹配请求的同步实现
@@ -317,23 +241,20 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 
 // HandleCancelMatch 处理取消匹配请求
 func (m *MatchManager) HandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
-	result := m.SendTask(func() (int64, *message.S2C_CancelMatch) {
-		return m.doHandleCancelMatch(agent)
+	result, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (cancelMatchResult, error) {
+		teamID, response := m.doHandleCancelMatch(agent)
+		return cancelMatchResult{teamID: teamID, response: response}, nil
 	})
-
-	if err, ok := result.(error); ok {
+	if err != nil {
 		log.Error("取消匹配失败: %v", err)
 		return 0, nil
 	}
+	return result.teamID, result.response
+}
 
-	if results, ok := result.([]interface{}); ok && len(results) >= 2 {
-		if itemId, ok := results[0].(int64); ok {
-			if item, ok := results[1].(*message.S2C_CancelMatch); ok {
-				return itemId, item
-			}
-		}
-	}
-	return 0, nil
+type cancelMatchResult struct {
+	teamID   int64
+	response *message.S2C_CancelMatch
 }
 
 // doHandleCancelMatch 处理取消匹配请求的同步实现

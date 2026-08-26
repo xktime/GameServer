@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/bucket"
@@ -23,6 +25,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
+	"time"
 )
 
 func main() {
@@ -47,24 +50,44 @@ func main() {
 		}()
 	}
 
-	Init()
+	if err := Init(); err != nil {
+		closeContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		panic(errors.Join(err, mongodb.Close(closeContext)))
+	}
 
-	Run(game.External, login.External, room.External, match.External, rank.External)
+	system := actor.NewActorSystem(time.Duration(conf.Server.Actor.TimeoutMillisecond) * time.Millisecond)
+	runErr := Run(system, game.External, login.External, room.External, match.External, rank.External)
+	closeContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := errors.Join(runErr, mongodb.Close(closeContext)); err != nil {
+		panic(err)
+	}
 }
 
-func Run(external ...module.External) {
+func Run(system *actor.ActorSystem, external ...module.External) error {
+	if system == nil {
+		return fmt.Errorf("main: ActorSystem is nil")
+	}
 	//gate放在最后，不用手动注册
 	external = append(external, gate.External)
 	modules := make([]module.Module, 0, len(external)+1)
 	modules = append(modules, event_dispatcher.Module)
 	for _, e := range external {
-		e.InitExternal()
+		if err := e.InitExternal(system); err != nil {
+			stopContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			return errors.Join(fmt.Errorf("initialize external %T: %w", e, err), system.Stop(stopContext))
+		}
 		modules = append(modules, e.GetModule())
 	}
 	server.Run(modules...)
+	stopContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return system.Stop(stopContext)
 }
 
-func Init() {
+func Init() error {
 	// 初始化配置
 	lconf.LogLevel = conf.Server.LogLevel
 	lconf.LogPath = conf.Server.LogPath
@@ -78,23 +101,27 @@ func Init() {
 	utils.InitSnowflake(conf.Server.MachineID)
 
 	// 初始化mongodb
-	mongodb.Init(conf.Server.MongoDB.Host, conf.Server.MongoDB.Database, conf.Server.MongoDB.MinPoolSize, conf.Server.MongoDB.MaxPoolSize)
-	mongodb.CreateIndexes(conf.MongoIndexConf)
+	if err := mongodb.Init(conf.Server.MongoDB.Host, conf.Server.MongoDB.Database, conf.Server.MongoDB.MinPoolSize, conf.Server.MongoDB.MaxPoolSize); err != nil {
+		return err
+	}
+	if err := mongodb.CreateIndexes(conf.MongoIndexConf); err != nil {
+		return err
+	}
 
 	// 初始化OSS
-	bucket.GetOSSClient().Init(bucket.OSSConfig{
+	if err := bucket.GetOSSClient().Init(bucket.OSSConfig{
 		AccessKeyID:     conf.Server.Bucket.AccessKeyID,
 		AccessKeySecret: conf.Server.Bucket.AccessKeySecret,
 		Endpoint:        conf.Server.Bucket.Endpoint,
 		BucketName:      conf.Server.Bucket.BucketName,
-	})
-
-	// 初始化actor
-	actor.Init(conf.Server.Actor.TimeoutMillisecond)
+	}); err != nil {
+		return err
+	}
 
 	// 初始化定时任务
 	schedule.Init()
 
 	// 初始化http
 	gamehttp.Start()
+	return nil
 }

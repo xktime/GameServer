@@ -8,8 +8,6 @@ import (
 type ScheduleName string
 
 const (
-	ActorTimer    ScheduleName = "ActorTimer"
-	ActorSaver    ScheduleName = "ActorSaver"
 	FrameSync     ScheduleName = "FrameSync"
 	RoomSyncState ScheduleName = "RoomSyncState"
 )

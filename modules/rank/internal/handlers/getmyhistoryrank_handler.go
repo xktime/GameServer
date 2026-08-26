@@ -5,11 +5,10 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
-	"gameserver/modules/rank/internal/managers"
 )
 
 // C2S_GetMyHistoryRankHandler 处理C2S_GetMyHistoryRank消息
-func C2S_GetMyHistoryRankHandler(args []interface{}) {
+func C2S_GetMyHistoryRankHandler(manager RankManager, args []interface{}) {
 	if len(args) < 3 {
 		log.Error("C2S_GetMyHistoryRankHandler: 参数不足")
 		return
@@ -35,6 +34,6 @@ func C2S_GetMyHistoryRankHandler(args []interface{}) {
 
 	log.Debug("收到C2S_GetMyHistoryRank消息: %v, agent: %v, seq: %v", msg, agent, seq)
 	playerId := agent.UserData().(models.User).PlayerId
-	response := managers.GetRankManager().GetMyHistoryRank(playerId)
+	response := manager.GetMyHistoryRank(playerId)
 	agent.WriteMsgWithSeq(response, seq)
 }

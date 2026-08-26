@@ -7,11 +7,11 @@ import (
 )
 
 type matchPlayerFinder interface {
-	GetPlayer(playerID int64) *managerplayer.Player
+	GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool)
 }
 
 type matchTeamFinder interface {
-	GetTeamByPlayerId(playerID int64) *team.Team
+	GetTeamByPlayerID(playerID int64) (team.Snapshot, bool)
 }
 
 type matchPlayerReader struct {
@@ -32,19 +32,19 @@ func NewMatchPlayerReader() playerread.PlayerReader {
 }
 
 func (r matchPlayerReader) FindOnline(playerID int64) (playerread.PlayerSnapshot, bool) {
-	player := r.players.GetPlayer(playerID)
-	if player == nil {
+	playerSnapshot, found := r.players.GetPlayerSnapshot(playerID)
+	if !found {
 		return playerread.PlayerSnapshot{}, false
 	}
-	return playerread.PlayerSnapshot{TeamID: player.TeamId}, true
+	return playerread.PlayerSnapshot{TeamID: playerSnapshot.TeamID}, true
 }
 
 func (r matchPlayerReader) FindOnlineTeam(playerID int64) (playerread.TeamSnapshot, bool) {
-	teamInfo := r.teams.GetTeamByPlayerId(playerID)
-	if teamInfo == nil {
+	teamSnapshot, found := r.teams.GetTeamByPlayerID(playerID)
+	if !found {
 		return playerread.TeamSnapshot{}, false
 	}
 	return playerread.TeamSnapshot{
-		MemberIDs: append([]int64(nil), teamInfo.TeamMembers...),
+		MemberIDs: append([]int64(nil), teamSnapshot.MemberIDs...),
 	}, true
 }

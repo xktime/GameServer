@@ -1,7 +1,11 @@
 package managers
 
 import (
+	"context"
+	"fmt"
+	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
+	"gameserver/core/log"
 	"gameserver/modules/room/matchentry"
 	"gameserver/modules/room/participant"
 	"sort"
@@ -12,6 +16,7 @@ import (
 
 type RoomManager struct {
 	mu                        sync.Mutex
+	roomDefinition            *actor.Definition[*Room, string]
 	projection                participant.TeamRoomProjection
 	messenger                 participant.PlayerMessenger
 	now                       func() time.Time
@@ -41,12 +46,32 @@ type teamRoomProjectionAttempt struct {
 }
 
 func NewRoomManager(
+	scope *actor.Scope,
 	projection participant.TeamRoomProjection,
 	messenger participant.PlayerMessenger,
 	now func() time.Time,
 	newRoomID func() string,
-) *RoomManager {
+) (*RoomManager, error) {
+	if projection == nil {
+		return nil, fmt.Errorf("room: TeamRoomProjection is nil")
+	}
+	if messenger == nil {
+		return nil, fmt.Errorf("room: PlayerMessenger is nil")
+	}
+	if now == nil {
+		return nil, fmt.Errorf("room: Clock is nil")
+	}
+	if newRoomID == nil {
+		return nil, fmt.Errorf("room: RoomID generator is nil")
+	}
+	definition, err := actor.Define(scope, actor.Room, func(context.Context, string) (*Room, error) {
+		return &Room{maxLifetime: MaxRoomLifetime, messenger: messenger}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &RoomManager{
+		roomDefinition:            definition,
 		projection:                projection,
 		messenger:                 messenger,
 		now:                       now,
@@ -60,7 +85,7 @@ func NewRoomManager(
 		teamRooms:                 make(map[int64]string),
 		desiredTeamRooms:          make(map[int64]teamRoomProjectionState),
 		projectedTeamRoomVersions: make(map[int64]uint64),
-	}
+	}, nil
 }
 
 func (m *RoomManager) AcceptMatch(admission matchentry.Admission) matchentry.Acceptance {
@@ -127,7 +152,12 @@ func (m *RoomManager) AcceptMatch(admission matchentry.Admission) matchentry.Acc
 			})
 		}
 	}
-	room := createRoom(roomID, memberIDs, realPlayerIDs, teamIDs, realTeamIDs, now, m.messenger)
+	room, err := createRoom(context.Background(), m.roomDefinition, roomID, memberIDs, realPlayerIDs, teamIDs, realTeamIDs, now, m.messenger)
+	if err != nil {
+		m.mu.Unlock()
+		log.Error("创建房间 %s 失败: %v", roomID, err)
+		return matchentry.Acceptance{Status: matchentry.Retryable}
+	}
 	m.rooms[roomID] = room
 	m.matchRooms[admission.MatchID] = roomID
 	m.roomMatches[roomID] = admission.MatchID
