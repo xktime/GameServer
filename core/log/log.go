@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// levels
+// 日志级别
 const (
 	debugLevel   = 0
 	releaseLevel = 1
@@ -37,7 +37,7 @@ type Logger struct {
 }
 
 func New(strLevel string, pathname string, flag int) (*Logger, error) {
-	// level
+	// 日志级别
 	var level int
 	switch strings.ToLower(strLevel) {
 	case "debug":
@@ -52,7 +52,7 @@ func New(strLevel string, pathname string, flag int) (*Logger, error) {
 		return nil, errors.New("unknown level: " + strLevel)
 	}
 
-	// logger
+	// 日志器
 	var baseLogger *log.Logger
 	var baseFile *os.File
 	var logPath string
@@ -69,7 +69,7 @@ func New(strLevel string, pathname string, flag int) (*Logger, error) {
 		baseLogger = log.New(os.Stdout, "", flag)
 	}
 
-	// new
+	// 创建日志器。
 	logger := new(Logger)
 	logger.level = level
 	logger.baseLogger = baseLogger
@@ -214,7 +214,7 @@ func (logger *Logger) Fatal(format string, a ...interface{}) {
 
 var gLogger, _ = New("debug", "", log.LstdFlags)
 
-// It's dangerous to call the method on logging
+// 不能在写入日志期间调用此方法修改日志配置。
 func Export(logger *Logger) {
 	if logger != nil {
 		gLogger = logger

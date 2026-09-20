@@ -8,13 +8,17 @@ import (
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/common/utils"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
+	provisionmanager "gameserver/modules/game/internal/managers/provision"
 	"gameserver/modules/game/internal/managers/team"
+	gameprovision "gameserver/modules/game/internal/provision"
 	"time"
 
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"google.golang.org/protobuf/proto"
 )
@@ -23,16 +27,18 @@ const managerInitializationRetryDelay = 100 * time.Millisecond
 
 type UserManager struct {
 	actor.BaseActor
-	players         *player.Registry
-	teams           *team.Registry
-	memCache        map[string]*models.User
-	nameCache       map[string]bool
-	nameBloomFilter *utils.BloomFilter
-	loadPlayers     func() ([]player.Player, error) `bson:"-"`
-	initialized     bool                            `bson:"-"`
+	players          *player.Registry
+	teams            *team.Registry
+	sessions         *playerSessions
+	nameCache        map[string]bool
+	nameBloomFilter  *utils.BloomFilter
+	repository       userRepository                  `bson:"-"`
+	intentRepository provisionmanager.Repository     `bson:"-"`
+	loadPlayers      func() ([]player.Player, error) `bson:"-"`
+	initialized      bool                            `bson:"-"`
 }
 
-func NewManagers(ctx context.Context, scope *actor.Scope) (*UserManager, *TeamManager, error) {
+func NewManagers(ctx context.Context, scope *actor.Scope, intentRepository provisionmanager.Repository) (*UserManager, *TeamManager, error) {
 	teams, err := team.NewRegistry(scope)
 	if err != nil {
 		return nil, nil, err
@@ -41,7 +47,7 @@ func NewManagers(ctx context.Context, scope *actor.Scope) (*UserManager, *TeamMa
 	if err != nil {
 		return nil, nil, err
 	}
-	users, err := NewUserManager(ctx, scope, players, teams)
+	users, err := NewUserManager(ctx, scope, players, teams, intentRepository)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -52,10 +58,10 @@ func NewManagers(ctx context.Context, scope *actor.Scope) (*UserManager, *TeamMa
 	return users, teamManager, nil
 }
 
-func NewUserManager(ctx context.Context, scope *actor.Scope, players *player.Registry, teams *team.Registry) (*UserManager, error) {
-	return newUserManager(ctx, scope, players, teams, func() ([]player.Player, error) {
+func NewUserManager(ctx context.Context, scope *actor.Scope, players *player.Registry, teams *team.Registry, intentRepository provisionmanager.Repository) (*UserManager, error) {
+	return newUserManager(ctx, scope, players, teams, mongoUserRepository{}, func() ([]player.Player, error) {
 		return mongodb.FindAll[player.Player](bson.M{})
-	})
+	}, intentRepository)
 }
 
 func newUserManager(
@@ -63,7 +69,9 @@ func newUserManager(
 	scope *actor.Scope,
 	players *player.Registry,
 	teams *team.Registry,
+	repository userRepository,
 	loadPlayers func() ([]player.Player, error),
+	intentRepository provisionmanager.Repository,
 ) (*UserManager, error) {
 	if players == nil {
 		return nil, fmt.Errorf("game: Player Registry is nil")
@@ -71,17 +79,25 @@ func newUserManager(
 	if teams == nil {
 		return nil, fmt.Errorf("game: Team Registry is nil")
 	}
+	if repository == nil {
+		return nil, fmt.Errorf("game: User Repository is nil")
+	}
 	if loadPlayers == nil {
 		return nil, fmt.Errorf("game: Player loader is nil")
 	}
+	if intentRepository == nil {
+		return nil, fmt.Errorf("game: Player Provision Repository is nil")
+	}
 	definition, err := actor.Define(scope, actor.User, func(context.Context, string) (*UserManager, error) {
 		manager := &UserManager{
-			players:         players,
-			teams:           teams,
-			memCache:        make(map[string]*models.User),
-			nameCache:       make(map[string]bool),
-			nameBloomFilter: utils.NewBloomFilter(1000000, 7),
-			loadPlayers:     loadPlayers,
+			players:          players,
+			teams:            teams,
+			sessions:         newPlayerSessions(),
+			nameCache:        make(map[string]bool),
+			nameBloomFilter:  utils.NewBloomFilter(1000000, 7),
+			repository:       repository,
+			intentRepository: intentRepository,
+			loadPlayers:      loadPlayers,
 		}
 		return manager, nil
 	})
@@ -132,9 +148,10 @@ func (m *UserManager) OnStop(context.Context) error {
 	}
 	now := time.Now().Unix()
 	stopErrors := make([]error, 0)
-	for _, user := range m.memCache {
+	for _, active := range m.sessions.all() {
+		user := active.user
 		user.LastOfflineTime = now
-		if _, err := mongodb.Save(user); err != nil {
+		if err := m.repository.Save(user); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
@@ -152,21 +169,51 @@ func (m *UserManager) UserLogin(agent gate.Agent, openID string, serverID int32,
 	return response
 }
 
+// HandleProvisionFailure 关闭与失败的首次登录创建意图关联的
+// 在线会话，同时保留已持久化的创建意图，
+// 以便后续重试。
+func (m *UserManager) HandleProvisionFailure(ctx context.Context, intent gameprovision.Intent) error {
+	if ctx == nil {
+		return errors.New("game: provision failure context is nil")
+	}
+	_, err := actor.Call(ctx, m.Ref(), func(execution actor.Context) (struct{}, error) {
+		active, ok := m.sessions.current(intent.AccountID)
+		if !ok {
+			return struct{}{}, nil
+		}
+		active, ok = m.sessions.close(active.snapshot)
+		if !ok {
+			return struct{}{}, nil
+		}
+		return struct{}{}, m.doUserOffline(execution, active, true)
+	})
+	return err
+}
+
 func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID string, serverID int32, loginType message.LoginType) (*message.S2C_Login, error) {
+	if agent == nil {
+		return &message.S2C_Login{LoginResult: -1}, nil
+	}
+	if _, authenticated := session.FromData(agent.UserData()); authenticated {
+		return &message.S2C_Login{LoginResult: -1}, nil
+	}
 	accountID := fmt.Sprintf("%d_%s", serverID, openID)
-	if existingUser, exists := m.memCache[accountID]; exists {
+	if existingSession, exists := m.sessions.current(accountID); exists {
 		log.Debug("UserLogin: user already online (顶号操作): %s", accountID)
-		if err := m.doUserOffline(ctx, *existingUser, true); err != nil {
+		closedSession, _ := m.sessions.close(existingSession.snapshot)
+		if err := m.doUserOffline(ctx, closedSession, true); err != nil {
 			return nil, err
 		}
 	}
 
-	user, err := mongodb.FindOne[models.User](bson.M{"OpenId": openID, "ServerId": serverID})
+	user, err := m.repository.FindByLogin(openID, serverID)
 	if err != nil {
 		return nil, err
 	}
 	isNew := user == nil
 	loginTime := time.Now().Unix()
+	var playerData gameprovision.PlayerData
+	var teamData gameprovision.TeamData
 	if isNew {
 		user = &models.User{
 			AccountId:  accountID,
@@ -176,17 +223,66 @@ func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID 
 			Platform:   loginType,
 			CreateTime: loginTime,
 		}
+		intent, findErr := m.intentRepository.FindByAccount(accountID)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if intent != nil {
+			// 重试首次登录时，以待处理或失败的持久化创建意图为准，
+			// 复用其中的标识，避免重复创建
+			// 玩家或队伍。
+			*user = intent.User
+			user.RecordLogin(loginTime)
+			playerData = intent.Player
+			intent.User = *user
+			intent.Status = gameprovision.StatusPending
+			intent.Attempts = 0
+			intent.NextAttemptAt = time.Time{}
+			intent.LastError = ""
+			intent.UpdatedAt = time.Now()
+			if err := m.intentRepository.Save(intent); err != nil {
+				return nil, err
+			}
+		} else {
+			teamID := utils.FlakeId()
+			user.RecordLogin(loginTime)
+			playerData, teamData = gameprovision.NewInitialData(*user, teamID)
+			intent = &gameprovision.Intent{
+				AccountID:     accountID,
+				IntentID:      uuid.NewString(),
+				Version:       gameprovision.CurrentVersion,
+				Status:        gameprovision.StatusPending,
+				NextAttemptAt: time.Now(),
+				CreatedAt:     time.Now(),
+				UpdatedAt:     time.Now(),
+				User:          *user,
+				Player:        playerData,
+				Team:          teamData,
+			}
+			if err := m.intentRepository.Save(intent); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		user.RecordLogin(loginTime)
 	}
-	user.RecordLogin(loginTime)
-	agent.SetUserData(*user)
-	m.memCache[user.AccountId] = user
 
-	if err := m.players.Login(ctx, agent, *user, isNew); err != nil {
-		delete(m.memCache, user.AccountId)
-		agent.SetUserData(nil)
+	var loginErr error
+	if isNew {
+		loginErr = m.players.LoginProvision(ctx, agent, *user, playerData)
+	} else {
+		loginErr = m.players.Login(ctx, agent, *user)
+	}
+	if loginErr != nil {
+		return nil, loginErr
+	}
+	activeSession, err := m.sessions.open(user, agent)
+	if err != nil {
+		_ = m.players.Stop(ctx, user.PlayerId)
 		return nil, err
 	}
-	if _, err := mongodb.Save(user); err != nil {
+	agent.SetUserData(activeSession.snapshot)
+	if err := m.repository.Save(user); err != nil {
 		log.Error("保存登录用户 %s 失败: %v", accountID, err)
 	}
 	return &message.S2C_Login{
@@ -200,19 +296,24 @@ func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID 
 	}, nil
 }
 
-func (m *UserManager) UserOffline(user models.User) {
+func (m *UserManager) ClosePlayerSession(snapshot session.PlayerSession) {
 	if err := actor.Tell(context.Background(), m.Ref(), func(execution actor.Context) error {
-		return m.doUserOffline(execution, user, true)
+		active, ok := m.sessions.close(snapshot)
+		if !ok {
+			return nil
+		}
+		return m.doUserOffline(execution, active, true)
 	}); err != nil {
-		log.Error("提交用户 %s 下线失败: %v", user.AccountId, err)
+		log.Error("提交 Player Session %d 下线失败: %v", snapshot.ID, err)
 	}
 }
 
-func (m *UserManager) doUserOffline(ctx context.Context, user models.User, save bool) error {
+func (m *UserManager) doUserOffline(ctx context.Context, active activePlayerSession, save bool) error {
+	user := active.user
 	offlineErrors := make([]error, 0)
 	if save {
 		user.LastOfflineTime = time.Now().Unix()
-		if _, err := mongodb.Save(user); err != nil {
+		if err := m.repository.Save(user); err != nil {
 			offlineErrors = append(offlineErrors, err)
 		}
 	}
@@ -234,7 +335,10 @@ func (m *UserManager) doUserOffline(ctx context.Context, user models.User, save 
 	} else if !errors.Is(err, actor.ErrActorStopped) {
 		offlineErrors = append(offlineErrors, err)
 	}
-	delete(m.memCache, user.AccountId)
+	if active.agent != nil {
+		active.agent.SetUserData(nil)
+		active.agent.Close()
+	}
 	log.Debug("User offline: %s, PlayerId: %d", user.AccountId, user.PlayerId)
 	return errors.Join(offlineErrors...)
 }

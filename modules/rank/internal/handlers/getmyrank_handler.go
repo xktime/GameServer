@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 )
@@ -28,10 +28,14 @@ func C2S_GetMyRankHandler(manager RankManager, args []interface{}) {
 
 	log.Debug("收到C2S_GetMyRank消息: %v, agent: %v", msg, agent)
 
-	playerId := agent.UserData().(models.User).PlayerId
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
+	if !ok {
+		log.Error("C2S_GetMyRankHandler: Player Session 不存在")
+		return
+	}
 
 	// 获取我的排名
-	response := manager.HandleGetMyRank(playerId, msg.RankType, msg.Season)
+	response := manager.HandleGetMyRank(playerID, msg.RankType, msg.Season)
 	if response != nil {
 		agent.WriteMsgWithSeq(response, args[2].(uint32))
 	}

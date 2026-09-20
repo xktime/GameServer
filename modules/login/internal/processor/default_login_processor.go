@@ -5,6 +5,7 @@ import (
 	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
+	"gameserver/conf"
 	"gameserver/core/gate"
 	"gameserver/modules/login/internal/models"
 	"net"
@@ -30,6 +31,19 @@ func NewDefaultLoginProcessor() *DefaultLoginProcessor {
 }
 
 func (p *DefaultLoginProcessor) ReqLogin(agent gate.Agent, context context.Context, req *message.C2S_Login) *models.LoginResponse {
+	if !conf.Server.Debug.AllowDefaultLogin {
+		return &models.LoginResponse{
+			ErrCode: -1,
+			ErrMsg:  "default login is disabled",
+		}
+	}
+	if req.LoginType != message.LoginType_None {
+		return &models.LoginResponse{
+			ErrCode: -1,
+			ErrMsg:  "unsupported login type",
+		}
+	}
+
 	ip := agent.RemoteAddr().(*net.TCPAddr).IP.String()
 	code := ip + "_" + req.Code
 	accountCache, err := mongodb.FindOneById[AccountCache](code)

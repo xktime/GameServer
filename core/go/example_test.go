@@ -38,7 +38,7 @@ func Example() {
 func ExampleLinearContext() {
 	d := g.New(10)
 
-	// parallel
+	// 并行执行任务。
 	d.Go(func() {
 		time.Sleep(time.Second / 2)
 		fmt.Println("1")
@@ -50,7 +50,7 @@ func ExampleLinearContext() {
 	d.Cb(<-d.ChanCb)
 	d.Cb(<-d.ChanCb)
 
-	// linear
+	// 串行执行任务。
 	c := d.NewLinearContext()
 	c.Go(func() {
 		time.Sleep(time.Second / 2)

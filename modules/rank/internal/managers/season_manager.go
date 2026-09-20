@@ -8,8 +8,8 @@ import (
 	"gameserver/core/log"
 )
 
-// SeasonManager is persisted separately but mutated only inside RankManager's
-// actor mailbox, avoiding a synchronous Rank <-> Season actor cycle.
+// SeasonManager 单独持久化，但只允许在 RankManager 的 Actor 邮箱内
+// 修改，避免排行榜与赛季 Actor 之间形成同步循环调用。
 type SeasonManager struct {
 	PersistId        int64 `bson:"_id"`
 	Season           int32 `bson:"season_id"`

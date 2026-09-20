@@ -24,11 +24,16 @@ import (
 	"gameserver/modules/room"
 	"net/http"
 	_ "net/http/pprof"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 )
 
 func main() {
+	runContext, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
 	// 初始化配置
 	conf.Instance().Init("./conf")
 
@@ -39,33 +44,40 @@ func main() {
 		runtime.SetMutexProfileFraction(1)
 		// 启用 block 性能分析
 		runtime.SetBlockProfileRate(1)
-		runtime.SetMutexProfileFraction(1)
-
-		go func() {
-			// 启动 http server. 对应 pprof 的一系列 handler 也会挂载在该端口下
-			debugAddr := fmt.Sprintf(":%d", conf.Server.Debug.Port)
-			if err := http.ListenAndServe(debugAddr, nil); err != nil {
-				fmt.Printf("启动debug服务器失败: %v\n", err)
-			}
-		}()
 	}
 
 	if err := Init(); err != nil {
-		closeContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		closeContext, cancel := context.WithTimeout(context.WithoutCancel(runContext), 10*time.Second)
 		defer cancel()
 		panic(errors.Join(err, mongodb.Close(closeContext)))
 	}
+	var debugServer *gamehttp.Server
+	if conf.Server.Debug.Enabled {
+		debugServer = gamehttp.NewHandlerServer(fmt.Sprintf(":%d", conf.Server.Debug.Port), http.DefaultServeMux)
+		if err := debugServer.Start(); err != nil {
+			closeContext, cancel := context.WithTimeout(context.WithoutCancel(runContext), 10*time.Second)
+			defer cancel()
+			panic(errors.Join(fmt.Errorf("start debug server: %w", err), mongodb.Close(closeContext)))
+		}
+	}
 
 	system := actor.NewActorSystem(time.Duration(conf.Server.Actor.TimeoutMillisecond) * time.Millisecond)
-	runErr := Run(system, game.External, login.External, room.External, match.External, rank.External)
-	closeContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	httpServer := gamehttp.NewServer(fmt.Sprintf("0.0.0.0:%d", conf.Server.HttpPort))
+	runErr := Run(runContext, system, httpServer, game.External, login.External, room.External, match.External, rank.External)
+	var debugErr error
+	if debugServer != nil {
+		closeContext, cancel := context.WithTimeout(context.WithoutCancel(runContext), 10*time.Second)
+		debugErr = debugServer.Shutdown(closeContext)
+		cancel()
+	}
+	closeContext, cancel := context.WithTimeout(context.WithoutCancel(runContext), 10*time.Second)
 	defer cancel()
-	if err := errors.Join(runErr, mongodb.Close(closeContext)); err != nil {
+	if err := errors.Join(runErr, debugErr, mongodb.Close(closeContext)); err != nil {
 		panic(err)
 	}
 }
 
-func Run(system *actor.ActorSystem, external ...module.External) error {
+func Run(ctx context.Context, system *actor.ActorSystem, httpServer server.HTTPServer, external ...module.External) error {
 	if system == nil {
 		return fmt.Errorf("main: ActorSystem is nil")
 	}
@@ -75,16 +87,16 @@ func Run(system *actor.ActorSystem, external ...module.External) error {
 	modules = append(modules, event_dispatcher.Module)
 	for _, e := range external {
 		if err := e.InitExternal(system); err != nil {
-			stopContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			stopContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 			return errors.Join(fmt.Errorf("initialize external %T: %w", e, err), system.Stop(stopContext))
 		}
 		modules = append(modules, e.GetModule())
 	}
-	server.Run(modules...)
-	stopContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	runErr := server.Run(ctx, httpServer, modules...)
+	stopContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	return system.Stop(stopContext)
+	return errors.Join(runErr, system.Stop(stopContext))
 }
 
 func Init() error {
@@ -121,7 +133,5 @@ func Init() error {
 	// 初始化定时任务
 	schedule.Init()
 
-	// 初始化http
-	gamehttp.Start()
 	return nil
 }

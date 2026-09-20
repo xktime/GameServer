@@ -24,7 +24,7 @@ message S2C_Login {
     LoginInfo login_info = 2;
 }
 
-// client -> server -> toDouyinCheck
+// 客户端提交登录凭证，由服务端交给对应平台进行校验。
 message C2S_Login {
     option (message_id) = 101;
     LoginType login_type = 1;

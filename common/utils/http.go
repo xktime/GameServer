@@ -24,7 +24,7 @@ func HttpGet(ctx context.Context, uri string, query string, protocol string, dom
 }
 
 func HttpDo(ctx context.Context, uri string, method string, bodyStr string, protocol string, domain string) (string, error) {
-	req, err := http.NewRequest(method, fmt.Sprintf("%s://%s%s", protocol, domain, uri), strings.NewReader(bodyStr))
+	req, err := http.NewRequestWithContext(ctx, method, fmt.Sprintf("%s://%s%s", protocol, domain, uri), strings.NewReader(bodyStr))
 	if err != nil {
 		println(err.Error())
 		return "", err
@@ -56,7 +56,7 @@ func HttpDo(ctx context.Context, uri string, method string, bodyStr string, prot
 	}()
 
 	if err != nil {
-		// handle error
+		// HTTP 请求失败时向调用方返回错误。
 		return "", err
 	}
 	return string(body), nil

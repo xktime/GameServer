@@ -18,7 +18,7 @@ message RankItem {
 
 }
 
-// chanllenge_key : value
+// 扩展信息以键值对表示。
 message OtherInfo {
     string key = 1;
     string value = 2;

@@ -39,10 +39,10 @@ type RankManager struct {
 
 	// 内存缓存
 	PersistId          int64                                             `bson:"_id"`
-	RankCache          map[message.RankType]map[int32]*models.RankData   `bson:"rank_cache"`           // rankType -> season -> rankData
-	ChallengeCodeCache map[int32]*models.ChallengeCode                   `bson:"challenge_code_cache"` // code -> challengeCode
+	RankCache          map[message.RankType]map[int32]*models.RankData   `bson:"rank_cache"`           // 排行榜类型 → 赛季 → 排行榜数据。
+	ChallengeCodeCache map[int32]*models.ChallengeCode                   `bson:"challenge_code_cache"` // 挑战码 → 挑战码数据。
 	CodeIndex          int32                                             `bson:"code_index"`           // 挑战码索引
-	rankListCache      map[int64]map[message.RankType][]*models.RankItem `bson:"-"`                    // playerId -> rankType -> rankData
+	rankListCache      map[int64]map[message.RankType][]*models.RankItem `bson:"-"`                    // 玩家编号 → 排行榜类型 → 排名列表缓存。
 }
 
 func NewRankManager(ctx context.Context, scope *actor.Scope, players playerread.PlayerReader) (*RankManager, error) {
@@ -132,6 +132,13 @@ func (m *RankManager) initialize(ctx context.Context) error {
 		m.season = season
 		if err := m.loadRankData(m); err != nil {
 			return struct{}{}, err
+		}
+		for _, rankDataBySeason := range m.RankCache {
+			for _, rankData := range rankDataBySeason {
+				if rankData != nil {
+					rankData.SortRankData()
+				}
+			}
 		}
 		m.season.onCrossDay(m, m.now().Unix())
 		m.initializeRankTypes()
@@ -241,6 +248,10 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 	response := &message.S2C_UpdateRankData{Success: true}
 	rankType := message.RankType(req.RankType)
 	rankData := r.GetRankData(rankType)
+	if rankData == nil {
+		response.Success = false
+		return response
+	}
 
 	// 查找是否已存在该玩家
 	playerIndex := rankData.GetRankItemIndex(playerId)
@@ -326,6 +337,9 @@ func (m *RankManager) hasRankListCache(playerId int64, rankType message.RankType
 func (m *RankManager) RefreshRankList(playerId int64, rankType message.RankType) []*models.RankItem {
 	result := make([]*models.RankItem, 0)
 	rankDatas := m.GetRankData(rankType)
+	if rankDatas == nil || len(rankDatas.Items) == 0 {
+		return result
+	}
 
 	// 找到玩家在排行榜中的位置
 	playerIndex := rankDatas.GetRankItemIndex(playerId)
@@ -399,6 +413,9 @@ func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRa
 		Season:      req.Season,
 	}
 	rankData := r.GetRankData(message.RankType(req.RankType))
+	if rankData == nil {
+		return response
+	}
 
 	totalCount := int32(len(rankData.Items))
 
@@ -644,6 +661,9 @@ func (r *RankManager) doHandleGetMyRank(playerId int64, rankType message.RankTyp
 		return response
 	}
 	rankData := r.GetRankDataBySeason(message.RankType(rankType), season)
+	if rankData == nil {
+		return response
+	}
 
 	// 查找玩家排名
 	for i, item := range rankData.Items {

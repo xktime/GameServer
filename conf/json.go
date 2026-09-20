@@ -34,8 +34,9 @@ var Server struct {
 	ProfilePath string
 	MachineID   int64
 	Debug       struct {
-		Enabled bool
-		Port    int
+		Enabled           bool
+		Port              int
+		AllowDefaultLogin bool
 	}
 	HttpPort int32
 	Actor    struct {

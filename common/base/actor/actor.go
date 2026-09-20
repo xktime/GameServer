@@ -5,12 +5,12 @@ type BaseActor struct {
 	ref ActorRef
 }
 
-// ActorBase exposes the embedded actor metadata to the runtime.
+// ActorBase 向运行时提供内嵌的 Actor 元数据。
 func (b *BaseActor) ActorBase() *BaseActor {
 	return b
 }
 
-// Ref returns the immutable reference bound by ActorSystem.
+// Ref 返回由 ActorSystem 绑定的不可变引用。
 func (b *BaseActor) Ref() ActorRef {
 	return b.ref
 }

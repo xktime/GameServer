@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"gameserver/common/bucket"
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"strconv"
@@ -35,13 +35,17 @@ func C2S_GetUploadUrlHandler(users UserManager, args []interface{}) {
 	}
 
 	log.Debug("收到C2S_GetUploadUrl消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	playerId := agent.UserData().(models.User).PlayerId
-	url, err := bucket.GetOSSClient().GenerateUploadUrl(msg.Type, strconv.FormatInt(playerId, 10)+"."+msg.SuffixName)
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
+	if !ok {
+		log.Error("C2S_GetUploadUrlHandler: Player Session 不存在")
+		return
+	}
+	url, err := bucket.GetOSSClient().GenerateUploadUrl(msg.Type, strconv.FormatInt(playerID, 10)+"."+msg.SuffixName)
 	if err != nil {
 		log.Error("C2S_GetUploadUrlHandler: 生成上传URL失败: %v", err)
 		return
 	}
-	users.ModifyAvatarSuffix(playerId, msg.SuffixName)
+	users.ModifyAvatarSuffix(playerID, msg.SuffixName)
 	resultMsg := &message.S2C_GetUploadUrl{
 		Url: url,
 	}

@@ -36,7 +36,7 @@ func (p *PlayerInfo) GetAvatarURL() string {
 
 // SaveData 保存数据
 type SaveData struct {
-	Id   string `bson:"_id"`  // playerid_type
+	Id   string `bson:"_id"`  // 由玩家编号和数据类型组成的标识。
 	Data string `bson:"data"` // 数据
 }
 

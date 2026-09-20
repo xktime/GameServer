@@ -1,22 +1,29 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"gameserver/core/cluster"
 	"gameserver/core/conf"
 	"gameserver/core/console"
 	"gameserver/core/log"
 	"gameserver/core/module"
-	"os"
-	"os/signal"
-	"syscall"
+	"time"
 )
 
-func Run(mods ...module.Module) {
-	// logger
+const shutdownTimeout = 30 * time.Second
+
+type HTTPServer interface {
+	Start() error
+	Shutdown(context.Context) error
+}
+
+func Run(ctx context.Context, httpServer HTTPServer, mods ...module.Module) error {
+	// 日志器
 	if conf.LogLevel != "" {
 		logger, err := log.New(conf.LogLevel, conf.LogPath, conf.LogFlag)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("initialize logger: %w", err)
 		}
 		log.Export(logger)
 		defer logger.Close()
@@ -24,24 +31,32 @@ func Run(mods ...module.Module) {
 
 	log.Release("GameServer starting up")
 
-	// module
-	for i := 0; i < len(mods); i++ {
-		module.Register(mods[i])
-	}
-	module.Init()
+	// 模块
+	runtime := module.NewRuntime(mods...)
+	runtime.Start()
 
-	// cluster
+	// 集群
 	cluster.Init()
 
-	// console
+	// 控制台
 	console.Init()
+	defer func() {
+		console.Destroy()
+		cluster.Destroy()
+		runtime.Stop()
+	}()
 
-	// close
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT)
-	sig := <-c
-	log.Release("Leaf closing down (signal: %v)", sig)
-	console.Destroy()
-	cluster.Destroy()
-	module.Destroy()
+	if err := httpServer.Start(); err != nil {
+		return fmt.Errorf("start HTTP server: %w", err)
+	}
+
+	// 关闭服务。
+	<-ctx.Done()
+	log.Release("Leaf closing down (%v)", context.Cause(ctx))
+	shutdownContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownContext); err != nil {
+		return fmt.Errorf("shutdown HTTP server: %w", err)
+	}
+	return nil
 }

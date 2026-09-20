@@ -19,31 +19,35 @@ type module struct {
 	wg       sync.WaitGroup
 }
 
-var mods []*module
-
-func Register(mi Module) {
-	m := new(module)
-	m.mi = mi
-	m.closeSig = make(chan bool, 1)
-
-	mods = append(mods, m)
+type Runtime struct {
+	modules []*module
 }
 
-func Init() {
-	for i := 0; i < len(mods); i++ {
-		mods[i].mi.OnInit()
+func NewRuntime(modules ...Module) *Runtime {
+	managedModules := make([]*module, len(modules))
+	for i, mi := range modules {
+		managedModules[i] = &module{
+			mi:       mi,
+			closeSig: make(chan bool, 1),
+		}
+	}
+	return &Runtime{modules: managedModules}
+}
+
+func (r *Runtime) Start() {
+	for _, m := range r.modules {
+		m.mi.OnInit()
 	}
 
-	for i := 0; i < len(mods); i++ {
-		m := mods[i]
+	for _, m := range r.modules {
 		m.wg.Add(1)
 		go run(m)
 	}
 }
 
-func Destroy() {
-	for i := len(mods) - 1; i >= 0; i-- {
-		m := mods[i]
+func (r *Runtime) Stop() {
+	for i := len(r.modules) - 1; i >= 0; i-- {
+		m := r.modules[i]
 		m.closeSig <- true
 		m.wg.Wait()
 		destroy(m)

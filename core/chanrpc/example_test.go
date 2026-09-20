@@ -12,7 +12,7 @@ func Example() {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	// goroutine 1
+	// 协程一
 	go func() {
 		s.Register("f0", func(args []interface{}) {
 
@@ -42,11 +42,11 @@ func Example() {
 	wg.Wait()
 	wg.Add(1)
 
-	// goroutine 2
+	// 协程二
 	go func() {
 		c := s.Open(10)
 
-		// sync
+		// 同步调用
 		err := c.Call0("f0")
 		if err != nil {
 			fmt.Println(err)
@@ -73,7 +73,7 @@ func Example() {
 			fmt.Println(ra)
 		}
 
-		// asyn
+		// 异步调用
 		c.AsynCall("f0", func(err error) {
 			if err != nil {
 				fmt.Println(err)

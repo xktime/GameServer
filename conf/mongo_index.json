@@ -8,6 +8,12 @@
           ]
         },
         {
+          "collection": "Intent",
+          "create": [
+            { "keys": { "status": 1, "next_attempt_at": 1}, "unique": false }
+          ]
+        },
+        {
           "collection": "RechargeRecord",
           "create": [
             { "keys": { "PlayerId": 1}, "unique": false },

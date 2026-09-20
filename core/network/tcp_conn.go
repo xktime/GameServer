@@ -81,7 +81,7 @@ func (tcpConn *TCPConn) doWrite(b []byte) {
 	tcpConn.writeChan <- b
 }
 
-// b must not be modified by the others goroutines
+// 数据入队后由写协程使用，其他协程不得修改 b 中的数据。
 func (tcpConn *TCPConn) Write(b []byte) {
 	tcpConn.Lock()
 	defer tcpConn.Unlock()

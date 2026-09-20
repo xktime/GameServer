@@ -15,12 +15,13 @@ import (
 )
 
 // -------------------------
-// | id | protobuf message |
+// | 回复标志（1 字节）| 序列号（4 字节）| 消息编号（4 字节）| Protobuf 消息体 |
 // -------------------------
 type Processor struct {
 	littleEndian bool
 	msgInfo      map[uint32]*MsgInfo
 	msgID        map[reflect.Type]uint32
+	routeFilter  RouteFilter
 }
 
 type MsgInfo struct {
@@ -30,6 +31,9 @@ type MsgInfo struct {
 }
 
 type MsgHandler func([]interface{})
+
+// RouteFilter 在消息交给处理函数或模块路由前执行，返回错误即终止本次分发。
+type RouteFilter func(msg interface{}, routeContext interface{}) error
 
 type MsgRaw struct {
 	msgID      uint32
@@ -44,12 +48,12 @@ func NewProcessor() *Processor {
 	return p
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) SetByteOrder(littleEndian bool) {
 	p.littleEndian = littleEndian
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) Register(msg proto.Message) uint32 {
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {
@@ -73,7 +77,7 @@ func (p *Processor) Register(msg proto.Message) uint32 {
 	return id
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) SetRouter(msg proto.Message, msgRouter *chanrpc.Server) {
 	msgType := reflect.TypeOf(msg)
 	id, ok := p.msgID[msgType]
@@ -83,7 +87,7 @@ func (p *Processor) SetRouter(msg proto.Message, msgRouter *chanrpc.Server) {
 	p.msgInfo[id].msgRouter = msgRouter
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) SetHandler(msg proto.Message, msgHandler MsgHandler) {
 	msgType := reflect.TypeOf(msg)
 	id, ok := p.msgID[msgType]
@@ -94,8 +98,13 @@ func (p *Processor) SetHandler(msg proto.Message, msgHandler MsgHandler) {
 	p.msgInfo[id].msgHandler = msgHandler
 }
 
-// goroutine safe
-func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error {
+// SetRouteFilter 配置分发前过滤器；必须在 Processor 开始处理连接前调用。
+func (p *Processor) SetRouteFilter(filter RouteFilter) {
+	p.routeFilter = filter
+}
+
+// 支持并发调用。
+func (p *Processor) Route(msgSeq *models.MsgWithSeq, routeContext interface{}) error {
 	// 处理带序列号的消息
 	msg := msgSeq.MsgData
 	if msgWithSeq, ok := msg.(*models.MsgWithSeq); ok {
@@ -105,7 +114,7 @@ func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error
 		return nil
 	}
 
-	// raw
+	// 处理已携带消息编号的原始消息。
 	if msgRaw, ok := msg.(MsgRaw); ok {
 		if msgRaw.msgID >= uint32(len(p.msgInfo)) {
 			return fmt.Errorf("message id %v not registered", msgRaw.msgID)
@@ -113,26 +122,31 @@ func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error
 		return nil
 	}
 
-	// protobuf
+	// 根据消息类型查找 Protobuf 消息的路由信息。
 	msgType := reflect.TypeOf(msg)
 	id, ok := p.msgID[msgType]
 	if !ok {
 		return fmt.Errorf("message %s not registered", msgType)
 	}
 	i := p.msgInfo[id]
+	if p.routeFilter != nil {
+		if err := p.routeFilter(msg, routeContext); err != nil {
+			return err
+		}
+	}
 	if i.msgHandler != nil {
-		i.msgHandler([]interface{}{msg, userData, msgSeq.Seq})
+		i.msgHandler([]interface{}{msg, routeContext, msgSeq.Seq})
 	}
 	if i.msgRouter != nil {
-		i.msgRouter.Go(msgType, msg, userData, msgSeq.Seq)
+		i.msgRouter.Go(msgType, msg, routeContext, msgSeq.Seq)
 	}
 	return nil
 }
 
 // 1(是否是回复消息) + 4(序列号) + 4(消息ID) + data
-// goroutine safe
+// 支持并发调用。
 func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
-	if len(data) < 9 { // 1 + 4 + 4 = 9 bytes minimum
+	if len(data) < 9 { // 包头至少需要 9 字节：标志位 1 字节、消息编号 4 字节、序列号 4 字节。
 		return nil, errors.New("protobuf data too short")
 	}
 
@@ -154,7 +168,7 @@ func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
 		return nil, fmt.Errorf("message id %v not registered", id)
 	}
 
-	// msg
+	// 创建并反序列化消息体。
 	i := p.msgInfo[id]
 
 	msg := reflect.New(i.msgType.Elem()).Interface()
@@ -177,7 +191,7 @@ func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
 	}, nil
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *Processor) Marshal(msg interface{}, seq uint32) ([][]byte, error) {
 	pbMsg := msg.(proto.Message)
 	_id := getId(pbMsg)
@@ -211,13 +225,14 @@ func (p *Processor) Marshal(msg interface{}, seq uint32) ([][]byte, error) {
 	return [][]byte{header, data}, nil
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *Processor) Range(f func(id uint16, t reflect.Type)) {
 	for id, i := range p.msgInfo {
 		f(uint16(id), i.msgType)
 	}
 }
 
+// getId 从协议描述符的 message_id 扩展中读取消息编号。
 func getId(m proto.Message) uint32 {
 	msgDesc := m.ProtoReflect().Descriptor()
 	opts := msgDesc.Options()

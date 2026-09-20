@@ -69,7 +69,7 @@ func (handler *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	agent := handler.newAgent(wsConn)
 	agent.Run()
 
-	// cleanup
+	// 清理连接与相关资源。
 	wsConn.Close()
 	handler.mutexConns.Lock()
 	delete(handler.conns, conn)

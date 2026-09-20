@@ -1066,14 +1066,13 @@ func TestScopeStopCancelsSharedInitialization(t *testing.T) {
 
 func TestForceStopFailsQueuedCallsAndSkipsDomainStopHook(t *testing.T) {
 	system := NewActorSystem(time.Second)
-	system.queueCapacity = 1
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*stopHookTestActor, error) {
+	definition, err := DefineWithOptions(scope, Test1, func(context.Context, string) (*stopHookTestActor, error) {
 		return &stopHookTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -1193,14 +1192,13 @@ func TestActorCanRequestOwnStopWithoutWaitingOnItself(t *testing.T) {
 
 func TestActorSystemMetricsTrackAdmissionQueueWaitAndPanics(t *testing.T) {
 	system := NewActorSystem(time.Second)
-	system.queueCapacity = 1
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := DefineWithOptions(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}

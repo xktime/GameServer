@@ -44,6 +44,7 @@ func (s *Skeleton) Init() {
 	s.commandServer = chanrpc.NewServer(0)
 }
 
+// Run 在模块主循环中派发 RPC、异步回调和定时器；关闭时等待未完成任务收尾。
 func (s *Skeleton) Run(closeSig chan bool) {
 	for {
 		select {
@@ -110,6 +111,7 @@ func (s *Skeleton) AsynCall(server *chanrpc.Server, id interface{}, args ...inte
 	s.client.AsynCall(id, args...)
 }
 
+// RegisterChanRPC 注册由模块主循环执行的处理函数。
 func (s *Skeleton) RegisterChanRPC(id interface{}, f interface{}) {
 	if s.ChanRPCServer == nil {
 		panic("invalid ChanRPCServer")
@@ -118,6 +120,7 @@ func (s *Skeleton) RegisterChanRPC(id interface{}, f interface{}) {
 	s.server.Register(id, f, false)
 }
 
+// RegisterAsyncChanRPC 注册异步返回模式的处理函数；函数仍在模块主循环中执行。
 func (s *Skeleton) RegisterAsyncChanRPC(id interface{}, f interface{}) {
 	if s.ChanRPCServer == nil {
 		panic("invalid ChanRPCServer")

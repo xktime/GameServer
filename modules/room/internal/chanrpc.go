@@ -1,8 +1,7 @@
 package internal
 
 import (
-	"gameserver/common/models"
-	"gameserver/core/gate"
+	"gameserver/common/session"
 )
 
 type roomOfflineHandler interface {
@@ -16,16 +15,12 @@ func registerCloseAgent(manager roomOfflineHandler) {
 }
 
 func rpcCloseAgent(manager roomOfflineHandler, args []interface{}) {
-	if len(args) == 0 {
+	if len(args) < 2 {
 		return
 	}
-	agent, ok := args[0].(gate.Agent)
+	snapshot, ok := session.FromData(args[1])
 	if !ok {
 		return
 	}
-	user, ok := agent.UserData().(models.User)
-	if !ok {
-		return
-	}
-	manager.PlayerOffline(user.PlayerId)
+	manager.PlayerOffline(snapshot.PlayerID)
 }

@@ -33,7 +33,7 @@ func NewProcessor() *Processor {
 	return p
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) Register(msg interface{}) string {
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {
@@ -53,7 +53,7 @@ func (p *Processor) Register(msg interface{}) string {
 	return msgID
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) SetRouter(msg interface{}, msgRouter *chanrpc.Server) {
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {
@@ -68,7 +68,7 @@ func (p *Processor) SetRouter(msg interface{}, msgRouter *chanrpc.Server) {
 	i.msgRouter = msgRouter
 }
 
-// It's dangerous to call the method on routing or marshaling (unmarshaling)
+// 不能在消息路由、序列化或反序列化期间调用此方法修改配置。
 func (p *Processor) SetHandler(msg interface{}, msgHandler MsgHandler) {
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {
@@ -83,7 +83,7 @@ func (p *Processor) SetHandler(msg interface{}, msgHandler MsgHandler) {
 	i.msgHandler = msgHandler
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error {
 	// 处理带序列号的消息
 	msg := msgSeq.MsgData
@@ -93,7 +93,7 @@ func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error
 		return nil
 	}
 
-	// raw
+	// 处理已携带消息编号的原始消息。
 	if msgRaw, ok := msg.(MsgRaw); ok {
 		_, ok := p.msgInfo[msgRaw.msgID]
 		if !ok {
@@ -103,7 +103,7 @@ func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error
 		return nil
 	}
 
-	// json
+	// 根据消息类型查找 JSON 消息的路由信息。
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {
 		return errors.New("json message pointer required")
@@ -122,7 +122,7 @@ func (p *Processor) Route(msgSeq *models.MsgWithSeq, userData interface{}) error
 	return nil
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
 	// 解析JSON消息格式: {"isReply": bool, "seq": number, "msgID": string, "data": {...}}
 	var msgWithSeq struct {
@@ -159,7 +159,7 @@ func (p *Processor) Unmarshal(data []byte) (*models.MsgWithSeq, error) {
 	}, nil
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *Processor) Marshal(msg interface{}, seq uint32) ([][]byte, error) {
 	msgType := reflect.TypeOf(msg)
 	if msgType == nil || msgType.Kind() != reflect.Ptr {

@@ -6,24 +6,27 @@ import (
 	"gameserver/core/network"
 	"net"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Gate struct {
 	Processor    network.Processor
 	AgentChanRPC *chanrpc.Server
-	// websocket
+	// WebSocket 连接配置
 	WSAddr   string
 	CertFile string
 	KeyFile  string
-	// tcp
-	TCPAddr         string
-	MaxConnNum      int
-	PendingWriteNum int
-	HTTPTimeout     time.Duration
-	LenMsgLen       int
-	MaxMsgLen       uint32
-	LittleEndian    bool
+	// TCP 连接配置
+	TCPAddr          string
+	MaxConnNum       int
+	PendingWriteNum  int
+	HTTPTimeout      time.Duration
+	LenMsgLen        int
+	MaxMsgLen        uint32
+	LittleEndian     bool
+	nextConnectionID atomic.Uint64
 }
 
 func (gate *Gate) Run(closeSig chan bool) {
@@ -38,10 +41,8 @@ func (gate *Gate) Run(closeSig chan bool) {
 		wsServer.CertFile = gate.CertFile
 		wsServer.KeyFile = gate.KeyFile
 		wsServer.NewAgent = func(conn *network.WSConn) network.Agent {
-			a := &agent{conn: conn, gate: gate}
-			if gate.AgentChanRPC != nil {
-				gate.AgentChanRPC.Go("NewAgent", a)
-			}
+			a := gate.newAgent(conn)
+			gate.registerAgent(a)
 			return a
 		}
 	}
@@ -56,10 +57,8 @@ func (gate *Gate) Run(closeSig chan bool) {
 		tcpServer.MaxMsgLen = gate.MaxMsgLen
 		tcpServer.LittleEndian = gate.LittleEndian
 		tcpServer.NewAgent = func(conn *network.TCPConn) network.Agent {
-			a := &agent{conn: conn, gate: gate}
-			if gate.AgentChanRPC != nil {
-				gate.AgentChanRPC.Go("NewAgent", a)
-			}
+			a := gate.newAgent(conn)
+			gate.registerAgent(a)
 			return a
 		}
 	}
@@ -79,12 +78,32 @@ func (gate *Gate) Run(closeSig chan bool) {
 	}
 }
 
+func (gate *Gate) registerAgent(a *agent) {
+	if gate.AgentChanRPC == nil {
+		return
+	}
+	if err := gate.AgentChanRPC.Call0("NewAgent", a); err != nil {
+		log.Error("登记新连接失败: %v", err)
+	}
+}
+
 func (gate *Gate) OnDestroy() {}
 
 type agent struct {
-	conn     network.Conn
-	gate     *Gate
-	userData interface{}
+	connectionID  ConnectionID
+	conn          network.Conn
+	gate          *Gate
+	userDataMutex sync.RWMutex
+	userData      interface{}
+	closeData     interface{}
+}
+
+func (gate *Gate) newAgent(conn network.Conn) *agent {
+	return &agent{
+		connectionID: ConnectionID(gate.nextConnectionID.Add(1)),
+		conn:         conn,
+		gate:         gate,
+	}
 }
 
 func (a *agent) Run() {
@@ -112,7 +131,7 @@ func (a *agent) Run() {
 
 func (a *agent) OnClose() {
 	if a.gate.AgentChanRPC != nil {
-		err := a.gate.AgentChanRPC.Call0("CloseAgent", a)
+		err := a.gate.AgentChanRPC.Call0("CloseAgent", a, a.closeSnapshot())
 		if err != nil {
 			log.Error("chanrpc error: %v", err)
 		}
@@ -163,10 +182,27 @@ func (a *agent) Destroy() {
 	a.conn.Destroy()
 }
 
+func (a *agent) ConnectionID() ConnectionID {
+	return a.connectionID
+}
+
 func (a *agent) UserData() interface{} {
+	a.userDataMutex.RLock()
+	defer a.userDataMutex.RUnlock()
 	return a.userData
 }
 
 func (a *agent) SetUserData(data interface{}) {
+	a.userDataMutex.Lock()
+	defer a.userDataMutex.Unlock()
+	if data != nil {
+		a.closeData = data
+	}
 	a.userData = data
+}
+
+func (a *agent) closeSnapshot() interface{} {
+	a.userDataMutex.RLock()
+	defer a.userDataMutex.RUnlock()
+	return a.closeData
 }

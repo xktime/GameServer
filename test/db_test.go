@@ -166,6 +166,33 @@ func TestBulkSave(t *testing.T) {
 	}
 }
 
+func TestSaveIfAbsentKeepsExistingDocument(t *testing.T) {
+	initMongoTest(t)
+
+	inserted, err := mongodb.SaveIfAbsent(&User{ID: "first", Name: "原始", Age: 1})
+	if err != nil {
+		t.Fatalf("首次 SaveIfAbsent 失败: %v", err)
+	}
+	if !inserted {
+		t.Fatal("首次 SaveIfAbsent 应插入文档")
+	}
+
+	inserted, err = mongodb.SaveIfAbsent(&User{ID: "first", Name: "覆盖", Age: 2})
+	if err != nil {
+		t.Fatalf("重复 SaveIfAbsent 失败: %v", err)
+	}
+	if inserted {
+		t.Fatal("重复 SaveIfAbsent 不应覆盖文档")
+	}
+	user, err := mongodb.FindOneById[User]("first")
+	if err != nil {
+		t.Fatalf("读取 SaveIfAbsent 文档失败: %v", err)
+	}
+	if user == nil || user.Name != "原始" || user.Age != 1 {
+		t.Fatalf("SaveIfAbsent 覆盖了原始文档: %#v", user)
+	}
+}
+
 type M struct {
 	ID   string            `bson:"_id"`
 	Name map[string]string `bson:"name"`

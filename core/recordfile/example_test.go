@@ -7,9 +7,9 @@ import (
 
 func Example() {
 	type Record struct {
-		// index 0
+		// 索引 0
 		IndexInt int "index"
-		// index 1
+		// 索引 1
 		IndexStr string "index"
 		_Number  int32
 		Str      string

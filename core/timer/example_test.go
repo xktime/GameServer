@@ -9,18 +9,18 @@ import (
 func ExampleTimer() {
 	d := timer.NewDispatcher(10)
 
-	// timer 1
+	// 定时器示例一。
 	d.AfterFunc(1, func() {
 		fmt.Println("My name is Leaf")
 	})
 
-	// timer 2
+	// 定时器示例二。
 	t := d.AfterFunc(1, func() {
 		fmt.Println("will not print")
 	})
 	t.Stop()
 
-	// dispatch
+	// 派发到期的定时任务。
 	(<-d.ChanTimer).Cb()
 
 	// Output:
@@ -46,20 +46,20 @@ func ExampleCronExpr() {
 func ExampleCron() {
 	d := timer.NewDispatcher(10)
 
-	// cron expr
+	// 解析周期任务表达式。
 	cronExpr, err := timer.NewCronExpr("* * * * * *")
 	if err != nil {
 		return
 	}
 
-	// cron
+	// 创建周期任务。
 	var c *timer.Cron
 	c = d.CronFunc(cronExpr, func() {
 		fmt.Println("My name is Leaf")
 		c.Stop()
 	})
 
-	// dispatch
+	// 派发到期的定时任务。
 	(<-d.ChanTimer).Cb()
 
 	// Output:

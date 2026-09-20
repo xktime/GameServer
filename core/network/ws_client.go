@@ -107,7 +107,7 @@ reconnect:
 	agent := client.NewAgent(wsConn)
 	agent.Run()
 
-	// cleanup
+	// 清理连接与相关资源。
 	wsConn.Close()
 	client.Lock()
 	delete(client.conns, conn)

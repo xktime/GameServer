@@ -14,7 +14,7 @@ func handleMsg(m proto.Message, h interface{}) {
 
 func InitHandler(login handlers.LoginManager, connections handlers.ConnectManager) {
 	handleMsg(&message.C2S_Login{}, func(args []interface{}) {
-		handlers.C2S_LoginHandler(login, connections, args)
+		handlers.C2S_LoginHandler(login, args)
 	})
 	handleMsg(&message.C2S_Heart{}, func(args []interface{}) {
 		handlers.C2S_HeartHandler(connections, args)

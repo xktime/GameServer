@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 )
@@ -26,9 +26,9 @@ func C2S_RecordGameOperateHandler(manager RoomManager, args []interface{}) {
 		log.Error("C2S_RecordGameOperateHandler: Agent类型错误")
 		return
 	}
-	user, ok := agent.UserData().(models.User)
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
 	if !ok {
-		log.Error("C2S_RecordGameOperateHandler: UserData类型错误")
+		log.Error("C2S_RecordGameOperateHandler: Player Session 不存在")
 		return
 	}
 	seq, ok := args[2].(uint32)
@@ -37,6 +37,6 @@ func C2S_RecordGameOperateHandler(manager RoomManager, args []interface{}) {
 		return
 	}
 
-	response := manager.HandleRecordOperate(user.PlayerId, msg.RoomId, msg.OperateInfo)
+	response := manager.HandleRecordOperate(playerID, msg.RoomId, msg.OperateInfo)
 	agent.WriteMsgWithSeq(response, seq)
 }

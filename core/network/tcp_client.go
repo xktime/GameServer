@@ -16,7 +16,7 @@ type TCPClient struct {
 	ConnNum         int
 	ConnectInterval time.Duration
 	PendingWriteNum int
-	// msg parser
+	// 消息解析器
 	LenMsgLen int
 	sync.Mutex
 	MinMsgLen     uint32
@@ -61,7 +61,7 @@ func (client *TCPClient) init() {
 	client.conns = make(ConnSet)
 	client.closeFlag = false
 
-	// msg parser
+	// 消息解析器
 	msgParser := NewMsgParser()
 	msgParser.SetMsgLen(client.LenMsgLen, client.MinMsgLen, client.MaxMsgLen)
 	msgParser.SetByteOrder(client.LittleEndian)
@@ -103,7 +103,7 @@ reconnect:
 	agent := client.NewAgent(tcpConn)
 	agent.Run()
 
-	// cleanup
+	// 清理连接与相关资源。
 	tcpConn.Close()
 	client.Lock()
 	delete(client.conns, conn)

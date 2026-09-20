@@ -9,12 +9,12 @@ import (
 	"runtime"
 )
 
-// one server per goroutine (goroutine not safe)
-// one client per goroutine (goroutine not safe)
+// 每个服务端实例仅由一个协程访问，不支持并发调用。
+// 每个客户端实例仅由一个协程访问，不支持并发调用。
 type Server struct {
-	// id -> function
+	// 处理函数表：调用标识 → 处理函数。
 	//
-	// function:
+	// 支持的处理函数签名：
 	// func(args []interface{})
 	// func(args []interface{}) interface{}
 	// func(args []interface{}) []interface{}
@@ -41,7 +41,7 @@ type RetInfo struct {
 	// []interface{}
 	ret interface{}
 	err error
-	// callback:
+	// 支持的回调函数签名：
 	// func(err error)
 	// func(ret interface{}, err error)
 	// func(ret []interface{}, err error)
@@ -70,7 +70,7 @@ func assert(i interface{}) []interface{} {
 	}
 }
 
-// you must call the function before calling Open and Go
+// 必须在调用 Open 和 Go 之前注册处理函数。
 func (s *Server) Register(id interface{}, f interface{}, async bool) {
 	switch f.(type) {
 	case func([]interface{}):
@@ -121,7 +121,7 @@ func (s *Server) exec(ci *CallInfo) (err error) {
 		}
 	}()
 
-	// execute
+	// 执行处理函数。
 	switch ci.f.(type) {
 	case func([]interface{}):
 		ci.f.(func([]interface{}))(ci.args)
@@ -157,7 +157,7 @@ func (s *Server) Exec(ci *CallInfo) {
 	}
 }
 
-// goroutine safe
+// 支持并发调用。
 func (s *Server) Go(id interface{}, args ...interface{}) {
 	f := s.functions[id]
 	if f == nil {
@@ -175,17 +175,17 @@ func (s *Server) Go(id interface{}, args ...interface{}) {
 	}
 }
 
-// goroutine safe
+// 支持并发调用。
 func (s *Server) Call0(id interface{}, args ...interface{}) error {
 	return s.Open(0).Call0(id, args...)
 }
 
-// goroutine safe
+// 支持并发调用。
 func (s *Server) Call1(id interface{}, args ...interface{}) (interface{}, error) {
 	return s.Open(0).Call1(id, args...)
 }
 
-// goroutine safe
+// 支持并发调用。
 func (s *Server) CallN(id interface{}, args ...interface{}) ([]interface{}, error) {
 	return s.Open(0).CallN(id, args...)
 }
@@ -200,7 +200,7 @@ func (s *Server) Close() {
 	}
 }
 
-// goroutine safe
+// 支持并发调用。
 func (s *Server) Open(l int) *Client {
 	c := NewClient(l)
 	c.Attach(s)
@@ -367,7 +367,7 @@ func (c *Client) AsynCall(id interface{}, _args ...interface{}) {
 		panic("definition of callback function is invalid")
 	}
 
-	// too many calls
+	// 异步返回队列已满，立即通过回调报告错误。
 	if c.pendingAsynCall >= cap(c.ChanAsynRet) {
 		execCb(&RetInfo{err: errors.New("too many calls"), cb: cb})
 		return
@@ -390,7 +390,7 @@ func execCb(ri *RetInfo) {
 		}
 	}()
 
-	// execute
+	// 执行处理函数。
 	switch ri.cb.(type) {
 	case func(error):
 		ri.cb.(func(error))(ri.err)

@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-// one Go per goroutine (goroutine not safe)
+// 每个 Go 实例仅由一个协程访问，不支持并发调用。
 type Go struct {
 	ChanCb    chan func()
 	pendingGo int
@@ -72,6 +72,7 @@ func (g *Go) Cb(cb func()) {
 	}
 }
 
+// Close 持续消费任务回调，直到所有已提交的任务完成。
 func (g *Go) Close() {
 	for g.pendingGo > 0 {
 		g.Cb(<-g.ChanCb)
@@ -89,6 +90,7 @@ func (g *Go) NewLinearContext() *LinearContext {
 	return c
 }
 
+// Go 将任务加入当前上下文的队列，串行执行任务，并把回调交回所属 Go 实例。
 func (c *LinearContext) Go(f func(), cb func()) {
 	c.g.pendingGo++
 

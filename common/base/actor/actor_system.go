@@ -14,17 +14,17 @@ import (
 
 const (
 	initializationFailureBackoff = 100 * time.Millisecond
-	defaultQueueCapacity         = 10000
+	defaultEntityQueueCapacity   = 256
+	defaultManagerQueueCapacity  = 1024
 	defaultPanicThreshold        = 3
 	defaultQuarantineDuration    = 30 * time.Second
 )
 
-// ActorSystem owns actor scopes and their shared lifecycle.
+// ActorSystem 管理 Actor 作用域及其共享生命周期。
 type ActorSystem struct {
 	ctx                context.Context
 	cancel             context.CancelFunc
 	timeout            time.Duration
-	queueCapacity      int
 	panicThreshold     int
 	quarantineDuration time.Duration
 
@@ -42,7 +42,7 @@ type actorMetrics struct {
 	queueWaitMax   atomic.Int64
 }
 
-// MetricsSnapshot is an aggregate point-in-time view of one ActorSystem.
+// MetricsSnapshot 是某一时刻 ActorSystem 运行指标的汇总快照。
 type MetricsSnapshot struct {
 	AcceptedTasks  uint64
 	RejectedTasks  uint64
@@ -52,7 +52,7 @@ type MetricsSnapshot struct {
 	QueueWaitMax   time.Duration
 }
 
-// Scope owns the actor definitions and instances for one domain module.
+// Scope 管理一个领域模块内的 Actor 定义和实例。
 type Scope struct {
 	system *ActorSystem
 	name   string
@@ -115,7 +115,7 @@ const (
 	cellQuarantined
 )
 
-// StopHook lets a domain actor flush its own state after accepted tasks drain.
+// StopHook 在已接收任务全部执行完毕后，允许领域 Actor 保存自身状态。
 type StopHook interface {
 	OnStop(context.Context) error
 }
@@ -138,7 +138,7 @@ type actorIdentity struct {
 	generation uint64
 }
 
-// ActorRef is an immutable, generation-aware reference to one actor instance.
+// ActorRef 是指向一个 Actor 实例的不可变引用，包含用于识别实例代次的信息。
 type ActorRef struct {
 	system     *ActorSystem
 	scope      *Scope
@@ -146,7 +146,7 @@ type ActorRef struct {
 	generation uint64
 }
 
-// Context carries the current actor and synchronous call chain.
+// Context 携带当前 Actor 和同步调用链信息。
 type Context struct {
 	context.Context
 	current actorIdentity
@@ -157,28 +157,34 @@ type actorBaseProvider interface {
 	ActorBase() *BaseActor
 }
 
-// Definition binds one actor type and ID type to a factory registered in a scope.
+// Definition 将 Actor 类型及其标识类型绑定到作用域中注册的工厂函数。
 type Definition[T any, ID comparable] struct {
-	scope   *Scope
-	key     definitionKey
-	factory func(context.Context, ID) (T, error)
+	scope         *Scope
+	key           definitionKey
+	factory       func(context.Context, ID) (T, error)
+	queueCapacity int
 }
 
-// NewActorSystem creates an explicit actor runtime owner.
+// DefinitionOptions 配置一个 Actor 定义所需的运行时资源。
+// QueueCapacity 为零时采用分组默认值，为正数时使用该定义指定的队列容量。
+type DefinitionOptions struct {
+	QueueCapacity int
+}
+
+// NewActorSystem 创建管理 Actor 运行时及其生命周期的实例。
 func NewActorSystem(timeout time.Duration) *ActorSystem {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ActorSystem{
 		ctx:                ctx,
 		cancel:             cancel,
 		timeout:            timeout,
-		queueCapacity:      defaultQueueCapacity,
 		panicThreshold:     defaultPanicThreshold,
 		quarantineDuration: defaultQuarantineDuration,
 		scopes:             make(map[string]*Scope),
 	}
 }
 
-// NewScope creates a uniquely named domain scope.
+// NewScope 创建名称唯一的领域作用域。
 func (s *ActorSystem) NewScope(name string) (*Scope, error) {
 	if name == "" {
 		return nil, fmt.Errorf("actor: scope name is empty")
@@ -205,7 +211,7 @@ func (s *ActorSystem) NewScope(name string) (*Scope, error) {
 	return scope, nil
 }
 
-// Stop gracefully closes every scope before canceling the runtime context.
+// Stop 先有序关闭所有作用域，再取消运行时上下文。
 func (s *ActorSystem) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")
@@ -228,7 +234,7 @@ func (s *ActorSystem) Stop(ctx context.Context) error {
 	return errors.Join(stopErrors...)
 }
 
-// Metrics returns aggregate runtime counters and the current queued task count.
+// Metrics 返回汇总的运行计数器及当前排队任务数。
 func (s *ActorSystem) Metrics() MetricsSnapshot {
 	s.mu.Lock()
 	scopes := make([]*Scope, 0, len(s.scopes))
@@ -272,8 +278,14 @@ func (s *ActorSystem) recordDequeued(task actorTask) {
 	}
 }
 
-// Define registers the only factory for an actor type in a scope and group.
+// Define 在指定作用域和分组中为 Actor 类型注册唯一的工厂函数。
 func Define[T any, ID comparable](scope *Scope, group ActorGroup, factory func(context.Context, ID) (T, error)) (*Definition[T, ID], error) {
+	return DefineWithOptions(scope, group, factory, DefinitionOptions{})
+}
+
+// DefineWithOptions 注册 Actor 定义，并允许单独设置邮箱容量，
+// 同时保留 Define 的原有调用方式。
+func DefineWithOptions[T any, ID comparable](scope *Scope, group ActorGroup, factory func(context.Context, ID) (T, error), options DefinitionOptions) (*Definition[T, ID], error) {
 	if scope == nil {
 		return nil, fmt.Errorf("actor: scope is nil")
 	}
@@ -295,11 +307,24 @@ func Define[T any, ID comparable](scope *Scope, group ActorGroup, factory func(c
 		}
 	}
 	scope.definitions[key] = struct{}{}
-	return &Definition[T, ID]{scope: scope, key: key, factory: factory}, nil
+	queueCapacity := options.QueueCapacity
+	if queueCapacity <= 0 {
+		queueCapacity = defaultQueueCapacity(group)
+	}
+	return &Definition[T, ID]{scope: scope, key: key, factory: factory, queueCapacity: queueCapacity}, nil
 }
 
-// GetOrCreate returns the single ready actor for an identity. The caller's
-// context only controls waiting; initialization belongs to the ActorSystem.
+func defaultQueueCapacity(group ActorGroup) int {
+	switch group {
+	case Player, Team, Room:
+		return defaultEntityQueueCapacity
+	default:
+		return defaultManagerQueueCapacity
+	}
+}
+
+// GetOrCreate 返回指定标识对应的唯一就绪 Actor。调用方的上下文
+// 仅控制等待过程，初始化的生命周期由 ActorSystem 管理。
 func (d *Definition[T, ID]) GetOrCreate(ctx context.Context, id ID) (T, error) {
 	var zero T
 	if ctx == nil {
@@ -357,8 +382,8 @@ func (d *Definition[T, ID]) GetOrCreate(ctx context.Context, id ID) (T, error) {
 	}
 }
 
-// Lookup returns an existing ready actor without invoking the definition's
-// factory. It waits for an already-started initialization to finish.
+// Lookup 返回已有的就绪 Actor，不会调用定义中的工厂函数；
+// 如果该实例正在初始化，则等待初始化完成。
 func (d *Definition[T, ID]) Lookup(ctx context.Context, id ID) (T, error) {
 	var zero T
 	if ctx == nil {
@@ -451,7 +476,7 @@ func (d *Definition[T, ID]) initialize(key actorKey, entry *actorEntry, id ID) {
 			provider.ActorBase().ref = ref
 			entry.cell = &actorCell{
 				ref:     ref,
-				queue:   make(chan actorTask, d.scope.system.queueCapacity),
+				queue:   make(chan actorTask, d.queueCapacity),
 				actor:   actor,
 				state:   cellRunning,
 				stopCh:  make(chan struct{}),
@@ -471,7 +496,7 @@ func (d *Definition[T, ID]) initialize(key actorKey, entry *actorEntry, id ID) {
 	d.scope.mu.Unlock()
 }
 
-// Stop prevents new actors and gracefully stops every actor owned by the scope.
+// Stop 禁止创建新 Actor，并有序停止该作用域内的所有 Actor。
 func (s *Scope) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")
@@ -525,7 +550,7 @@ func (s *Scope) Stop(ctx context.Context) error {
 	return errors.Join(stopErrors...)
 }
 
-// Call enqueues a task and waits for its result.
+// Call 将任务加入队列，并等待执行结果。
 func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error)) (R, error) {
 	var zero R
 	if ctx == nil {
@@ -581,8 +606,8 @@ func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error
 	}
 }
 
-// Tell waits until a task is accepted but does not wait for its execution. The
-// caller's context bounds admission; an accepted task is still drained later.
+// Tell 等待任务被接收，但不等待执行完成。调用方的上下文
+// 只限制入队等待；任务一旦被接收，后续仍会执行完毕。
 func Tell(ctx context.Context, ref ActorRef, task func(Context) error) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")
@@ -606,7 +631,7 @@ func Tell(ctx context.Context, ref ActorRef, task func(Context) error) error {
 	return entry.cell.admit(admissionContext, queued, true)
 }
 
-// TryTell attempts immediate admission and reports a full queue to the caller.
+// TryTell 尝试立即入队，队列已满时向调用方返回错误。
 func TryTell(ref ActorRef, task func(Context) error) error {
 	if task == nil {
 		return fmt.Errorf("actor: task is nil")
@@ -624,7 +649,7 @@ func TryTell(ref ActorRef, task func(Context) error) error {
 	return entry.cell.admit(ref.system.ctx, queued, false)
 }
 
-// Stop rejects new tasks, drains accepted tasks, and waits for termination.
+// Stop 拒绝新任务，执行完已接收的任务，并等待实例终止。
 func (r ActorRef) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")
@@ -651,8 +676,8 @@ func (r ActorRef) Stop(ctx context.Context) error {
 	}
 }
 
-// ForceStop rejects new tasks, discards queued tasks, skips the domain stop
-// hook, and waits for the currently executing task to return.
+// ForceStop 拒绝新任务、丢弃排队任务并跳过领域停止钩子，
+// 但仍会等待当前正在执行的任务返回。
 func (r ActorRef) ForceStop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")

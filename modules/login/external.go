@@ -36,7 +36,9 @@ func (m *LoginExternal) InitExternal(system *actor.ActorSystem) error {
 	if err != nil {
 		return err
 	}
-	loginManager, err := managers.NewLoginManager(context.Background(), scope, game.External.UserManager)
+	loginManager, err := managers.NewLoginManager(context.Background(), scope, game.External.UserManager, managers.LoginManagerOptions{
+		Attempts: connectManager,
+	})
 	if err != nil {
 		return err
 	}

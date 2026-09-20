@@ -3,33 +3,15 @@ package managers
 import (
 	"context"
 	"gameserver/common/base/actor"
-	commonmodels "gameserver/common/models"
 	"gameserver/common/msg/message"
-	"gameserver/core/gate"
 	matchmodels "gameserver/modules/match/internal/models"
 	"gameserver/modules/match/playerread"
 	"gameserver/modules/room/matchentry"
-	"net"
 	"reflect"
 	"slices"
 	"testing"
 	"time"
 )
-
-type fakeMatchAgent struct {
-	userData any
-}
-
-var _ gate.Agent = (*fakeMatchAgent)(nil)
-
-func (a *fakeMatchAgent) WriteMsg(any)                {}
-func (a *fakeMatchAgent) WriteMsgWithSeq(any, uint32) {}
-func (a *fakeMatchAgent) LocalAddr() net.Addr         { return nil }
-func (a *fakeMatchAgent) RemoteAddr() net.Addr        { return nil }
-func (a *fakeMatchAgent) Close()                      {}
-func (a *fakeMatchAgent) Destroy()                    {}
-func (a *fakeMatchAgent) UserData() any               { return a.userData }
-func (a *fakeMatchAgent) SetUserData(userData any)    { a.userData = userData }
 
 type fakeMatchPlayerReader struct {
 	players map[int64]playerread.PlayerSnapshot
@@ -57,19 +39,13 @@ func newMatchTestManager(players playerread.PlayerReader) *MatchManager {
 	}
 }
 
-func matchTestAgent(playerID int64) gate.Agent {
-	return &fakeMatchAgent{userData: commonmodels.User{PlayerId: playerID}}
-}
-
 func TestMatchManagerStartsAndCancelsMatchFromSnapshots(t *testing.T) {
 	players := &fakeMatchPlayerReader{
 		players: map[int64]playerread.PlayerSnapshot{42: {TeamID: 7}},
 		teams:   map[int64]playerread.TeamSnapshot{42: {MemberIDs: []int64{42, 43}}},
 	}
 	manager := newMatchTestManager(players)
-	agent := matchTestAgent(42)
-
-	teamID, response := manager.doHandleMatch(agent, &message.C2S_StartMatch{Type: 1})
+	teamID, response := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: 1})
 	if response == nil || !response.Result || teamID != 7 {
 		t.Fatalf("开始匹配结果 = %d, %#v", teamID, response)
 	}
@@ -77,12 +53,12 @@ func TestMatchManagerStartsAndCancelsMatchFromSnapshots(t *testing.T) {
 	if request == nil || !slices.Equal(request.PlayerIds, []int64{42, 43}) || request.TeamSize != 2 {
 		t.Fatalf("匹配队列请求 = %#v", request)
 	}
-	duplicateTeamID, duplicateResponse := manager.doHandleMatch(agent, &message.C2S_StartMatch{Type: 1})
+	duplicateTeamID, duplicateResponse := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: 1})
 	if duplicateResponse == nil || duplicateResponse.Result || duplicateTeamID != 0 || manager.matchQueues[1].GetQueueSize() != 1 {
 		t.Fatalf("重复开始匹配结果 = %d, %#v", duplicateTeamID, duplicateResponse)
 	}
 
-	teamID, cancelResponse := manager.doHandleCancelMatch(agent)
+	teamID, cancelResponse := manager.doHandleCancelMatch(42)
 	if cancelResponse == nil || !cancelResponse.Result || teamID != 7 {
 		t.Fatalf("取消匹配结果 = %d, %#v", teamID, cancelResponse)
 	}
@@ -100,7 +76,7 @@ func TestMatchManagerUsesInjectedClockForQueueAndTimeout(t *testing.T) {
 	manager := newMatchTestManager(players)
 	manager.now = func() time.Time { return now }
 
-	teamID, response := manager.doHandleMatch(matchTestAgent(42), &message.C2S_StartMatch{Type: 1})
+	teamID, response := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: 1})
 	request := manager.matchQueues[1].TeamRequests[7]
 	if response == nil || !response.Result || teamID != 7 || request == nil {
 		t.Fatalf("开始匹配结果 = %d, %#v，请求 = %#v", teamID, response, request)
@@ -154,7 +130,7 @@ func TestMatchManagerRejectsUnavailableParticipants(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			manager := newMatchTestManager(test.players)
-			teamID, response := manager.doHandleMatch(matchTestAgent(42), &message.C2S_StartMatch{Type: test.matchType})
+			teamID, response := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: test.matchType})
 			if response == nil || response.Result || teamID != 0 {
 				t.Fatalf("不可用参与者的开始匹配结果 = %d, %#v", teamID, response)
 			}
@@ -223,7 +199,7 @@ func TestMatchingRetriesSameAdmissionAfterRetryable(t *testing.T) {
 
 	manager.Matching()
 	request := manager.matchQueues[1].TeamRequests[7]
-	canceledTeamID, cancelResponse := manager.doHandleCancelMatch(matchTestAgent(42))
+	canceledTeamID, cancelResponse := manager.doHandleCancelMatch(42)
 	if request == nil || request.MatchID != "match-1" || manager.matchQueues[1].RemoveTeamRequest(7) || canceledTeamID != 0 || cancelResponse.Result {
 		t.Fatalf("retryable settlement state = %#v", request)
 	}

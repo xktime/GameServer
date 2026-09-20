@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 )
@@ -27,13 +27,18 @@ func C2S_CancelMatchHandler(manager MatchManager, teams TeamMessenger, args []in
 	}
 
 	log.Debug("收到C2S_CancelMatch消息: %v, agent: %v", msg, agent)
-	teamId, response := manager.HandleCancelMatch(agent)
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
+	if !ok {
+		log.Error("C2S_CancelMatchHandler: Player Session 不存在")
+		return
+	}
+	teamId, response := manager.HandleCancelMatch(playerID)
 	if response == nil {
 		log.Error("C2S_CancelMatchHandler: response is nil")
 		return
 	}
 	if response.Result {
-		teams.SendMessageExceptSelf(teamId, response, agent.UserData().(models.User).PlayerId)
+		teams.SendMessageExceptSelf(teamId, response, playerID)
 	}
 	agent.WriteMsgWithSeq(response, args[2].(uint32))
 }

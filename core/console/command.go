@@ -19,11 +19,11 @@ var commands = []Command{
 }
 
 type Command interface {
-	// must goroutine safe
+	// 实现必须支持并发调用。
 	name() string
-	// must goroutine safe
+	// 实现必须支持并发调用。
 	help() string
-	// must goroutine safe
+	// 实现必须支持并发调用。
 	run(args []string) string
 }
 
@@ -59,8 +59,8 @@ func (c *ExternalCommand) run(_args []string) string {
 	return output
 }
 
-// you must call the function before calling console.Init
-// goroutine not safe
+// 必须在调用 console.Init 之前注册命令。
+// 不支持并发调用。
 func Register(name string, help string, f interface{}, server *chanrpc.Server) {
 	for _, c := range commands {
 		if c.name() == name {
@@ -77,7 +77,7 @@ func Register(name string, help string, f interface{}, server *chanrpc.Server) {
 	commands = append(commands, c)
 }
 
-// help
+// 帮助命令。
 type CommandHelp struct{}
 
 func (c *CommandHelp) name() string {
@@ -98,7 +98,7 @@ func (c *CommandHelp) run([]string) string {
 	return output
 }
 
-// cpuprof
+// CPU 性能采样命令。
 type CommandCPUProf struct{}
 
 func (c *CommandCPUProf) name() string {
@@ -155,7 +155,7 @@ func profileName() string {
 			now.Second()))
 }
 
-// prof
+// 运行时性能采样命令。
 type CommandProf struct{}
 
 func (c *CommandProf) name() string {

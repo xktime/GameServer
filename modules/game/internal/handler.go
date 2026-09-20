@@ -14,6 +14,7 @@ func handleMsg(m proto.Message, h interface{}) {
 }
 
 func InitHandler(users handlers.UserManager) {
+	registerCloseAgent(users)
 	// 向当前模块（game 模块）注册消息处理函数
 	handleMsg(&message.C2S_GetPlayerInfo{}, func(args []interface{}) {
 		handlers.C2S_GetPlayerInfoHandler(users, args)

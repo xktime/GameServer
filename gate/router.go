@@ -1,8 +1,11 @@
 package gate
 
 import (
+	"fmt"
 	"gameserver/common/msg"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
+	coregate "gameserver/core/gate"
 	"gameserver/modules/game"
 	"gameserver/modules/login"
 	"gameserver/modules/match"
@@ -11,6 +14,7 @@ import (
 )
 
 func InitRouter() {
+	msg.Processor.SetRouteFilter(requirePlayerSession)
 	// 模块间使用 ChanRPC 通讯，消息路由也不例外
 	msg.Processor.SetRouter(&message.C2S_GetUploadUrl{}, game.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_GetHistoryRankReward{}, rank.External.ChanRPC)
@@ -31,4 +35,19 @@ func InitRouter() {
 	msg.Processor.SetRouter(&message.C2S_StartMatch{}, match.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Login{}, login.External.ChanRPC)
 	msg.Processor.SetRouter(&message.C2S_Heart{}, login.External.ChanRPC)
+}
+
+func requirePlayerSession(msgData interface{}, routeContext interface{}) error {
+	switch msgData.(type) {
+	case *message.C2S_Login, *message.C2S_Heart:
+		return nil
+	}
+	agent, ok := routeContext.(coregate.Agent)
+	if !ok {
+		return fmt.Errorf("route %T: Agent 不存在", msgData)
+	}
+	if _, ok := session.PlayerIDFrom(agent.UserData()); !ok {
+		return fmt.Errorf("route %T: Player Session 不存在", msgData)
+	}
+	return nil
 }

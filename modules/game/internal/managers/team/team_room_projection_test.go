@@ -61,7 +61,7 @@ func TestLeaveLastMemberStopsAndRemovesTeam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 Scope: %v", err)
 	}
-	registry, err := NewRegistry(scope)
+	registry, err := newRegistry(scope, &fakeTeamRepository{})
 	if err != nil {
 		t.Fatalf("创建 Team Registry: %v", err)
 	}

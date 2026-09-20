@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 
@@ -10,8 +10,8 @@ import (
 )
 
 type MatchManager interface {
-	HandleMatch(gate.Agent, *message.C2S_StartMatch) (int64, *message.S2C_StartMatch)
-	HandleCancelMatch(gate.Agent) (int64, *message.S2C_CancelMatch)
+	HandleMatch(int64, *message.C2S_StartMatch) (int64, *message.S2C_StartMatch)
+	HandleCancelMatch(int64) (int64, *message.S2C_CancelMatch)
 }
 
 type TeamMessenger interface {
@@ -38,13 +38,18 @@ func C2S_StartMatchHandler(manager MatchManager, teams TeamMessenger, args []int
 	}
 
 	log.Debug("收到C2S_StartMatch消息: %v, agent: %v", msg, agent)
-	teamId, response := manager.HandleMatch(agent, msg)
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
+	if !ok {
+		log.Error("C2S_StartMatchHandler: Player Session 不存在")
+		return
+	}
+	teamId, response := manager.HandleMatch(playerID, msg)
 	if response == nil {
 		log.Error("C2S_StartMatchHandler: response is nil")
 		return
 	}
 	if response.Result {
-		teams.SendMessageExceptSelf(teamId, response, agent.UserData().(models.User).PlayerId)
+		teams.SendMessageExceptSelf(teamId, response, playerID)
 	}
 	agent.WriteMsgWithSeq(response, args[2].(uint32))
 }

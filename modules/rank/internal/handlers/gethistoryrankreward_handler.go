@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 )
@@ -33,7 +33,11 @@ func C2S_GetHistoryRankRewardHandler(manager RankManager, args []interface{}) {
 	}
 
 	log.Debug("收到C2S_GetHistoryRankReward消息: %v, agent: %v, seq: %v", msg, agent, seq)
-	playerId := agent.UserData().(models.User).PlayerId
-	response := manager.GetHistoryRankReward(playerId, msg)
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
+	if !ok {
+		log.Error("C2S_GetHistoryRankRewardHandler: Player Session 不存在")
+		return
+	}
+	response := manager.GetHistoryRankReward(playerID, msg)
 	agent.WriteMsgWithSeq(response, seq)
 }

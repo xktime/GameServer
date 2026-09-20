@@ -9,6 +9,7 @@ import (
 	"gameserver/core/module"
 	"gameserver/modules/game/internal"
 	"gameserver/modules/game/internal/managers"
+	provisionmanager "gameserver/modules/game/internal/managers/provision"
 	"time"
 )
 
@@ -31,11 +32,16 @@ func (m *GameExternal) InitExternal(system *actor.ActorSystem) error {
 	}
 	initializationContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	m.UserManager, m.TeamManager, err = managers.NewManagers(initializationContext, scope)
+	intentRepository := provisionmanager.NewMongoRepository()
+	m.UserManager, m.TeamManager, err = managers.NewManagers(initializationContext, scope, intentRepository)
 	if err != nil {
 		return err
 	}
-	m.Module = internal.NewModule(scope, m.UserManager)
+	provisionWorker, err := provisionmanager.NewWorker(intentRepository, provisionmanager.MongoMaterializer{}, m.UserManager)
+	if err != nil {
+		return err
+	}
+	m.Module = internal.NewModule(scope, m.UserManager, provisionWorker)
 	m.ChanRPC = internal.ChanRPC
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 	return nil

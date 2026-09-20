@@ -18,7 +18,7 @@ type TCPServer struct {
 	wgLn            sync.WaitGroup
 	wgConns         sync.WaitGroup
 
-	// msg parser
+	// 消息解析器
 	LenMsgLen    int
 	MinMsgLen    uint32
 	MaxMsgLen    uint32
@@ -52,7 +52,7 @@ func (server *TCPServer) init() {
 	server.ln = ln
 	server.conns = make(ConnSet)
 
-	// msg parser
+	// 消息解析器
 	msgParser := NewMsgParser()
 	msgParser.SetMsgLen(server.LenMsgLen, server.MinMsgLen, server.MaxMsgLen)
 	msgParser.SetByteOrder(server.LittleEndian)
@@ -101,7 +101,7 @@ func (server *TCPServer) run() {
 		go func() {
 			agent.Run()
 
-			// cleanup
+			// 清理连接与相关资源。
 			tcpConn.Close()
 			server.mutexConns.Lock()
 			delete(server.conns, conn)

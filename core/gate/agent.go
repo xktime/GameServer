@@ -4,6 +4,13 @@ import (
 	"net"
 )
 
+type ConnectionID uint64
+
+type ConnectionAgent interface {
+	Agent
+	ConnectionID() ConnectionID
+}
+
 type Agent interface {
 	WriteMsg(msg interface{})
 	WriteMsgWithSeq(msg interface{}, seq uint32)

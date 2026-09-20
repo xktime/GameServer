@@ -157,6 +157,27 @@ func Save(doc PersistData) (*mongo.UpdateResult, error) {
 	return result, nil
 }
 
+// SaveIfAbsent 仅在文档的 _id 不存在时插入数据。
+// 重放持久化创建意图时，保留在线 Actor 已经写入的状态。
+func SaveIfAbsent(doc PersistData) (bool, error) {
+	if mongoInstance == nil {
+		return false, fmt.Errorf("mongodb: not initialized")
+	}
+	id := doc.GetPersistId()
+	collection := getCollectionName(doc)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := mongoInstance.getCollection(collection).InsertOne(ctx, doc)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return false, nil
+		}
+		log.Error("SaveIfAbsent: 在集合 %s 中保存ID为 %v 的文档失败: %v", collection, id, err)
+		return false, err
+	}
+	return result.InsertedID != nil, nil
+}
+
 // BulkSave 批量保存文档
 // 使用MongoDB的BulkWrite功能，支持upsert
 func BulkSave(docs []PersistData) (*mongo.BulkWriteResult, error) {

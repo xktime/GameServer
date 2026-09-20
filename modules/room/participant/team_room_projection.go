@@ -1,13 +1,13 @@
 package participant
 
-// DesiredTeamRoom is the latest Room projection desired for one real Team.
-// An empty RoomID clears the projection.
+// DesiredTeamRoom 表示一个真实队伍期望同步的最新房间投影。
+// RoomID 为空时清除该房间投影。
 type DesiredTeamRoom struct {
 	TeamID int64
 	RoomID string
 }
 
-// TeamRoomProjection applies idempotent Team Room projections.
+// TeamRoomProjection 以幂等方式更新队伍的房间投影。
 type TeamRoomProjection interface {
 	Apply(desired []DesiredTeamRoom) error
 }

@@ -40,7 +40,7 @@ message S2C_PlayerOffline {
     option (message_id) = 403;
     string playerId = 1;
 }
-// ---------------room-----------
+// ---------------房间协议-----------
 message C2S_RecordGameOperate {
     option (message_id) = 304;
     string roomId = 1;

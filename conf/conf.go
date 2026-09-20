@@ -6,17 +6,17 @@ import (
 )
 
 var (
-	// log conf
+	// 日志配置
 	LogFlag = log.LstdFlags
 
-	// gate conf
+	// 网关配置
 	PendingWriteNum        = 2000
 	MaxMsgLen       uint32 = 409600
 	HTTPTimeout            = 10 * time.Second
 	LenMsgLen              = 4
 	LittleEndian           = false
 
-	// skeleton conf
+	// 模块骨架配置
 	GoLen              = 10000
 	TimerDispatcherLen = 10000
 	AsynCallLen        = 10000

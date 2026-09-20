@@ -3,17 +3,17 @@ package conf
 var (
 	LenStackBuf = 4096
 
-	// log
+	// 日志配置
 	LogLevel string
 	LogPath  string
 	LogFlag  int
 
-	// console
+	// 控制台
 	ConsolePort   int
 	ConsolePrompt string = "Leaf# "
 	ProfilePath   string
 
-	// cluster
+	// 集群
 	ListenAddr      string
 	ConnAddrs       []string
 	PendingWriteNum int

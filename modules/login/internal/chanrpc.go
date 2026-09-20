@@ -6,22 +6,32 @@ import (
 )
 
 func registerAgentRPC(connections handlers.ConnectManager) {
-	skeleton.RegisterChanRPC("NewAgent", rpcNewAgent)
+	skeleton.RegisterChanRPC("NewAgent", func(args []interface{}) {
+		rpcNewAgent(connections, args)
+	})
 	skeleton.RegisterChanRPC("CloseAgent", func(args []interface{}) {
 		rpcCloseAgent(connections, args)
 	})
 }
 
-func rpcNewAgent(args []interface{}) {
-	a := args[0].(gate.Agent)
-	_ = a
+func rpcNewAgent(connections handlers.ConnectManager, args []interface{}) {
+	if len(args) == 0 {
+		return
+	}
+	a, ok := args[0].(gate.ConnectionAgent)
+	if !ok {
+		return
+	}
+	connections.Register(a)
 }
 
 func rpcCloseAgent(connections handlers.ConnectManager, args []interface{}) {
-	a := args[0].(gate.Agent)
-	if a == nil {
+	if len(args) == 0 {
 		return
 	}
-	connections.RemoveClient(a.RemoteAddr().String())
-	_ = a
+	a, ok := args[0].(gate.ConnectionAgent)
+	if !ok {
+		return
+	}
+	connections.RemoveClient(a.ConnectionID())
 }

@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
+	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 )
@@ -27,7 +27,11 @@ func C2S_ModifyNameHandler(users UserManager, args []interface{}) {
 	}
 
 	log.Debug("收到C2S_ModifyName消息: %v, agent: %v", msg, agent)
-	playerId := agent.UserData().(models.User).PlayerId
+	playerID, ok := session.PlayerIDFrom(agent.UserData())
+	if !ok {
+		log.Error("C2S_ModifyNameHandler: Player Session 不存在")
+		return
+	}
 	resultMsg := &message.S2C_ModifyName{
 		Result: message.Result_Success,
 	}
@@ -38,7 +42,7 @@ func C2S_ModifyNameHandler(users UserManager, args []interface{}) {
 		resultMsg.Name = ""
 		return
 	}
-	result, name := users.ModifyName(playerId, msg.Name)
+	result, name := users.ModifyName(playerID, msg.Name)
 	resultMsg.Result = result
 	resultMsg.Name = name
 }

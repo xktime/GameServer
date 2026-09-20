@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"gameserver/common/base/actor"
-	"gameserver/common/models"
 	"gameserver/common/msg/message"
-	"gameserver/core/gate"
 	"gameserver/core/log"
 	match_models "gameserver/modules/match/internal/models"
 	"gameserver/modules/match/playerread"
@@ -33,8 +31,8 @@ type matchSettlement struct {
 	admission matchentry.Admission
 }
 
-// NewMatchManager registers the singleton definition in the module scope and
-// returns its fully initialized instance.
+// NewMatchManager 在模块作用域内注册单例定义，
+// 并返回已完成初始化的实例。
 func NewMatchManager(ctx context.Context, scope *actor.Scope, players playerread.PlayerReader, rooms roomaccept.Acceptor, newMatchID func() string, now func() time.Time) (*MatchManager, error) {
 	if players == nil {
 		return nil, fmt.Errorf("match: PlayerReader is nil")
@@ -156,9 +154,9 @@ func copyAdmission(admission matchentry.Admission) matchentry.Admission {
 }
 
 // HandleMatch 处理队伍开始匹配请求
-func (m *MatchManager) HandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
+func (m *MatchManager) HandleMatch(playerID int64, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
 	result, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (matchHandleResult, error) {
-		teamID, response := m.doHandleMatch(agent, msg)
+		teamID, response := m.doHandleMatch(playerID, msg)
 		return matchHandleResult{teamID: teamID, response: response}, nil
 	})
 	if err != nil {
@@ -174,11 +172,10 @@ type matchHandleResult struct {
 }
 
 // doHandleMatch 处理队伍开始匹配请求的同步实现
-func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
-	user := agent.UserData().(models.User)
-	playerSnapshot, ok := m.players.FindOnline(user.PlayerId)
+func (m *MatchManager) doHandleMatch(playerID int64, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
+	playerSnapshot, ok := m.players.FindOnline(playerID)
 	if !ok {
-		log.Error("玩家不存在: %d", user.PlayerId)
+		log.Error("玩家不存在: %d", playerID)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
 		}
@@ -186,7 +183,7 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 
 	// 检查玩家是否有队伍
 	if playerSnapshot.TeamID == 0 {
-		log.Error("玩家 %d 没有队伍，无法开始匹配", user.PlayerId)
+		log.Error("玩家 %d 没有队伍，无法开始匹配", playerID)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
 		}
@@ -209,9 +206,9 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 	}
 
 	// 获取队伍信息
-	teamSnapshot, ok := m.players.FindOnlineTeam(user.PlayerId)
+	teamSnapshot, ok := m.players.FindOnlineTeam(playerID)
 	if !ok {
-		log.Error("无法获取玩家 %d 的队伍信息", user.PlayerId)
+		log.Error("无法获取玩家 %d 的队伍信息", playerID)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
 		}
@@ -240,9 +237,9 @@ func (m *MatchManager) doHandleMatch(agent gate.Agent, msg *message.C2S_StartMat
 }
 
 // HandleCancelMatch 处理取消匹配请求
-func (m *MatchManager) HandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
+func (m *MatchManager) HandleCancelMatch(playerID int64) (int64, *message.S2C_CancelMatch) {
 	result, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (cancelMatchResult, error) {
-		teamID, response := m.doHandleCancelMatch(agent)
+		teamID, response := m.doHandleCancelMatch(playerID)
 		return cancelMatchResult{teamID: teamID, response: response}, nil
 	})
 	if err != nil {
@@ -258,11 +255,10 @@ type cancelMatchResult struct {
 }
 
 // doHandleCancelMatch 处理取消匹配请求的同步实现
-func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) (int64, *message.S2C_CancelMatch) {
-	user := agent.UserData().(models.User)
-	playerSnapshot, ok := m.players.FindOnline(user.PlayerId)
+func (m *MatchManager) doHandleCancelMatch(playerID int64) (int64, *message.S2C_CancelMatch) {
+	playerSnapshot, ok := m.players.FindOnline(playerID)
 	if !ok {
-		log.Error("玩家不存在: %d", user.PlayerId)
+		log.Error("玩家不存在: %d", playerID)
 		return 0, &message.S2C_CancelMatch{
 			Result: false,
 		}
@@ -270,7 +266,7 @@ func (m *MatchManager) doHandleCancelMatch(agent gate.Agent) (int64, *message.S2
 
 	// 检查玩家是否有队伍
 	if playerSnapshot.TeamID == 0 {
-		log.Error("玩家 %d 没有队伍，无法取消匹配", user.PlayerId)
+		log.Error("玩家 %d 没有队伍，无法取消匹配", playerID)
 		return 0, &message.S2C_CancelMatch{
 			Result: false,
 		}

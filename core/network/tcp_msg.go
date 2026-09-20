@@ -8,7 +8,7 @@ import (
 )
 
 // --------------
-// | len | data |
+// | 消息长度 | 消息体 |
 // --------------
 type MsgParser struct {
 	lenMsgLen    int
@@ -27,7 +27,7 @@ func NewMsgParser() *MsgParser {
 	return p
 }
 
-// It's dangerous to call the method on reading or writing
+// 不能在读写消息期间调用此方法修改解析配置。
 func (p *MsgParser) SetMsgLen(lenMsgLen int, minMsgLen uint32, maxMsgLen uint32) {
 	if lenMsgLen == 1 || lenMsgLen == 2 || lenMsgLen == 4 {
 		p.lenMsgLen = lenMsgLen
@@ -56,22 +56,22 @@ func (p *MsgParser) SetMsgLen(lenMsgLen int, minMsgLen uint32, maxMsgLen uint32)
 	}
 }
 
-// It's dangerous to call the method on reading or writing
+// 不能在读写消息期间调用此方法修改解析配置。
 func (p *MsgParser) SetByteOrder(littleEndian bool) {
 	p.littleEndian = littleEndian
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *MsgParser) Read(conn *TCPConn) ([]byte, error) {
 	var b [4]byte
 	bufMsgLen := b[:p.lenMsgLen]
 
-	// read len
+	// 读取消息长度字段。
 	if _, err := io.ReadFull(conn, bufMsgLen); err != nil {
 		return nil, err
 	}
 
-	// parse len
+	// 按配置的字节序解析消息长度。
 	var msgLen uint32
 	switch p.lenMsgLen {
 	case 1:
@@ -90,14 +90,14 @@ func (p *MsgParser) Read(conn *TCPConn) ([]byte, error) {
 		}
 	}
 
-	// check len
+	// 检查消息长度是否在允许范围内。
 	if msgLen > p.maxMsgLen {
 		return nil, errors.New("message too long")
 	} else if msgLen < p.minMsgLen {
 		return nil, errors.New("message too short")
 	}
 
-	// data
+	// 读取消息体。
 	msgData := make([]byte, msgLen)
 	if _, err := io.ReadFull(conn, msgData); err != nil {
 		return nil, err
@@ -106,15 +106,15 @@ func (p *MsgParser) Read(conn *TCPConn) ([]byte, error) {
 	return msgData, nil
 }
 
-// goroutine safe
+// 支持并发调用。
 func (p *MsgParser) Write(conn *TCPConn, args ...[]byte) error {
-	// get len
+	// 计算所有数据片段的总长度。
 	var msgLen uint32
 	for i := 0; i < len(args); i++ {
 		msgLen += uint32(len(args[i]))
 	}
 
-	// check len
+	// 检查消息长度是否在允许范围内。
 	if msgLen > p.maxMsgLen {
 		return errors.New("message too long")
 	} else if msgLen < p.minMsgLen {
@@ -123,7 +123,7 @@ func (p *MsgParser) Write(conn *TCPConn, args ...[]byte) error {
 
 	msg := make([]byte, uint32(p.lenMsgLen)+msgLen)
 
-	// write len
+	// 将消息长度写入包头。
 	switch p.lenMsgLen {
 	case 1:
 		msg[0] = byte(msgLen)
@@ -141,7 +141,7 @@ func (p *MsgParser) Write(conn *TCPConn, args ...[]byte) error {
 		}
 	}
 
-	// write data
+	// 将数据片段依次复制到消息体。
 	l := p.lenMsgLen
 	for i := 0; i < len(args); i++ {
 		copy(msg[l:], args[i])

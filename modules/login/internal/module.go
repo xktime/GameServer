@@ -42,6 +42,7 @@ func (m *Module) OnInit() {
 
 func (m *Module) OnDestroy() {
 	m.job.Stop()
+	m.login.Close()
 	if err := m.scope.Stop(context.Background()); err != nil {
 		log.Error("停止 login Actor Scope 失败: %v", err)
 	}

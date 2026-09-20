@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
-	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/team"
 	playermodel "gameserver/modules/game/internal/models/player"
+	gameprovision "gameserver/modules/game/internal/provision"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -24,6 +24,7 @@ type Player struct {
 	TowerLevel      int32                   `bson:"tower_level"`
 	agent           gate.Agent              `bson:"-"`
 	teams           *team.Registry          `bson:"-"`
+	repository      playerRepository        `bson:"-"`
 }
 
 type Snapshot struct {
@@ -35,16 +36,22 @@ type Snapshot struct {
 
 type Registry struct {
 	definition *actor.Definition[*Player, int64]
-	teams      *team.Registry
 }
 
 func NewRegistry(scope *actor.Scope, teams *team.Registry) (*Registry, error) {
+	return newRegistry(scope, teams, mongoPlayerRepository{})
+}
+
+func newRegistry(scope *actor.Scope, teams *team.Registry, repository playerRepository) (*Registry, error) {
 	if teams == nil {
 		return nil, fmt.Errorf("game: Team Registry is nil")
 	}
-	registry := &Registry{teams: teams}
+	if repository == nil {
+		return nil, fmt.Errorf("game: Player Repository is nil")
+	}
+	registry := &Registry{}
 	definition, err := actor.Define(scope, actor.Player, func(context.Context, int64) (*Player, error) {
-		return &Player{teams: teams}, nil
+		return &Player{teams: teams, repository: repository}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -53,30 +60,43 @@ func NewRegistry(scope *actor.Scope, teams *team.Registry) (*Registry, error) {
 	return registry, nil
 }
 
-func (r *Registry) Login(ctx context.Context, agent gate.Agent, user models.User, isNew bool) error {
+// LoginProvision 根据已持久化的创建意图，
+// 创建新玩家及其初始队伍。
+func (r *Registry) LoginProvision(ctx context.Context, agent gate.Agent, user models.User, data gameprovision.PlayerData) error {
+	return r.start(ctx, agent, user.PlayerId, func(execution actor.Context, instance *Player) error {
+		instance.InitProvisionData(data)
+		return instance.initTeamWithID(execution, data.TeamID)
+	})
+}
+
+// Login 初始化已有玩家及其队伍。
+func (r *Registry) Login(ctx context.Context, agent gate.Agent, user models.User) error {
+	return r.start(ctx, agent, user.PlayerId, func(execution actor.Context, instance *Player) error {
+		if err := instance.InitPlayerData(user.PlayerId); err != nil {
+			return err
+		}
+		return instance.initTeam(execution)
+	})
+}
+
+func (r *Registry) start(ctx context.Context, agent gate.Agent, playerID int64, initialize func(actor.Context, *Player) error) error {
 	if agent == nil {
 		return fmt.Errorf("game: Agent is nil")
 	}
-	if existing, err := r.definition.Lookup(ctx, user.PlayerId); err == nil {
-		log.Error("玩家 Actor 已存在，停止旧代实例: %v", user.PlayerId)
+	if existing, err := r.definition.Lookup(ctx, playerID); err == nil {
+		log.Error("玩家 Actor 已存在，停止旧代实例: %v", playerID)
 		if err := existing.Ref().Stop(ctx); err != nil {
-			return fmt.Errorf("stop existing player %d: %w", user.PlayerId, err)
+			return fmt.Errorf("stop existing player %d: %w", playerID, err)
 		}
 	}
 
-	instance, err := r.definition.GetOrCreate(ctx, user.PlayerId)
+	instance, err := r.definition.GetOrCreate(ctx, playerID)
 	if err != nil {
 		return err
 	}
 	_, err = actor.Call(ctx, instance.Ref(), func(execution actor.Context) (struct{}, error) {
 		instance.agent = agent
-		if err := instance.InitPlayerData(user.PlayerId, user, isNew); err != nil {
-			return struct{}{}, err
-		}
-		if err := instance.initTeam(execution); err != nil {
-			return struct{}{}, err
-		}
-		return struct{}{}, nil
+		return struct{}{}, initialize(execution, instance)
 	})
 	if err != nil {
 		if !errors.Is(err, actor.ErrOutcomeUnknown) {
@@ -147,32 +167,11 @@ func (p Player) GetPersistId() interface{} {
 }
 
 func (p *Player) OnStop(context.Context) error {
-	if _, err := mongodb.Save(p); err != nil {
-		return err
-	}
-	if p.agent != nil {
-		p.agent.SetUserData(nil)
-		p.agent.Close()
-	}
-	return nil
+	return p.repository.Save(p)
 }
 
-func (p *Player) InitPlayerData(playerID int64, user models.User, isNew bool) error {
-	if isNew {
-		p.PlayerId = playerID
-		p.PlayerInfo = &playermodel.PlayerInfo{
-			PlayerId:      playerID,
-			ServerId:      user.ServerId,
-			PlayerName:    user.OpenId,
-			Level:         1,
-			Balance:       0,
-			TotalRecharge: 0,
-			VipLevel:      0,
-		}
-		return nil
-	}
-
-	existing, err := mongodb.FindOneById[Player](playerID)
+func (p *Player) InitPlayerData(playerID int64) error {
+	existing, err := p.repository.FindByID(playerID)
 	if err != nil {
 		return err
 	}
@@ -186,6 +185,17 @@ func (p *Player) InitPlayerData(playerID int64, user models.User, isNew bool) er
 	return nil
 }
 
+func (p *Player) InitProvisionData(data gameprovision.PlayerData) {
+	p.PlayerId = data.PlayerID
+	p.TeamId = data.TeamID
+	p.TowerLevel = data.TowerLevel
+	p.PlayerInfo = nil
+	if data.PlayerInfo != nil {
+		copyOfInfo := *data.PlayerInfo
+		p.PlayerInfo = &copyOfInfo
+	}
+}
+
 func (p *Player) initTeam(ctx context.Context) error {
 	if p.TeamId != 0 {
 		if _, err := p.teams.Snapshot(ctx, p.TeamId); err == nil {
@@ -195,6 +205,18 @@ func (p *Player) initTeam(ctx context.Context) error {
 		}
 	}
 	teamInfo, err := p.teams.Create(ctx, p.PlayerId)
+	if err != nil {
+		return err
+	}
+	p.TeamId = teamInfo.TeamID
+	return p.teams.Join(ctx, teamInfo.TeamID, p.PlayerId)
+}
+
+func (p *Player) initTeamWithID(ctx context.Context, teamID int64) error {
+	if teamID == 0 {
+		return p.initTeam(ctx)
+	}
+	teamInfo, err := p.teams.GetOrCreate(ctx, teamID, p.PlayerId)
 	if err != nil {
 		return err
 	}

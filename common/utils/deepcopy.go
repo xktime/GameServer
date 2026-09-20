@@ -1,6 +1,6 @@
 package utils
 
-// reference: https://github.com/mohae/deepcopy
+// 参考实现：https://github.com/mohae/deepcopy
 import (
 	"reflect"
 )

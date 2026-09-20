@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// one dispatcher per goroutine (goroutine not safe)
+// 每个调度器仅由一个协程访问，不支持并发调用。
 type Dispatcher struct {
 	ChanTimer chan *Timer
 }
@@ -18,7 +18,7 @@ func NewDispatcher(l int) *Dispatcher {
 	return disp
 }
 
-// Timer
+// 单次定时器。
 type Timer struct {
 	t  *time.Timer
 	cb func()
@@ -57,7 +57,7 @@ func (disp *Dispatcher) AfterFunc(d time.Duration, cb func()) *Timer {
 	return t
 }
 
-// Cron
+// 周期定时器。
 type Cron struct {
 	t *Timer
 }
@@ -77,7 +77,7 @@ func (disp *Dispatcher) CronFunc(cronExpr *CronExpr, _cb func()) *Cron {
 		return c
 	}
 
-	// callback
+	// 执行回调。
 	var cb func()
 	cb = func() {
 		defer _cb()

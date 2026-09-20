@@ -20,14 +20,14 @@ func C2S_HeartHandler(connections ConnectManager, args []interface{}) {
 		return
 	}
 
-	agent, ok := args[1].(gate.Agent)
+	agent, ok := args[1].(gate.ConnectionAgent)
 	if !ok {
-		log.Error("C2S_HeartHandler: Agent类型错误")
+		log.Error("C2S_HeartHandler: ConnectionAgent类型错误")
 		return
 	}
 
 	// 更新客户端心跳
-	connections.UpdateHeartbeat(agent)
+	connections.UpdateHeartbeat(agent.ConnectionID())
 	agent.WriteMsgWithSeq(&message.S2C_Heart{
 		Timestamp: int32(time.Now().Unix()),
 	}, args[2].(uint32))

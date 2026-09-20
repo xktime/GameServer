@@ -2,8 +2,9 @@ package team
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"gameserver/common/base/actor"
-	"gameserver/common/db/mongodb"
 	"gameserver/common/utils"
 	"gameserver/core/log"
 	"slices"
@@ -11,11 +12,12 @@ import (
 
 type Team struct {
 	actor.BaseActor `bson:"-"`
-	TeamId          int64   `bson:"_id"`
-	LeaderId        int64   `bson:"leader_id"`
-	TeamMembers     []int64 `bson:"team_members"`
-	RoomId          string  `bson:"room_id"`
-	deleted         bool    `bson:"-"`
+	TeamId          int64          `bson:"_id"`
+	LeaderId        int64          `bson:"leader_id"`
+	TeamMembers     []int64        `bson:"team_members"`
+	RoomId          string         `bson:"room_id"`
+	deleted         bool           `bson:"-"`
+	repository      teamRepository `bson:"-"`
 }
 
 type Snapshot struct {
@@ -27,16 +29,26 @@ type Snapshot struct {
 
 type Registry struct {
 	definition *actor.Definition[*Team, int64]
+	repository teamRepository
 }
 
 func NewRegistry(scope *actor.Scope) (*Registry, error) {
+	return newRegistry(scope, mongoTeamRepository{})
+}
+
+func newRegistry(scope *actor.Scope, repository teamRepository) (*Registry, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("game: Team Repository is nil")
+	}
+	registry := &Registry{repository: repository}
 	definition, err := actor.Define(scope, actor.Team, func(context.Context, int64) (*Team, error) {
-		return &Team{}, nil
+		return &Team{repository: repository}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &Registry{definition: definition}, nil
+	registry.definition = definition
+	return registry, nil
 }
 
 func (r *Registry) Create(ctx context.Context, leaderID int64) (Snapshot, error) {
@@ -63,10 +75,27 @@ func (r *Registry) lookup(ctx context.Context, teamID int64) (*Team, error) {
 
 func (r *Registry) Snapshot(ctx context.Context, teamID int64) (Snapshot, error) {
 	team, err := r.lookup(ctx, teamID)
+	var stored *Team
+	if errors.Is(err, actor.ErrActorStopped) {
+		stored, err = r.repository.FindByID(teamID)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		if stored == nil {
+			return Snapshot{}, actor.ErrActorStopped
+		}
+		team, err = r.definition.GetOrCreate(ctx, teamID)
+	}
 	if err != nil {
 		return Snapshot{}, err
 	}
 	return actor.Call(ctx, team.Ref(), func(actor.Context) (Snapshot, error) {
+		if stored != nil && team.TeamId == 0 {
+			team.TeamId = teamID
+			team.LeaderId = stored.LeaderId
+			team.TeamMembers = append([]int64(nil), stored.TeamMembers...)
+			team.RoomId = stored.RoomId
+		}
 		return team.snapshot(), nil
 	})
 }
@@ -142,11 +171,9 @@ func (t Team) GetPersistId() interface{} {
 
 func (t *Team) OnStop(context.Context) error {
 	if t.deleted {
-		_, err := mongodb.DeleteByID[Team](t.TeamId)
-		return err
+		return t.repository.DeleteByID(t.TeamId)
 	}
-	_, err := mongodb.Save(t)
-	return err
+	return t.repository.Save(t)
 }
 
 func (t *Team) snapshot() Snapshot {

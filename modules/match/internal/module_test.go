@@ -5,7 +5,6 @@ import (
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
 	"gameserver/common/schedule"
-	"gameserver/core/gate"
 	"testing"
 	"time"
 
@@ -47,11 +46,11 @@ func (c *fakeMatchCycle) OnTimer() {
 	c.ticks++
 }
 
-func (c *fakeMatchCycle) HandleMatch(gate.Agent, *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
+func (c *fakeMatchCycle) HandleMatch(int64, *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
 	return 0, &message.S2C_StartMatch{}
 }
 
-func (c *fakeMatchCycle) HandleCancelMatch(gate.Agent) (int64, *message.S2C_CancelMatch) {
+func (c *fakeMatchCycle) HandleCancelMatch(int64) (int64, *message.S2C_CancelMatch) {
 	return 0, &message.S2C_CancelMatch{}
 }
 

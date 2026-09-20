@@ -96,10 +96,10 @@ func (rf *RecordFile) Read(name string) error {
 
 	typeRecord := rf.typeRecord
 
-	// make records
+	// 构建记录数据。
 	records := make([]interface{}, len(lines)-1)
 
-	// make indexes
+	// 构建记录索引。
 	indexes := []Index{}
 	for i := 0; i < typeRecord.NumField(); i++ {
 		tag := typeRecord.Field(i).Tag
@@ -124,7 +124,7 @@ func (rf *RecordFile) Read(name string) error {
 		for i := 0; i < typeRecord.NumField(); i++ {
 			f := typeRecord.Field(i)
 
-			// records
+			// 处理记录数据。
 			strField := line[i]
 			field := record.Field(i)
 			if !field.CanSet() {
@@ -181,7 +181,7 @@ func (rf *RecordFile) Read(name string) error {
 					n, i, err)
 			}
 
-			// indexes
+			// 处理记录索引。
 			if f.Tag == "index" {
 				index := indexes[iIndex]
 				iIndex++

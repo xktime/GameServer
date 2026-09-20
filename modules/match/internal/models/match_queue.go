@@ -18,7 +18,7 @@ type TeamMatchRequest struct {
 
 // 匹配队列结构
 type MatchQueue struct {
-	TeamRequests map[int64]*TeamMatchRequest // teamId -> TeamMatchRequest
+	TeamRequests map[int64]*TeamMatchRequest // 队伍编号 → 队伍匹配请求。
 	PlayerToTeam map[int64]int64             // playerId -> teamId (用于快速查找玩家所属队伍)
 }
 

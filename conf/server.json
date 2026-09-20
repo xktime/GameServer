@@ -7,7 +7,8 @@
     "MachineID": 1,
     "Debug": {
         "Enabled": true,
-        "Port": 6060
+        "Port": 6060,
+        "AllowDefaultLogin": false
     },
     "HttpPort": 8080,
     "Actor": {

@@ -92,13 +92,13 @@ func (wsConn *WSConn) RemoteAddr() net.Addr {
 	return wsConn.conn.RemoteAddr()
 }
 
-// goroutine not safe
+// 不支持并发调用。
 func (wsConn *WSConn) ReadMsg() ([]byte, error) {
 	_, b, err := wsConn.conn.ReadMessage()
 	return b, err
 }
 
-// args must not be modified by the others goroutines
+// 数据入队后由写协程使用，其他协程不得修改 args 中的数据。
 func (wsConn *WSConn) WriteMsg(args ...[]byte) error {
 	wsConn.Lock()
 	defer wsConn.Unlock()
@@ -106,26 +106,26 @@ func (wsConn *WSConn) WriteMsg(args ...[]byte) error {
 		return nil
 	}
 
-	// get len
+	// 计算所有数据片段的总长度。
 	var msgLen uint32
 	for i := 0; i < len(args); i++ {
 		msgLen += uint32(len(args[i]))
 	}
 
-	// check len
+	// 检查消息长度是否在允许范围内。
 	if msgLen > wsConn.maxMsgLen {
 		return errors.New("message too long")
 	} else if msgLen < 1 {
 		return errors.New("message too short")
 	}
 
-	// don't copy
+	// 只有一个数据片段时直接入队，避免复制。
 	if len(args) == 1 {
 		wsConn.doWrite(args[0])
 		return nil
 	}
 
-	// merge the args
+	// 将多个数据片段合并成一条消息。
 	msg := make([]byte, msgLen)
 	l := 0
 	for i := 0; i < len(args); i++ {
