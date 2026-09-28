@@ -31,3 +31,7 @@ _避免使用_: Match、Lobby、Team
 **Robot**:
 Match 为补齐对局人数创建的合成参与者，不对应任何 User、Player、Player Session 或 Team。
 _避免使用_: Online Player、Bot Player
+
+**Challenge Code**:
+用于发起对某个 Player 的挑战、具有固定到期时间的编号；正常重启不改变未过期编号的有效性。
+_避免使用_: MatchID、Player ID、Session ID

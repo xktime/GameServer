@@ -1,11 +1,8 @@
 package managers
 
 import (
-	"fmt"
-	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
-	"gameserver/core/log"
 )
 
 // SeasonManager 单独持久化，但只允许在 RankManager 的 Actor 邮箱内
@@ -16,14 +13,6 @@ type SeasonManager struct {
 	SeasonStart      int64 `bson:"season_start"`
 	SeasonEnd        int64 `bson:"season_end"`
 	LastCrossDayTime int64 `bson:"last_cross_day_time"`
-}
-
-func newSeasonManager() (*SeasonManager, error) {
-	manager := &SeasonManager{PersistId: 1}
-	if err := manager.loadFromDB(); err != nil {
-		return nil, err
-	}
-	return manager, nil
 }
 
 func (m SeasonManager) GetPersistId() interface{} {
@@ -45,21 +34,6 @@ func (m *SeasonManager) onCrossWeek(now int64) {
 	m.Season++
 	m.SeasonStart = utils.GetWeekStart(now)
 	m.SeasonEnd = utils.GetWeekEnd(now)
-}
-
-func (m *SeasonManager) loadFromDB() error {
-	data, err := mongodb.FindOneById[SeasonManager](m.PersistId)
-	if err != nil {
-		return fmt.Errorf("load season data: %w", err)
-	}
-	if data != nil {
-		m.Season = data.Season
-		m.SeasonStart = data.SeasonStart
-		m.SeasonEnd = data.SeasonEnd
-		m.LastCrossDayTime = data.LastCrossDayTime
-	}
-	log.Debug("从数据库加载赛季数据: %v", m)
-	return nil
 }
 
 func (m SeasonManager) GetSeasonInfo() *message.S2C_SeasonInfo {

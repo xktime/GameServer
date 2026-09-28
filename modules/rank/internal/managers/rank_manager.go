@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
-	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
 	"gameserver/common/utils"
 	"gameserver/core/log"
@@ -32,10 +31,9 @@ type RankManager struct {
 	players playerread.PlayerReader
 	season  *SeasonManager `bson:"-"`
 
-	loadSeason   func() (*SeasonManager, error) `bson:"-"`
-	loadRankData func(*RankManager) error       `bson:"-"`
-	now          func() time.Time               `bson:"-"`
-	initialized  bool                           `bson:"-"`
+	repository  rankRepository   `bson:"-"`
+	now         func() time.Time `bson:"-"`
+	initialized bool             `bson:"-"`
 
 	// 内存缓存
 	PersistId          int64                                             `bson:"_id"`
@@ -46,34 +44,21 @@ type RankManager struct {
 }
 
 func NewRankManager(ctx context.Context, scope *actor.Scope, players playerread.PlayerReader) (*RankManager, error) {
-	return newRankManager(
-		ctx,
-		scope,
-		players,
-		newSeasonManager,
-		func(manager *RankManager) error {
-			return manager.loadRankDataFromDB()
-		},
-		time.Now,
-	)
+	return newRankManager(ctx, scope, players, mongoRankRepository{}, time.Now)
 }
 
 func newRankManager(
 	ctx context.Context,
 	scope *actor.Scope,
 	players playerread.PlayerReader,
-	loadSeason func() (*SeasonManager, error),
-	loadRankData func(*RankManager) error,
+	repository rankRepository,
 	now func() time.Time,
 ) (*RankManager, error) {
 	if players == nil {
 		return nil, fmt.Errorf("rank: PlayerReader is nil")
 	}
-	if loadSeason == nil {
-		return nil, fmt.Errorf("rank: Season loader is nil")
-	}
-	if loadRankData == nil {
-		return nil, fmt.Errorf("rank: Rank loader is nil")
+	if repository == nil {
+		return nil, fmt.Errorf("rank: Repository is nil")
 	}
 	if now == nil {
 		return nil, fmt.Errorf("rank: Clock is nil")
@@ -87,8 +72,7 @@ func newRankManager(
 			ChallengeCodeCache: make(map[int32]*models.ChallengeCode),
 			CodeIndex:          models.ChallengeCodeFloorint,
 			rankListCache:      make(map[int64]map[message.RankType][]*models.RankItem),
-			loadSeason:         loadSeason,
-			loadRankData:       loadRankData,
+			repository:         repository,
 			now:                now,
 		}
 		return manager, nil
@@ -125,13 +109,25 @@ func (m *RankManager) initialize(ctx context.Context) error {
 		if m.initialized {
 			return struct{}{}, nil
 		}
-		season, err := m.loadSeason()
+		season, err := m.repository.LoadSeason()
 		if err != nil {
-			return struct{}{}, err
+			return struct{}{}, fmt.Errorf("load season data: %w", err)
 		}
-		m.season = season
-		if err := m.loadRankData(m); err != nil {
-			return struct{}{}, err
+		data, err := m.repository.LoadRank()
+		if err != nil {
+			return struct{}{}, fmt.Errorf("load rank data: %w", err)
+		}
+		if season != nil {
+			m.season = season
+		}
+		if data != nil {
+			m.RankCache = data.RankCache
+			if data.ChallengeCodeCache != nil {
+				m.ChallengeCodeCache = data.ChallengeCodeCache
+			}
+			if data.CodeIndex >= models.ChallengeCodeFloorint {
+				m.CodeIndex = data.CodeIndex
+			}
 		}
 		for _, rankDataBySeason := range m.RankCache {
 			for _, rankData := range rankDataBySeason {
@@ -158,7 +154,7 @@ func (m *RankManager) initializeRankTypes() {
 			continue
 		}
 		m.RankCache[rankType] = make(map[int32]*models.RankData)
-		rankData := &models.RankData{Season: season, RankType: rankType, Items: make([]*models.RankItem, 0), UpdateTime: time.Now()}
+		rankData := &models.RankData{Season: season, RankType: rankType, Items: make([]*models.RankItem, 0), UpdateTime: m.now()}
 		if m.isSeasonType(rankType) {
 			m.RankCache[rankType][season] = rankData
 		} else {
@@ -171,14 +167,14 @@ func (m *RankManager) OnStop(context.Context) error {
 	if !m.initialized {
 		return nil
 	}
-	_, rankErr := mongodb.Save(m)
-	_, seasonErr := mongodb.Save(m.season)
+	rankErr := m.repository.SaveRank(m)
+	seasonErr := m.repository.SaveSeason(m.season)
 	return errors.Join(rankErr, seasonErr)
 }
 
 func (m *RankManager) CheckCrossDay() {
 	if err := actor.Tell(context.Background(), m.Ref(), func(actor.Context) error {
-		m.season.onCrossDay(m, time.Now().Unix())
+		m.season.onCrossDay(m, m.now().Unix())
 		return nil
 	}); err != nil {
 		log.Error("提交排行榜跨天检查失败: %v", err)
@@ -263,7 +259,7 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 		Score:      int64(req.Score),
 		Avatar:     playerSnapshot.AvatarURL,
 		Level:      playerSnapshot.Level,
-		UpdateTime: time.Now(),
+		UpdateTime: r.now(),
 		OtherInfos: make([]*message.OtherInfo, 0),
 	}
 
@@ -288,7 +284,7 @@ func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_Up
 		rankData.Items = rankData.Items[:maxCacheSize]
 	}
 
-	rankData.UpdateTime = time.Now()
+	rankData.UpdateTime = r.now()
 
 	log.Debug("排行榜数据已更新: 类型=%d, 玩家=%d, 分数=%d", rankType, playerId, req.Score)
 	return response
@@ -464,7 +460,7 @@ func (r *RankManager) doGeneratorChallengeCode(req *message.C2S_GeneratorChanlle
 		r.clearExpiredCodes()
 	}
 	r.CodeIndex++
-	now := time.Now().Unix()
+	now := r.now().Unix()
 	playerId, _ := strconv.ParseInt(req.PlayerId, 10, 64)
 	chanllengeCode := &models.ChallengeCode{
 		PlayerId:     playerId,
@@ -489,7 +485,7 @@ func (r *RankManager) doGeneratorChallengeCode(req *message.C2S_GeneratorChanlle
 }
 
 func (r *RankManager) clearExpiredCodes() {
-	now := time.Now().Unix()
+	now := r.now().Unix()
 	for code, c := range r.ChallengeCodeCache {
 		if c.ExpireTime < now {
 			item := r.getRankItem(c.PlayerId)
@@ -528,7 +524,7 @@ func (r *RankManager) doChanllengeByCode(req *message.C2S_ChanllengeByCode) *mes
 			Result:   message.ChanllengeResult_ChanllengeResult_None,
 		}
 	}
-	now := time.Now().Unix()
+	now := r.now().Unix()
 	if codeInfo.ExpireTime < now {
 		log.Debug("挑战码已过期: 挑战码=%d, 过期时间=%d, 当前时间=%d", req.Code, codeInfo.ExpireTime, now)
 		return &message.S2C_ChanllengeByCode{
@@ -596,7 +592,7 @@ func (r *RankManager) UpdatePower(playerId int64, power float64) {
 }
 
 func (r *RankManager) doUpdatePower(playerId int64, power float64) {
-	now := time.Now()
+	now := r.now()
 	for _, rankType := range types {
 		if rankType == message.RankType_RankType_PowerPoint {
 			continue
@@ -630,7 +626,7 @@ func (r *RankManager) GetRankDataBySeason(rankType message.RankType, season int3
 				Season:     season,
 				RankType:   rankType,
 				Items:      make([]*models.RankItem, 0),
-				UpdateTime: time.Now(),
+				UpdateTime: r.now(),
 			}
 			r.RankCache[rankType][season] = rankData
 		} else {
@@ -765,24 +761,4 @@ func (r *RankManager) isSeasonType(rankType message.RankType) bool {
 		}
 	}
 	return false
-}
-
-// loadRankDataFromDB 从数据库加载排行榜数据
-func (r *RankManager) loadRankDataFromDB() error {
-	// 这里可以从数据库加载排行榜数据
-	// 暂时使用空数据，实际项目中应该从数据库加载
-	log.Debug("排行榜管理器初始化完成")
-	data, err := mongodb.FindOneById[RankManager](r.GetPersistId())
-	if err != nil {
-		return fmt.Errorf("load rank data: %w", err)
-	}
-	if data == nil || data.RankCache == nil {
-		r.RankCache = make(map[message.RankType]map[int32]*models.RankData)
-	} else {
-		r.RankCache = data.RankCache
-	}
-	r.rankListCache = make(map[int64]map[message.RankType][]*models.RankItem)
-	r.PersistId = 1 // 使用固定ID，因为现在使用单例模式
-	log.Debug("从数据库加载排行榜数据: %v", r)
-	return nil
 }
