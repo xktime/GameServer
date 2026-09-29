@@ -3,6 +3,7 @@ package managers
 import (
 	"errors"
 	"gameserver/common/msg/message"
+	"gameserver/modules/rank/internal/documents"
 	rankmodels "gameserver/modules/rank/internal/models"
 	"gameserver/modules/rank/playerread"
 	"testing"
@@ -21,8 +22,8 @@ func rankTestNow() time.Time {
 }
 
 func TestRankManagerInitializationCommandCanRetry(t *testing.T) {
-	repository := &memoryRankRepository{loadSeasonErrors: []error{errors.New("database unavailable")}}
-	if err := repository.SaveSeason(&SeasonManager{PersistId: 1, Season: 3, LastCrossDayTime: rankTestNow().Unix()}); err != nil {
+	repository := &memoryRankStore{loadSeasonErrors: []error{errors.New("database unavailable")}}
+	if err := repository.Save(&SeasonManager{PersistId: 1, Season: 3, LastCrossDayTime: rankTestNow().Unix()}); err != nil {
 		t.Fatal(err)
 	}
 	manager, _ := startTestRankManager(t, repository, fakePlayerReader{}, rankTestNow)
@@ -32,7 +33,7 @@ func TestRankManagerInitializationCommandCanRetry(t *testing.T) {
 }
 
 func TestRankManagerInitializesMissingPersistedCache(t *testing.T) {
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{42: {}}, rankTestNow)
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{42: {}}, rankTestNow)
 	for _, rankType := range types {
 		response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: rankType, Score: 10})
 		if !response.Success {
@@ -43,10 +44,10 @@ func TestRankManagerInitializesMissingPersistedCache(t *testing.T) {
 
 func TestRankManagerRebuildsPersistedRankIndexBeforeUpdatingPlayer(t *testing.T) {
 	rankType := message.RankType_RankType_ChallengePoint
-	repository := &memoryRankRepository{}
-	if err := repository.SaveRank(&RankManager{
+	repository := &memoryRankStore{}
+	if err := repository.Save(&documents.RankManager{
 		PersistId: 1,
-		RankCache: map[message.RankType]map[int32]*rankmodels.RankData{
+		RankCache: map[message.RankType]map[int32]*rankmodels.RankSnapshot{
 			rankType: {0: {RankType: rankType, Items: []*rankmodels.RankItem{
 				{PlayerId: 42, Score: 10, Rank: 1, UpdateTime: rankTestNow()},
 			}}},
@@ -65,7 +66,7 @@ func TestRankManagerRebuildsPersistedRankIndexBeforeUpdatingPlayer(t *testing.T)
 }
 
 func TestRankManagerReturnsEmptyChallengeListForEmptyRank(t *testing.T) {
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{42: {}}, rankTestNow)
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{42: {}}, rankTestNow)
 	response := manager.GetChallengeList(42, &message.C2S_GetChanllengeList{RankType: message.RankType_RankType_ChallengePoint})
 	if response == nil || response.RankItem == nil || len(response.RankItem) != 0 {
 		t.Fatalf("空排行榜应返回空挑战列表: %v", response)
@@ -73,7 +74,7 @@ func TestRankManagerReturnsEmptyChallengeListForEmptyRank(t *testing.T) {
 }
 
 func TestRankManagerReturnsEmptyRankListForUnknownRankType(t *testing.T) {
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{42: {}}, rankTestNow)
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{42: {}}, rankTestNow)
 	unknownRankType := message.RankType(99)
 	response := manager.HandleGetRankList(42, &message.C2S_GetRankList{RankType: unknownRankType, Page: 1, PageSize: 20})
 	if response == nil || response.RankType != unknownRankType || response.TotalCount != 0 || len(response.RankItems) != 0 {
@@ -82,7 +83,7 @@ func TestRankManagerReturnsEmptyRankListForUnknownRankType(t *testing.T) {
 }
 
 func TestRankManagerReturnsEmptyMyRankForUnknownRankType(t *testing.T) {
-	manager, system := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{42: {}}, rankTestNow)
+	manager, system := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{42: {}}, rankTestNow)
 	unknownRankType := message.RankType(99)
 	response := manager.HandleGetMyRank(42, unknownRankType, 0)
 	if response == nil || response.RankType != unknownRankType || response.MyRank != 0 || response.MyScore != 0 || response.TotalCount != 0 {
@@ -94,7 +95,7 @@ func TestRankManagerReturnsEmptyMyRankForUnknownRankType(t *testing.T) {
 }
 
 func TestRankManagerRejectsUnknownRankTypeUpdateWithoutActorPanic(t *testing.T) {
-	manager, system := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{42: {}}, rankTestNow)
+	manager, system := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{42: {}}, rankTestNow)
 	response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: message.RankType(99), Score: 100})
 	if response == nil || response.Success {
 		t.Fatalf("未知 RankType 的更新响应 = %v，期望失败", response)
@@ -105,7 +106,7 @@ func TestRankManagerRejectsUnknownRankTypeUpdateWithoutActorPanic(t *testing.T) 
 }
 
 func TestRankManagerRejectsOfflinePlayerUpdate(t *testing.T) {
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{}, rankTestNow)
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{}, rankTestNow)
 	response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: message.RankType_RankType_ChallengePoint, Score: 100})
 	if response.Success {
 		t.Fatal("离线 Player 不应更新排行榜")
@@ -114,7 +115,7 @@ func TestRankManagerRejectsOfflinePlayerUpdate(t *testing.T) {
 
 func TestRankManagerUpdatesRankFromOnlinePlayerSnapshot(t *testing.T) {
 	rankType := message.RankType_RankType_ChallengePoint
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{
 		42: {Name: "测试玩家", AvatarURL: "https://example.com/avatar.png", Level: 12},
 	}, rankTestNow)
 	if response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: rankType, Score: 100}); !response.Success {
@@ -131,7 +132,7 @@ func TestRankManagerUpdatesRankFromOnlinePlayerSnapshot(t *testing.T) {
 }
 
 func TestRankManagerRejectsOfflinePlayerRankList(t *testing.T) {
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{}, rankTestNow)
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{}, rankTestNow)
 	response := manager.HandleGetRankList(42, &message.C2S_GetRankList{RankType: message.RankType_RankType_ChallengePoint, Page: 1, PageSize: 20})
 	if response != nil {
 		t.Fatalf("离线 Player 的排行榜列表响应 = %v，期望 nil", response)
@@ -139,7 +140,7 @@ func TestRankManagerRejectsOfflinePlayerRankList(t *testing.T) {
 }
 
 func TestRankManagerReturnsEmptyRankForOfflinePlayer(t *testing.T) {
-	manager, _ := startTestRankManager(t, &memoryRankRepository{}, fakePlayerReader{}, rankTestNow)
+	manager, _ := startTestRankManager(t, &memoryRankStore{}, fakePlayerReader{}, rankTestNow)
 	rankType := message.RankType_RankType_ChallengePoint
 	response := manager.HandleGetMyRank(42, rankType, 0)
 	if response == nil || response.RankType != rankType || response.MyRank != 0 || response.MyScore != 0 || response.TotalCount != 0 {
@@ -151,10 +152,10 @@ func TestRankManagerUsesClockToOrderEqualScores(t *testing.T) {
 	// 已有记录在真实时间的未来，只有注入时钟才能把新记录正确排在其后。
 	now := time.Now().UTC().Add(24 * time.Hour)
 	rankType := message.RankType_RankType_ChallengePoint
-	repository := &memoryRankRepository{}
-	if err := repository.SaveRank(&RankManager{
+	repository := &memoryRankStore{}
+	if err := repository.Save(&documents.RankManager{
 		PersistId: 1,
-		RankCache: map[message.RankType]map[int32]*rankmodels.RankData{
+		RankCache: map[message.RankType]map[int32]*rankmodels.RankSnapshot{
 			rankType: {0: {RankType: rankType, Items: []*rankmodels.RankItem{
 				{PlayerId: 43, Score: 10, UpdateTime: now.Add(-time.Hour)},
 			}}},

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
+	"gameserver/modules/rank/internal/documents"
 	"os"
 	"testing"
 	"time"
@@ -15,16 +16,16 @@ import (
 )
 
 func TestMongoRankRepositoryRejectsSkippedSave(t *testing.T) {
-	repository := mongoRankRepository{}
-	if err := repository.SaveRank(&RankManager{PersistId: 1}); err == nil {
+	repository := mongoRankStore{}
+	if err := repository.Save(&documents.RankManager{PersistId: 1}); err == nil {
 		t.Error("MongoDB 未初始化时，不应把跳过排行榜保存报告为成功")
 	}
-	if err := repository.SaveSeason(&SeasonManager{PersistId: 1}); err == nil {
+	if err := repository.Save(&SeasonManager{PersistId: 1}); err == nil {
 		t.Error("MongoDB 未初始化时，不应把跳过赛季保存报告为成功")
 	}
 }
 
-func TestMongoRankRepositoryPreservesCollectionsAndDocuments(t *testing.T) {
+func TestMongoRankRepositoryMigratesAndPersistsBoards(t *testing.T) {
 	uri := os.Getenv("MONGODB_URI")
 	if uri == "" {
 		uri = "mongodb://root:1234@localhost:27017/?authSource=admin"
@@ -49,7 +50,7 @@ func TestMongoRankRepositoryPreservesCollectionsAndDocuments(t *testing.T) {
 	t.Cleanup(func() {
 		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
-		for _, collection := range []string{"RankManager", "SeasonManager"} {
+		for _, collection := range []string{"RankManager", "SeasonManager", "Leaderboard"} {
 			if err := database.Collection(collection).Drop(cleanup); err != nil {
 				t.Errorf("清理 %s 测试集合: %v", collection, err)
 			}
@@ -64,8 +65,18 @@ func TestMongoRankRepositoryPreservesCollectionsAndDocuments(t *testing.T) {
 	if err := mongodb.Init(uri, databaseName, 0, 5); err != nil {
 		t.Fatal(err)
 	}
-	repository := mongoRankRepository{}
-	players := fakePlayerReader{42: {Name: "测试玩家"}}
+	// 使用旧字段布局的原始 BSON，验证真实 Mongo 的迁移与新集合写入。
+	seedContext, seedCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer seedCancel()
+	legacy := bson.M{"_id": int64(1), "rank_cache": bson.M{"3": bson.M{"0": bson.M{
+		"rank_type": int32(3), "season": int32(0),
+		"items": bson.A{bson.M{"player_id": int64(43), "score": int64(55), "update_time": rankTestNow()}},
+	}}}}
+	if _, err := database.Collection("RankManager").InsertOne(seedContext, legacy); err != nil {
+		t.Fatal(err)
+	}
+	repository := mongoRankStore{}
+	players := fakePlayerReader{42: {Name: "测试玩家"}, 43: {Name: "旧存档玩家"}}
 	manager, system := startTestRankManager(t, repository, players, rankTestNow)
 	rankType := message.RankType_RankType_ChallengePoint
 	if response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: rankType, Score: 123}); !response.Success {
@@ -88,10 +99,23 @@ func TestMongoRankRepositoryPreservesCollectionsAndDocuments(t *testing.T) {
 	if index, ok := document.Lookup("code_index").Int32OK(); !ok || index != code.Code {
 		t.Fatalf("code_index 字段不兼容: %v", document)
 	}
-	for _, field := range []string{"rank_cache", "challenge_code_cache"} {
+	for _, field := range []string{"challenge_code_cache"} {
 		if _, ok := document.Lookup(field).DocumentOK(); !ok {
 			t.Fatalf("%s 字段不兼容: %v", field, document)
 		}
+	}
+	if document.Lookup("rank_cache").Type != 0 {
+		t.Fatal("new metadata must not embed leaderboards")
+	}
+	if version, ok := document.Lookup("storage_version").Int32OK(); !ok || version != documents.StorageVersion {
+		t.Fatalf("missing storage version: %v", document)
+	}
+	var board documents.Leaderboard
+	if err := database.Collection("Leaderboard").FindOne(readContext, bson.M{"_id": documents.BoardID(rankType, 0)}).Decode(&board); err != nil {
+		t.Fatal(err)
+	}
+	if len(board.Items) != 2 || board.Items[0].Score != 123 || board.Items[1].PlayerId != 43 || board.Items[1].Score != 55 {
+		t.Fatalf("leaderboard scores not saved separately: %+v", board)
 	}
 	if err := database.Collection("SeasonManager").FindOne(readContext, bson.M{"_id": int64(1)}).Decode(&document); err != nil {
 		t.Fatalf("赛季集合名或 _id 不兼容: %v", err)
@@ -103,6 +127,9 @@ func TestMongoRankRepositoryPreservesCollectionsAndDocuments(t *testing.T) {
 	restarted, _ := startTestRankManager(t, repository, players, rankTestNow)
 	if response := restarted.HandleGetMyRank(42, rankType, 0); response == nil || response.MyScore != 123 {
 		t.Fatalf("MongoDB 未恢复排名: %v", response)
+	}
+	if response := restarted.HandleGetMyRank(43, rankType, 0); response == nil || response.MyScore != 55 || response.MyRank != 2 {
+		t.Fatalf("MongoDB 迁移未保留旧成绩: %v", response)
 	}
 	if response := restarted.ChanllengeByCode(&message.C2S_ChanllengeByCode{Code: code.Code}); response == nil || response.Result != message.ChanllengeResult_ChanllengeResult_SUCCESS {
 		t.Fatalf("MongoDB 未恢复挑战码: %v", response)

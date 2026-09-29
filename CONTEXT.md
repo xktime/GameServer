@@ -1,6 +1,6 @@
 # GameServer 领域模型
 
-本文档定义 GameServer 中玩家身份与在线状态的统一领域语言。
+本文档定义 GameServer 的统一领域语言。
 
 ## 领域语言
 
@@ -35,3 +35,7 @@ _避免使用_: Online Player、Bot Player
 **Challenge Code**:
 用于发起对某个 Player 的挑战、具有固定到期时间的编号；正常重启不改变未过期编号的有效性。
 _避免使用_: MatchID、Player ID、Session ID
+
+**Leaderboard（排行榜）**:
+按排行类型及适用的赛季组织的 Player 成绩集合；前 1000 名仅是列表展示范围，不代表成绩保留范围。榜外 Player 保留成绩，但视为未上榜，不提供榜外的具体名次。
+_避免使用_: 榜单缓存、前 1000 名列表

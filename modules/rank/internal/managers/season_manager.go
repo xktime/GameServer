@@ -19,15 +19,19 @@ func (m SeasonManager) GetPersistId() interface{} {
 	return m.PersistId
 }
 
+func (m *SeasonManager) AfterLoad() { m.PersistId = 1 }
+
 func (m *SeasonManager) onCrossDay(rank *RankManager, now int64) {
 	if !utils.IsCrossDay(m.LastCrossDayTime, now) {
 		return
 	}
-	rank.OnCrossDay(m.Season)
+	rank.onCrossDay(m.Season, now)
 	if !utils.IsInSameWeek(m.LastCrossDayTime, now) {
 		m.onCrossWeek(now)
 	}
 	m.LastCrossDayTime = now
+	rank.pruneRankSeasons()
+	rank.initializeRankTypes()
 }
 
 func (m *SeasonManager) onCrossWeek(now int64) {

@@ -3,9 +3,13 @@ package managers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"gameserver/common/base/actor"
+	"gameserver/common/db/mongodb"
 	"gameserver/common/msg/message"
+	"gameserver/modules/rank/internal/documents"
 	rankmodels "gameserver/modules/rank/internal/models"
+	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,25 +17,34 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-// 内存中保留 BSON 文档而非 Actor 指针，确保重启测试确实经过保存和重新加载。
-type memoryRankRepository struct {
-	rank             []byte
-	season           []byte
-	loadSeasonErrors []error
-	saveRankError    error
-	saveSeasonError  error
+// 内存适配器按文档保存 BSON；与 Mongo 共用 rankRepository 的迁移及保存流程。
+type memoryRankStore struct {
+	rank              []byte
+	season            []byte
+	boards            map[string][]byte
+	loadSeasonErrors  []error
+	loadRankError     error
+	loadBoardsError   error
+	saveRankError     error
+	saveSeasonError   error
+	saveBoardErrors   map[string]error
+	insertBoardErrors map[string]error
+	deleteError       error
 }
 
-func (r *memoryRankRepository) LoadRank() (*RankManager, error) {
+func (r *memoryRankStore) LoadRank() (*documents.RankManager, error) {
+	if r.loadRankError != nil {
+		return nil, r.loadRankError
+	}
 	if len(r.rank) == 0 {
 		return nil, nil
 	}
-	var data RankManager
+	var data documents.RankManager
 	err := bson.Unmarshal(r.rank, &data)
 	return &data, err
 }
 
-func (r *memoryRankRepository) LoadSeason() (*SeasonManager, error) {
+func (r *memoryRankStore) LoadSeason() (*SeasonManager, error) {
 	if len(r.loadSeasonErrors) > 0 {
 		err := r.loadSeasonErrors[0]
 		r.loadSeasonErrors = r.loadSeasonErrors[1:]
@@ -45,29 +58,82 @@ func (r *memoryRankRepository) LoadSeason() (*SeasonManager, error) {
 	return &data, err
 }
 
-func (r *memoryRankRepository) SaveRank(data *RankManager) error {
-	if r.saveRankError != nil {
-		return r.saveRankError
+func (r *memoryRankStore) LoadBoards() ([]documents.Leaderboard, error) {
+	if r.loadBoardsError != nil {
+		return nil, r.loadBoardsError
 	}
-	document, err := bson.Marshal(data)
-	if err == nil {
-		r.rank = document
+	keys := make([]string, 0, len(r.boards))
+	for key := range r.boards {
+		keys = append(keys, key)
 	}
-	return err
+	sort.Strings(keys)
+	result := make([]documents.Leaderboard, 0, len(keys))
+	for _, key := range keys {
+		var board documents.Leaderboard
+		if err := bson.Unmarshal(r.boards[key], &board); err != nil {
+			return nil, err
+		}
+		result = append(result, board)
+	}
+	return result, nil
 }
 
-func (r *memoryRankRepository) SaveSeason(data *SeasonManager) error {
-	if r.saveSeasonError != nil {
-		return r.saveSeasonError
+func (r *memoryRankStore) Save(data mongodb.PersistData) error {
+	switch doc := data.(type) {
+	case *documents.RankManager:
+		if r.saveRankError != nil {
+			return r.saveRankError
+		}
+		bytes, err := bson.Marshal(doc)
+		if err == nil {
+			r.rank = bytes
+		}
+		return err
+	case *SeasonManager:
+		if r.saveSeasonError != nil {
+			return r.saveSeasonError
+		}
+		bytes, err := bson.Marshal(doc)
+		if err == nil {
+			r.season = bytes
+		}
+		return err
+	case *documents.Leaderboard:
+		if err := r.saveBoardErrors[doc.PersistId]; err != nil {
+			return err
+		}
+		bytes, err := bson.Marshal(doc)
+		if err == nil {
+			if r.boards == nil {
+				r.boards = make(map[string][]byte)
+			}
+			r.boards[doc.PersistId] = bytes
+		}
+		return err
+	default:
+		return fmt.Errorf("unsupported rank document: %T", data)
 	}
-	document, err := bson.Marshal(data)
-	if err == nil {
-		r.season = document
-	}
-	return err
 }
 
-func startTestRankManager(t *testing.T, repository rankRepository, players fakePlayerReader, now func() time.Time) (*RankManager, *actor.ActorSystem) {
+func (r *memoryRankStore) InsertBoard(board *documents.Leaderboard) error {
+	if err := r.insertBoardErrors[board.PersistId]; err != nil {
+		return err
+	}
+	if _, exists := r.boards[board.PersistId]; exists {
+		return nil
+	}
+	return r.Save(board)
+}
+
+func (r *memoryRankStore) DeleteBoard(id string) error {
+	if r.deleteError != nil {
+		return r.deleteError
+	}
+	delete(r.boards, id)
+	return nil
+}
+
+func startTestRankManager(t *testing.T, repository rankDocumentStore, players fakePlayerReader, now func() time.Time) (*RankManager, *actor.ActorSystem) {
 	t.Helper()
 	system := actor.NewActorSystem(time.Second)
 	t.Cleanup(func() {
@@ -89,7 +155,7 @@ func startTestRankManager(t *testing.T, repository rankRepository, players fakeP
 }
 
 func TestRankManagerPersistsRankAcrossActorRestart(t *testing.T) {
-	repository := &memoryRankRepository{}
+	repository := &memoryRankStore{}
 	now := func() time.Time { return time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC) }
 	players := fakePlayerReader{42: {Name: "测试玩家", AvatarURL: "avatar", Level: 12}}
 	manager, system := startTestRankManager(t, repository, players, now)
@@ -109,7 +175,7 @@ func TestRankManagerPersistsRankAcrossActorRestart(t *testing.T) {
 }
 
 func TestRankManagerRestoresChallengeCodesAndGenerationProgress(t *testing.T) {
-	repository := &memoryRankRepository{}
+	repository := &memoryRankStore{}
 	players := fakePlayerReader{42: {Name: "挑战目标"}}
 	manager, system := startTestRankManager(t, repository, players, rankTestNow)
 	code := manager.GeneratorChallengeCode(&message.C2S_GeneratorChanllengeCode{PlayerId: "42"})
@@ -135,7 +201,7 @@ func TestRankManagerKeepsChallengeCodeExpiryAcrossRestart(t *testing.T) {
 	var clock atomic.Int64
 	clock.Store(rankTestNow().Unix())
 	now := func() time.Time { return time.Unix(clock.Load(), 0) }
-	repository := &memoryRankRepository{}
+	repository := &memoryRankStore{}
 	players := fakePlayerReader{42: {Name: "挑战目标"}}
 	manager, system := startTestRankManager(t, repository, players, now)
 	code := manager.GeneratorChallengeCode(&message.C2S_GeneratorChanllengeCode{PlayerId: "42"})
@@ -164,7 +230,7 @@ func TestRankManagerUsesClockForCrossDayAndRestoresSeason(t *testing.T) {
 	var clock atomic.Int64
 	clock.Store(rankTestNow().Unix())
 	now := func() time.Time { return time.Unix(clock.Load(), 0) }
-	repository := &memoryRankRepository{}
+	repository := &memoryRankStore{}
 	players := fakePlayerReader{42: {Name: "测试玩家"}}
 	manager, system := startTestRankManager(t, repository, players, now)
 	if response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: message.RankType_RankType_LadderPoint, Score: 123}); !response.Success {
@@ -215,7 +281,7 @@ func TestRankManagerRetriesFailedPersistenceWhenStopping(t *testing.T) {
 		{name: "both", rankErr: rankFailure, seasonErr: seasonFailure},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			repository := &memoryRankRepository{}
+			repository := &memoryRankStore{}
 			players := fakePlayerReader{42: {Name: "测试玩家"}}
 			manager, system := startTestRankManager(t, repository, players, rankTestNow)
 			rankType := message.RankType_RankType_ChallengePoint
@@ -229,8 +295,8 @@ func TestRankManagerRetriesFailedPersistenceWhenStopping(t *testing.T) {
 				repository.saveSeasonError = nil
 			}()
 			err := system.Stop(context.Background())
-			if err == nil || (test.rankErr != nil && !errors.Is(err, test.rankErr)) || (test.seasonErr != nil && !errors.Is(err, test.seasonErr)) {
-				t.Fatalf("停止未返回全部保存错误: %v", err)
+			if err == nil || (test.rankErr != nil && !errors.Is(err, test.rankErr)) || (test.rankErr == nil && test.seasonErr != nil && !errors.Is(err, test.seasonErr)) {
+				t.Fatalf("停止未返回失败阶段的保存错误: %v", err)
 			}
 			if response := manager.HandleUpdateRankData(42, &message.C2S_UpdateRankData{RankType: rankType, Score: 999}); response.Success {
 				t.Fatal("保存失败的 Actor 不应继续接受修改")
@@ -263,7 +329,7 @@ func TestRankManagerLoadsLegacyDocumentsWithoutChallengeFields(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			repository := &memoryRankRepository{rank: document}
+			repository := &memoryRankStore{rank: document}
 			manager, _ := startTestRankManager(t, repository, fakePlayerReader{42: {}}, rankTestNow)
 			code := manager.GeneratorChallengeCode(&message.C2S_GeneratorChanllengeCode{PlayerId: "42"})
 			if code == nil || code.Code != rankmodels.ChallengeCodeFloorint+1 {

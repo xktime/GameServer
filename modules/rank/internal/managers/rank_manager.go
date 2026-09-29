@@ -15,8 +15,6 @@ import (
 	"time"
 )
 
-var maxCacheSize = 1000
-
 const managerInitializationRetryDelay = 100 * time.Millisecond
 
 var types = []message.RankType{
@@ -28,36 +26,33 @@ var types = []message.RankType{
 // RankManager 的可变状态只在绑定的 Actor 队列中访问。
 type RankManager struct {
 	actor.BaseActor
-	players playerread.PlayerReader
-	season  *SeasonManager `bson:"-"`
+	players     playerread.PlayerReader
+	season      *SeasonManager
+	repository  *rankRepository
+	now         func() time.Time
+	initialized bool
 
-	repository  rankRepository   `bson:"-"`
-	now         func() time.Time `bson:"-"`
-	initialized bool             `bson:"-"`
-
-	// 内存缓存
-	PersistId          int64                                             `bson:"_id"`
-	RankCache          map[message.RankType]map[int32]*models.RankData   `bson:"rank_cache"`           // 排行榜类型 → 赛季 → 排行榜数据。
-	ChallengeCodeCache map[int32]*models.ChallengeCode                   `bson:"challenge_code_cache"` // 挑战码 → 挑战码数据。
-	CodeIndex          int32                                             `bson:"code_index"`           // 挑战码索引
-	rankListCache      map[int64]map[message.RankType][]*models.RankItem `bson:"-"`                    // 玩家编号 → 排行榜类型 → 排名列表缓存。
+	rankCache          map[message.RankType]map[int32]*models.RankData
+	challengeCodeCache map[int32]*models.ChallengeCode
+	codeIndex          int32
+	rankListCache      map[int64]map[message.RankType][]*models.RankItem
 }
 
 func NewRankManager(ctx context.Context, scope *actor.Scope, players playerread.PlayerReader) (*RankManager, error) {
-	return newRankManager(ctx, scope, players, mongoRankRepository{}, time.Now)
+	return newRankManager(ctx, scope, players, mongoRankStore{}, time.Now)
 }
 
 func newRankManager(
 	ctx context.Context,
 	scope *actor.Scope,
 	players playerread.PlayerReader,
-	repository rankRepository,
+	store rankDocumentStore,
 	now func() time.Time,
 ) (*RankManager, error) {
 	if players == nil {
 		return nil, fmt.Errorf("rank: PlayerReader is nil")
 	}
-	if repository == nil {
+	if store == nil {
 		return nil, fmt.Errorf("rank: Repository is nil")
 	}
 	if now == nil {
@@ -67,12 +62,11 @@ func newRankManager(
 		manager := &RankManager{
 			players:            players,
 			season:             &SeasonManager{PersistId: 1},
-			PersistId:          1,
-			RankCache:          make(map[message.RankType]map[int32]*models.RankData),
-			ChallengeCodeCache: make(map[int32]*models.ChallengeCode),
-			CodeIndex:          models.ChallengeCodeFloorint,
+			rankCache:          make(map[message.RankType]map[int32]*models.RankData),
+			challengeCodeCache: make(map[int32]*models.ChallengeCode),
+			codeIndex:          models.ChallengeCodeFloorint,
 			rankListCache:      make(map[int64]map[message.RankType][]*models.RankItem),
-			repository:         repository,
+			repository:         &rankRepository{store: store},
 			now:                now,
 		}
 		return manager, nil
@@ -109,34 +103,22 @@ func (m *RankManager) initialize(ctx context.Context) error {
 		if m.initialized {
 			return struct{}{}, nil
 		}
-		season, err := m.repository.LoadSeason()
+		state, err := m.repository.Load()
 		if err != nil {
-			return struct{}{}, fmt.Errorf("load season data: %w", err)
+			return struct{}{}, err
 		}
-		data, err := m.repository.LoadRank()
-		if err != nil {
-			return struct{}{}, fmt.Errorf("load rank data: %w", err)
-		}
-		if season != nil {
-			m.season = season
-		}
-		if data != nil {
-			m.RankCache = data.RankCache
-			if data.ChallengeCodeCache != nil {
-				m.ChallengeCodeCache = data.ChallengeCodeCache
+		m.season = state.season
+		m.challengeCodeCache = state.metadata.ChallengeCodeCache
+		m.codeIndex = state.metadata.CodeIndex
+		m.rankCache = make(map[message.RankType]map[int32]*models.RankData)
+		for _, board := range state.boards {
+			if m.rankCache[board.RankType] == nil {
+				m.rankCache[board.RankType] = make(map[int32]*models.RankData)
 			}
-			if data.CodeIndex >= models.ChallengeCodeFloorint {
-				m.CodeIndex = data.CodeIndex
-			}
-		}
-		for _, rankDataBySeason := range m.RankCache {
-			for _, rankData := range rankDataBySeason {
-				if rankData != nil {
-					rankData.SortRankData()
-				}
-			}
+			m.rankCache[board.RankType][board.Season] = models.RestoreRankData(board.RankSnapshot)
 		}
 		m.season.onCrossDay(m, m.now().Unix())
+		m.pruneRankSeasons()
 		m.initializeRankTypes()
 		m.initialized = true
 		return struct{}{}, nil
@@ -145,21 +127,8 @@ func (m *RankManager) initialize(ctx context.Context) error {
 }
 
 func (m *RankManager) initializeRankTypes() {
-	if m.RankCache == nil {
-		m.RankCache = make(map[message.RankType]map[int32]*models.RankData)
-	}
-	season := m.season.Season
 	for _, rankType := range types {
-		if _, ok := m.RankCache[rankType]; ok {
-			continue
-		}
-		m.RankCache[rankType] = make(map[int32]*models.RankData)
-		rankData := &models.RankData{Season: season, RankType: rankType, Items: make([]*models.RankItem, 0), UpdateTime: m.now()}
-		if m.isSeasonType(rankType) {
-			m.RankCache[rankType][season] = rankData
-		} else {
-			m.RankCache[rankType][0] = rankData
-		}
+		m.getRankData(rankType)
 	}
 }
 
@@ -167,9 +136,7 @@ func (m *RankManager) OnStop(context.Context) error {
 	if !m.initialized {
 		return nil
 	}
-	rankErr := m.repository.SaveRank(m)
-	seasonErr := m.repository.SaveSeason(m.season)
-	return errors.Join(rankErr, seasonErr)
+	return m.repository.Save(m)
 }
 
 func (m *RankManager) CheckCrossDay() {
@@ -196,28 +163,22 @@ func rankCall[T any](manager *RankManager, task func() T) (T, error) {
 	})
 }
 
-// GetPersistId 获取持久化ID
-func (r RankManager) GetPersistId() interface{} {
-	return r.PersistId
-}
-
-func (r *RankManager) OnCrossDay(season int32) {
-	for t, rankDatas := range r.RankCache {
-		var rankData *models.RankData
-		if r.isSeasonType(t) {
-			rankData = rankDatas[season]
-		} else {
-			rankData = rankDatas[0]
+func (r *RankManager) onCrossDay(season int32, now int64) {
+	for rankType, ranks := range r.rankCache {
+		key := int32(0)
+		if r.isSeasonType(rankType) {
+			key = season
 		}
-		if rankData != nil {
-			rankData.OnCrossDay()
+		if rank := ranks[key]; rank != nil {
+			rank.OnCrossDay(now)
 		}
 	}
-	// 只保留当前赛季和上个赛季
-	rank := r.RankCache[message.RankType_RankType_LadderPoint]
-	if rank != nil {
-		for i := int32(0); i < season-1; i++ {
-			delete(rank, i)
+}
+
+func (r *RankManager) pruneRankSeasons() {
+	for season := range r.rankCache[message.RankType_RankType_LadderPoint] {
+		if !retainedBoard(message.RankType_RankType_LadderPoint, season, r.season.Season) {
+			delete(r.rankCache[message.RankType_RankType_LadderPoint], season)
 		}
 	}
 }
@@ -236,57 +197,31 @@ func (r *RankManager) HandleUpdateRankData(playerId int64, req *message.C2S_Upda
 
 // doHandleUpdateRankData 更新排行榜数据的同步实现
 func (r *RankManager) doHandleUpdateRankData(playerId int64, req *message.C2S_UpdateRankData) *message.S2C_UpdateRankData {
-	playerSnapshot, ok := r.players.FindOnline(playerId)
-	if !ok {
-		return &message.S2C_UpdateRankData{Success: false}
-	}
-
-	response := &message.S2C_UpdateRankData{Success: true}
-	rankType := message.RankType(req.RankType)
-	rankData := r.GetRankData(rankType)
-	if rankData == nil {
-		response.Success = false
+	response := &message.S2C_UpdateRankData{Success: false}
+	if req == nil {
 		return response
 	}
-
-	// 查找是否已存在该玩家
-	playerIndex := rankData.GetRankItemIndex(playerId)
-
-	// 创建新的排行榜项目
-	newItem := &models.RankItem{
-		PlayerId:   playerId,
-		PlayerName: playerSnapshot.Name,
-		Score:      int64(req.Score),
-		Avatar:     playerSnapshot.AvatarURL,
-		Level:      playerSnapshot.Level,
-		UpdateTime: r.now(),
-		OtherInfos: make([]*message.OtherInfo, 0),
+	playerSnapshot, ok := r.players.FindOnline(playerId)
+	if !ok {
+		return response
 	}
-
-	if playerIndex >= 0 {
-		// 更新现有玩家数据
-		if rankType == message.RankType_RankType_PowerPoint {
-			r.doUpdatePower(playerId, float64(newItem.Score))
-			newItem.UpdatePower(float64(newItem.Score))
-		}
-		rankData.Items[playerIndex] = newItem
-	} else {
-		// 添加新玩家
-		newItem.UpdatePower(490)
-		rankData.Items = append(rankData.Items, newItem)
+	rankData := r.getRankData(req.RankType)
+	if rankData == nil {
+		return response
 	}
-
-	// 重新排序
-	rankData.SortRankData()
-
-	// 限制缓存大小
-	if len(rankData.Items) > maxCacheSize {
-		rankData.Items = rankData.Items[:maxCacheSize]
+	now := r.now()
+	item := models.RankItem{
+		PlayerId: playerId, PlayerName: playerSnapshot.Name, Avatar: playerSnapshot.AvatarURL,
+		Level: playerSnapshot.Level, Score: int64(req.Score), UpdateTime: now,
 	}
-
-	rankData.UpdateTime = r.now()
-
-	log.Debug("排行榜数据已更新: 类型=%d, 玩家=%d, 分数=%d", rankType, playerId, req.Score)
+	item.UpdatePower(490)
+	rankData.UpdateScore(item)
+	if req.RankType == message.RankType_RankType_PowerPoint {
+		r.doUpdatePower(playerId, float64(req.Score))
+		rankData.SetOtherInfo(playerId, "power", strconv.FormatFloat(float64(req.Score), 'f', 2, 64), now)
+	}
+	response.Success = true
+	log.Debug("排行榜数据已更新: 类型=%d, 玩家=%d, 分数=%d", req.RankType, playerId, req.Score)
 	return response
 }
 
@@ -305,13 +240,16 @@ func (m *RankManager) doHandleGetChallengeList(playerId int64, req *message.C2S_
 	response := &message.S2C_GetChanllengeList{
 		RankItem: make([]*message.RankItem, 0),
 	}
+	if req == nil || !validRankType(req.RankType) {
+		return response
+	}
 	rankType := message.RankType(req.RankType)
 	if req.RefreshType == message.RefreshType_RefreshType_None {
 		if !m.hasRankListCache(playerId, rankType) {
-			m.RefreshRankList(playerId, rankType)
+			m.refreshRankList(playerId, rankType)
 		}
 	} else {
-		m.RefreshRankList(playerId, rankType)
+		m.refreshRankList(playerId, rankType)
 	}
 	if items, ok := m.rankListCache[playerId][rankType]; ok {
 		for _, item := range items {
@@ -330,19 +268,16 @@ func (m *RankManager) hasRankListCache(playerId int64, rankType message.RankType
 	return false
 }
 
-func (m *RankManager) RefreshRankList(playerId int64, rankType message.RankType) []*models.RankItem {
+func (m *RankManager) refreshRankList(playerId int64, rankType message.RankType) []*models.RankItem {
 	result := make([]*models.RankItem, 0)
-	rankDatas := m.GetRankData(rankType)
-	if rankDatas == nil || len(rankDatas.Items) == 0 {
+	rankDatas := m.getRankData(rankType)
+	if rankDatas == nil || rankDatas.DisplayCount() == 0 {
 		return result
 	}
-
-	// 找到玩家在排行榜中的位置
-	playerIndex := rankDatas.GetRankItemIndex(playerId)
-	items := rankDatas.Items
-
-	if playerIndex == -1 {
-		playerIndex = int32(len(items) - 1)
+	items, _ := rankDatas.Page(1, models.DisplayLimit)
+	playerIndex := int32(len(items) - 1)
+	if item := rankDatas.GetRankItem(playerId); item != nil && item.Rank > 0 {
+		playerIndex = item.Rank - 1
 	}
 	// 收集可挑战的玩家
 	candidates := make([]*models.RankItem, 0)
@@ -391,51 +326,34 @@ func (r *RankManager) HandleGetRankList(playerId int64, req *message.C2S_GetRank
 
 // doHandleGetRankList 获取排行榜列表的同步实现
 func (r *RankManager) doHandleGetRankList(playerId int64, req *message.C2S_GetRankList) *message.S2C_GetRankList {
+	if req == nil {
+		return nil
+	}
 	if _, ok := r.players.FindOnline(playerId); !ok {
 		return nil
 	}
-	// 参数验证
-	if req.Page <= 0 {
-		req.Page = 1
+	page := req.Page
+	if page <= 0 {
+		page = 1
 	}
-	if req.PageSize <= 0 {
-		req.PageSize = 20 // 默认每页20条
+	season := int32(0)
+	if r.isSeasonType(req.RankType) {
+		season = req.Season
+		if season <= 0 {
+			season = r.season.Season
+		}
 	}
 	response := &message.S2C_GetRankList{
-		RankType:    req.RankType,
-		RankItems:   make([]*message.RankItem, 0),
-		TotalCount:  0,
-		CurrentPage: req.Page,
-		Season:      req.Season,
+		RankType: req.RankType, RankItems: make([]*message.RankItem, 0), CurrentPage: page, Season: season,
 	}
-	rankData := r.GetRankData(message.RankType(req.RankType))
+	rankData := r.getRankDataBySeason(req.RankType, season)
 	if rankData == nil {
 		return response
 	}
-
-	totalCount := int32(len(rankData.Items))
-
-	// 分页处理
-	start := (req.Page - 1) * req.PageSize
-	end := start + req.PageSize
-
-	if start >= totalCount {
-		response.RankItems = make([]*message.RankItem, 0)
-		response.TotalCount = totalCount
-		response.CurrentPage = req.Page
-		return response
-	}
-
-	if end > totalCount {
-		end = totalCount
-	}
-
-	items := rankData.Items[start:end]
-
-	response.RankItems = make([]*message.RankItem, 0)
+	items, total := rankData.Page(page, req.PageSize)
+	response.TotalCount = total
 	for _, item := range items {
 		response.RankItems = append(response.RankItems, item.ToMsg())
-
 	}
 	return response
 }
@@ -453,53 +371,60 @@ func (r *RankManager) GeneratorChallengeCode(req *message.C2S_GeneratorChanlleng
 
 // doGeneratorChallengeCode 生成挑战码的同步实现
 func (r *RankManager) doGeneratorChallengeCode(req *message.C2S_GeneratorChanllengeCode) *message.S2C_GeneratorChanllengeCode {
-	// 如果code大于celing需要清理，重置
-	// index++ 生成一个
-	if r.CodeIndex >= models.ChallengeCodeCeilint {
-		r.CodeIndex = models.ChallengeCodeFloorint
+	if req == nil {
+		return nil
+	}
+	playerId, err := strconv.ParseInt(req.PlayerId, 10, 64)
+	if err != nil || playerId <= 0 {
+		return nil
+	}
+	r.ensurePlayerRanks(playerId)
+	if r.getRankItem(playerId) == nil {
+		return nil
+	}
+	if r.codeIndex >= models.ChallengeCodeCeilint {
+		r.codeIndex = models.ChallengeCodeFloorint
 		r.clearExpiredCodes()
 	}
-	r.CodeIndex++
+	r.codeIndex++
 	now := r.now().Unix()
-	playerId, _ := strconv.ParseInt(req.PlayerId, 10, 64)
-	chanllengeCode := &models.ChallengeCode{
-		PlayerId:     playerId,
-		Code:         r.CodeIndex,
-		ExpireTime:   now + int64(models.ChallengeCodeExpireTime),
-		GenerateTime: now,
+	code := &models.ChallengeCode{
+		PlayerId: playerId, Code: r.codeIndex,
+		ExpireTime: now + int64(models.ChallengeCodeExpireTime), GenerateTime: now,
 	}
-	r.ChallengeCodeCache[r.CodeIndex] = chanllengeCode
-
-	item := r.getRankItem(playerId)
-	if item.OtherInfos == nil {
-		item.OtherInfos = make([]*message.OtherInfo, 0)
+	r.challengeCodeCache[code.Code] = code
+	for _, ranks := range r.rankCache {
+		for _, rank := range ranks {
+			rank.SetOtherInfo(playerId, "chanllenge_key", strconv.FormatInt(int64(code.Code), 10), r.now())
+		}
 	}
-	item.OtherInfos = append(item.OtherInfos, &message.OtherInfo{
-		Key:   "chanllenge_key",
-		Value: strconv.FormatInt(int64(chanllengeCode.Code), 10),
-	})
-	return &message.S2C_GeneratorChanllengeCode{
-		Code:            chanllengeCode.Code,
-		ExpireTimestamp: int32(chanllengeCode.ExpireTime),
-	}
+	return &message.S2C_GeneratorChanllengeCode{Code: code.Code, ExpireTimestamp: int32(code.ExpireTime)}
 }
 
 func (r *RankManager) clearExpiredCodes() {
-	now := r.now().Unix()
-	for code, c := range r.ChallengeCodeCache {
-		if c.ExpireTime < now {
-			item := r.getRankItem(c.PlayerId)
-			if item.OtherInfos == nil {
-				continue
-			}
-			for _, info := range item.OtherInfos {
-				if info.Key == "chanllenge_key" {
-					info.Value = ""
+	now := r.now()
+	for code, info := range r.challengeCodeCache {
+		if info == nil {
+			delete(r.challengeCodeCache, code)
+			continue
+		}
+		if info.ExpireTime >= now.Unix() {
+			continue
+		}
+		for _, ranks := range r.rankCache {
+			for _, rank := range ranks {
+				item := rank.GetRankItem(info.PlayerId)
+				if item == nil {
 					continue
 				}
+				for _, extra := range item.OtherInfos {
+					if extra.Key == "chanllenge_key" && extra.Value == strconv.FormatInt(int64(code), 10) {
+						rank.SetOtherInfo(info.PlayerId, extra.Key, "", now)
+					}
+				}
 			}
-			delete(r.ChallengeCodeCache, code)
 		}
+		delete(r.challengeCodeCache, code)
 	}
 }
 
@@ -516,7 +441,10 @@ func (r *RankManager) ChanllengeByCode(req *message.C2S_ChanllengeByCode) *messa
 
 // doChanllengeByCode 挑战码验证的同步实现
 func (r *RankManager) doChanllengeByCode(req *message.C2S_ChanllengeByCode) *message.S2C_ChanllengeByCode {
-	codeInfo := r.ChallengeCodeCache[req.Code]
+	if req == nil {
+		return &message.S2C_ChanllengeByCode{Result: message.ChanllengeResult_ChanllengeResult_None}
+	}
+	codeInfo := r.challengeCodeCache[req.Code]
 	if codeInfo == nil {
 		log.Debug("挑战码不存在: 挑战码=%d", req.Code)
 		return &message.S2C_ChanllengeByCode{
@@ -545,37 +473,35 @@ func (r *RankManager) doChanllengeByCode(req *message.C2S_ChanllengeByCode) *mes
 	}
 }
 
-// todo 整理
 func (r *RankManager) getRankItem(playerId int64) *models.RankItem {
-	for _, items := range r.RankCache {
-		for _, rankData := range items {
-			item := rankData.GetRankItem(playerId)
-			if item != nil {
-				return item
-			}
-		}
-	}
-	// todo 整理塞入缓存
 	for _, rankType := range types {
-		item := r.doHandleUpdateRankData(playerId, &message.C2S_UpdateRankData{
-			RankType: rankType,
-			Score:    0,
-		})
-		if !item.Success {
-			return nil
+		if item := r.getRankData(rankType).GetRankItem(playerId); item != nil {
+			return item
 		}
 	}
-	return r.getRankItem(playerId)
+	return r.getRankDataBySeason(message.RankType_RankType_LadderPoint, r.season.Season-1).GetRankItem(playerId)
+}
+
+func (r *RankManager) ensurePlayerRanks(playerId int64) {
+	player, ok := r.players.FindOnline(playerId)
+	if !ok {
+		return
+	}
+	for _, rankType := range types {
+		rank := r.getRankData(rankType)
+		if rank == nil || rank.GetRankItem(playerId) != nil {
+			continue
+		}
+		item := models.RankItem{PlayerId: playerId, PlayerName: player.Name, Avatar: player.AvatarURL,
+			Level: player.Level, UpdateTime: r.now()}
+		item.UpdatePower(490)
+		rank.UpdateScore(item)
+	}
 }
 
 func (r *RankManager) InitMyRank(playerId int64) {
 	if err := actor.Tell(context.Background(), r.Ref(), func(actor.Context) error {
-		for _, rankType := range types {
-			r.doHandleUpdateRankData(playerId, &message.C2S_UpdateRankData{
-				RankType: rankType,
-				Score:    0,
-			})
-		}
+		r.ensurePlayerRanks(playerId)
 		return nil
 	}); err != nil {
 		log.Error("初始化玩家排行榜失败: %v", err)
@@ -592,50 +518,40 @@ func (r *RankManager) UpdatePower(playerId int64, power float64) {
 }
 
 func (r *RankManager) doUpdatePower(playerId int64, power float64) {
-	now := r.now()
+	if math.IsNaN(power) || math.IsInf(power, 0) {
+		return
+	}
 	for _, rankType := range types {
 		if rankType == message.RankType_RankType_PowerPoint {
 			continue
 		}
-		rankData := r.GetRankData(rankType)
-		playerIndex := rankData.GetRankItemIndex(playerId)
-		if playerIndex < 0 {
-			continue
+		if rank := r.getRankData(rankType); rank != nil {
+			rank.SetOtherInfo(playerId, "power", strconv.FormatFloat(power, 'f', 2, 64), r.now())
 		}
-		item := rankData.Items[playerIndex]
-		item.UpdatePower(power)
-		rankData.ItemsCache[playerId] = item
-		rankData.UpdateTime = now
 	}
 }
 
-func (r *RankManager) GetRankData(rankType message.RankType) *models.RankData {
-	return r.GetRankDataBySeason(rankType, r.season.Season)
+func (r *RankManager) getRankData(rankType message.RankType) *models.RankData {
+	return r.getRankDataBySeason(rankType, r.season.Season)
 }
 
-func (r *RankManager) GetRankDataBySeason(rankType message.RankType, season int32) *models.RankData {
-	var rankData *models.RankData
-	// 赛季类型赛季需要填充，其他类型初始化的时候就已经初始化了
-	if r.isSeasonType(rankType) {
-		if season <= 0 {
-			return nil
-		}
-		_, ok := r.RankCache[rankType][season]
-		if !ok {
-			rankData = &models.RankData{
-				Season:     season,
-				RankType:   rankType,
-				Items:      make([]*models.RankItem, 0),
-				UpdateTime: r.now(),
-			}
-			r.RankCache[rankType][season] = rankData
-		} else {
-			rankData = r.RankCache[rankType][season]
-		}
-	} else {
-		rankData = r.RankCache[rankType][0]
+func (r *RankManager) getRankDataBySeason(rankType message.RankType, season int32) *models.RankData {
+	if !validRankType(rankType) {
+		return nil
 	}
-	return rankData
+	if !r.isSeasonType(rankType) {
+		season = 0
+	}
+	if !retainedBoard(rankType, season, r.season.Season) {
+		return nil
+	}
+	if r.rankCache[rankType] == nil {
+		r.rankCache[rankType] = make(map[int32]*models.RankData)
+	}
+	if r.rankCache[rankType][season] == nil {
+		r.rankCache[rankType][season] = models.NewRankData(rankType, season)
+	}
+	return r.rankCache[rankType][season]
 }
 
 // HandleGetMyRank 同步读取玩家排名。
@@ -656,19 +572,16 @@ func (r *RankManager) doHandleGetMyRank(playerId int64, rankType message.RankTyp
 	if _, ok := r.players.FindOnline(playerId); !ok {
 		return response
 	}
-	rankData := r.GetRankDataBySeason(message.RankType(rankType), season)
+	rankData := r.getRankDataBySeason(message.RankType(rankType), season)
 	if rankData == nil {
 		return response
 	}
 
-	// 查找玩家排名
-	for i, item := range rankData.Items {
-		if item.PlayerId == playerId {
-			response.MyRank = int32(i + 1)
-			response.MyScore = int32(item.Score)
-		}
+	if item := rankData.GetRankItem(playerId); item != nil {
+		response.MyRank = item.Rank
+		response.MyScore = int32(item.Score)
 	}
-	response.TotalCount = int32(len(rankData.Items))
+	response.TotalCount = rankData.DisplayCount()
 	return response
 }
 
@@ -686,8 +599,8 @@ func (r *RankManager) GetMyHistoryRank(playerId int64) *message.S2C_GetMyHistory
 // doHandleGetMyHistoryRank 获取我的历史排名的同步实现
 func (r *RankManager) doHandleGetMyHistoryRank(playerId int64) *message.S2C_GetMyHistoryRank {
 	response := &message.S2C_GetMyHistoryRank{
-		Daily: r.GetHistoryRank(playerId, 1),
-		Week:  r.GetHistoryRank(playerId, 2),
+		Daily: r.getHistoryRank(playerId, 1),
+		Week:  r.getHistoryRank(playerId, 2),
 	}
 	return response
 }
@@ -705,7 +618,7 @@ func (r *RankManager) GetHistoryRankReward(playerId int64, req *message.C2S_GetH
 
 // doHandleGetHistoryRankReward 获取历史排名奖励的同步实现
 func (r *RankManager) doHandleGetHistoryRankReward(playerId int64, req *message.C2S_GetHistoryRankReward) *message.S2C_GetHistoryRankReward {
-	rankItem := r.GetHistoryRank(playerId, req.Type)
+	rankItem := r.getHistoryRank(playerId, req.Type)
 	if rankItem.AcceptReward {
 		return &message.S2C_GetHistoryRankReward{
 			Success:  false,
@@ -721,28 +634,28 @@ func (r *RankManager) doHandleGetHistoryRankReward(playerId int64, req *message.
 }
 
 // // 1为日榜，2为周榜
-func (r *RankManager) GetHistoryRank(playerId int64, t int32) *message.HistoryRankItem {
+func (r *RankManager) getHistoryRank(playerId int64, t int32) *message.HistoryRankItem {
 	result := &message.HistoryRankItem{
 		CurrentRank: -1,
 		LastRank:    -1,
 	}
 	season := r.season.Season
-	currentRankDatas := r.GetRankDataBySeason(message.RankType_RankType_LadderPoint, season)
+	currentRankDatas := r.getRankDataBySeason(message.RankType_RankType_LadderPoint, season)
 	nowRankItem := currentRankDatas.GetRankItem(playerId)
-	if nowRankItem != nil {
+	if nowRankItem != nil && nowRankItem.Rank > 0 {
 		result.CurrentRank = nowRankItem.Rank
 	}
 	if t == 1 {
 		// 获取当前日榜
-		if item, ok := currentRankDatas.HistoryItemCache[playerId]; ok {
+		if item := currentRankDatas.History(playerId); item != nil {
 			result.LastRank = item.Rank
 			result.AcceptReward = item.AcceptDaylyReward
 		}
 	} else if t == 2 {
 		// 获取上赛季周榜
-		lastRankDatas := r.GetRankDataBySeason(message.RankType_RankType_LadderPoint, season-1)
+		lastRankDatas := r.getRankDataBySeason(message.RankType_RankType_LadderPoint, season-1)
 		if lastRankDatas != nil {
-			if item, ok := lastRankDatas.HistoryItemCache[playerId]; ok {
+			if item := lastRankDatas.History(playerId); item != nil {
 				result.LastRank = item.Rank
 				result.AcceptReward = item.AcceptWeeklyReward
 			}
