@@ -47,6 +47,7 @@ func (m *RoomExternal) InitExternal(system *actor.ActorSystem) error {
 		return err
 	}
 	m.Module = internal.NewModule(scope, schedule.NewScheduler(), m.RoomManager)
+	game.External.UserManager.SetOfflineNotifier(m.RoomManager.PlayerOffline)
 	event_dispatcher.RegisterDispatcher(m.ChanRPC)
 	return nil
 }

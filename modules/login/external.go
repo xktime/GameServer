@@ -32,7 +32,7 @@ func (m *LoginExternal) InitExternal(system *actor.ActorSystem) error {
 		return err
 	}
 	m.ChanRPC = internal.ChanRPC
-	connectManager, err := managers.NewConnectManager(context.Background(), scope)
+	connectManager, err := managers.NewConnectManager(context.Background(), scope, game.External.UserManager.LoginState())
 	if err != nil {
 		return err
 	}

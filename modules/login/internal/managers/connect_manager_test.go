@@ -5,6 +5,7 @@ import (
 	"gameserver/common/base/actor"
 	"gameserver/common/session"
 	"gameserver/core/gate"
+	"gameserver/modules/game/playersession"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -54,7 +55,7 @@ func newConnectManagerTestHarness(t *testing.T, now func() time.Time) *ConnectMa
 	if err != nil {
 		t.Fatalf("创建 Scope: %v", err)
 	}
-	manager, err := newConnectManager(context.Background(), scope, now)
+	manager, err := newConnectManager(context.Background(), scope, now, playersession.NewState())
 	if err != nil {
 		t.Fatalf("创建 ConnectManager: %v", err)
 	}
@@ -179,33 +180,26 @@ func TestConnectManagerRejectsStaleLoginAttempts(t *testing.T) {
 		t.Fatalf("登记后的活跃连接数 = %d，期望 1", got)
 	}
 
-	first, err := manager.BeginLogin(agent.ConnectionID())
+	first, err := manager.BeginLogin(agent.ConnectionID(), 1)
 	if err != nil {
 		t.Fatalf("开始首个登录请求: %v", err)
 	}
-	second, err := manager.BeginLogin(agent.ConnectionID())
+	second, err := manager.BeginLogin(agent.ConnectionID(), 2)
 	if err != nil {
 		t.Fatalf("开始第二个登录请求: %v", err)
 	}
-	if manager.IsCurrentLoginAttempt(first) {
+	if first.IsCurrent("") {
 		t.Fatal("旧登录请求仍被识别为当前请求")
 	}
-	if !manager.IsCurrentLoginAttempt(second) {
+	if !second.IsCurrent("") {
 		t.Fatal("最新登录请求未被识别为当前请求")
 	}
-	called := false
-	if !manager.WithCurrentLogin(second, func() { called = true }) || !called {
-		t.Fatal("当前登录请求未执行受保护回调")
-	}
-	called = false
-	if manager.WithCurrentLogin(first, func() { called = true }) || called {
-		t.Fatal("旧登录请求执行了受保护回调")
-	}
-
+	release := blockConnectManager(t, manager)
 	manager.RemoveClient(agent.ConnectionID())
-	if manager.IsCurrentLoginAttempt(second) {
+	if second.IsCurrent("") {
 		t.Fatal("连接移除后仍接受旧登录响应")
 	}
+	release()
 }
 
 func blockConnectManager(t *testing.T, manager *ConnectManager) func() {

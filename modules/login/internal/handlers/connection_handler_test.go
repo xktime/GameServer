@@ -77,7 +77,7 @@ func TestLoginHandlerSubmitsLogin(t *testing.T) {
 	}
 }
 
-func TestLoginHandlerWritesFailureWhenSubmitFails(t *testing.T) {
+func TestLoginHandlerDoesNotCloseConnectionOnAnUnownedFailure(t *testing.T) {
 	agent := &handlerConnectionAgent{id: 7}
 	login := asyncFixedLoginManager{submitErr: errors.New("queue full")}
 
@@ -86,15 +86,8 @@ func TestLoginHandlerWritesFailureWhenSubmitFails(t *testing.T) {
 		[]interface{}{&message.C2S_Login{}, agent, uint32(11)},
 	)
 
-	if len(agent.writes) != 1 || agent.sequences[0] != 11 {
-		t.Fatalf("提交失败响应 = %v，序号 = %v，期望一条序号为 11 的响应", agent.writes, agent.sequences)
-	}
-	response, ok := agent.writes[0].(*message.S2C_Login)
-	if !ok || response.LoginResult != -1 {
-		t.Fatalf("提交失败响应 = %#v，期望 LoginResult=-1", agent.writes[0])
-	}
-	if !agent.closed {
-		t.Fatal("提交失败后连接应关闭")
+	if len(agent.writes) != 0 || agent.closed {
+		t.Fatalf("Handler 不应自行回包或关闭连接: writes=%v closed=%t", agent.writes, agent.closed)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"gameserver/common/session"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/game/playersession"
 	"time"
 )
 
@@ -20,14 +21,6 @@ type ClientHeartbeat struct {
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
 	Agent         gate.ConnectionAgent
-	LoginAttempt  uint64
-}
-
-// LoginAttempt 标识某个连接的一次登录请求。序号在管理器内全局递增，
-// 因此即使重连复用了连接编号，也不会接收此前请求的过期响应。
-type LoginAttempt struct {
-	ConnectionID gate.ConnectionID
-	Sequence     uint64
 }
 
 // ConnectManager 的连接状态由绑定的 Actor 队列串行访问。
@@ -35,18 +28,22 @@ type ConnectManager struct {
 	actor.BaseActor
 	clients  map[gate.ConnectionID]*ClientHeartbeat
 	now      func() time.Time
-	sequence uint64
+	sessions *playersession.State
 }
 
-func NewConnectManager(ctx context.Context, scope *actor.Scope) (*ConnectManager, error) {
-	return newConnectManager(ctx, scope, time.Now)
+func NewConnectManager(ctx context.Context, scope *actor.Scope, sessions *playersession.State) (*ConnectManager, error) {
+	return newConnectManager(ctx, scope, time.Now, sessions)
 }
 
-func newConnectManager(ctx context.Context, scope *actor.Scope, now func() time.Time) (*ConnectManager, error) {
+func newConnectManager(ctx context.Context, scope *actor.Scope, now func() time.Time, sessions *playersession.State) (*ConnectManager, error) {
+	if sessions == nil {
+		return nil, fmt.Errorf("login: Player Session state is nil")
+	}
 	definition, err := actor.Define(scope, actor.Login, func(context.Context, string) (*ConnectManager, error) {
 		return &ConnectManager{
-			clients: make(map[gate.ConnectionID]*ClientHeartbeat),
-			now:     now,
+			clients:  make(map[gate.ConnectionID]*ClientHeartbeat),
+			now:      now,
+			sessions: sessions,
 		}, nil
 	})
 	if err != nil {
@@ -56,6 +53,10 @@ func newConnectManager(ctx context.Context, scope *actor.Scope, now func() time.
 }
 
 func (cm *ConnectManager) Register(agent gate.ConnectionAgent) {
+	if agent == nil {
+		return
+	}
+	cm.sessions.Register(agent)
 	connectedAt := cm.now()
 	if err := actor.Tell(context.Background(), cm.Ref(), func(actor.Context) error {
 		cm.clients[agent.ConnectionID()] = &ClientHeartbeat{
@@ -65,61 +66,15 @@ func (cm *ConnectManager) Register(agent gate.ConnectionAgent) {
 		}
 		return nil
 	}); err != nil {
+		cm.sessions.Disconnect(agent.ConnectionID())
 		log.Error("登记连接失败: %v", err)
 	}
 }
 
-// BeginLogin 为已注册的连接推进登录请求代次。
-func (cm *ConnectManager) BeginLogin(connectionID gate.ConnectionID) (LoginAttempt, error) {
-	result, err := actor.Call(context.Background(), cm.Ref(), func(actor.Context) (LoginAttempt, error) {
-		client, exists := cm.clients[connectionID]
-		if !exists {
-			return LoginAttempt{}, fmt.Errorf("login connection %d is not registered", connectionID)
-		}
-		cm.sequence++
-		client.LoginAttempt = cm.sequence
-		return LoginAttempt{ConnectionID: connectionID, Sequence: cm.sequence}, nil
-	})
-	if err != nil {
-		return LoginAttempt{}, err
-	}
-	return result, nil
-}
-
-// IsCurrentLoginAttempt 检查响应是否仍属于当前连接的最新登录请求；
-// 旧请求及连接移除后重新注册前的请求均视为过期。
-func (cm *ConnectManager) IsCurrentLoginAttempt(attempt LoginAttempt) bool {
-	result, err := actor.Call(context.Background(), cm.Ref(), func(actor.Context) (bool, error) {
-		client, exists := cm.clients[attempt.ConnectionID]
-		return exists && client.LoginAttempt == attempt.Sequence, nil
-	})
-	if err != nil {
-		log.Error("校验登录请求代际失败: %v", err)
-		return false
-	}
-	return result
-}
-
-// WithCurrentLogin runs fn while the connection actor holds the current
-// generation check, so a newer login request cannot start between session
-// creation and response delivery.
-func (cm *ConnectManager) WithCurrentLogin(attempt LoginAttempt, fn func()) bool {
-	if fn == nil {
-		return false
-	}
-	result, err := actor.Call(context.Background(), cm.Ref(), func(actor.Context) (bool, error) {
-		client, exists := cm.clients[attempt.ConnectionID]
-		if !exists || client.LoginAttempt != attempt.Sequence {
-			return false, nil
-		}
-		fn()
-		return true, nil
-	})
-	if err != nil {
-		log.Error("执行当前登录请求失败: %v", err)
-		return false
-	}
-	return result
+// BeginLogin performs only a short state transition, without entering the
+// connection Actor or waiting for User/Player preparation.
+func (cm *ConnectManager) BeginLogin(connectionID gate.ConnectionID, sequence uint32) (*playersession.Attempt, error) {
+	return cm.sessions.Begin(connectionID, sequence)
 }
 
 func (m *ConnectManager) OnTimer() {
@@ -144,8 +99,9 @@ func (cm *ConnectManager) doUpdateHeartbeat(connectionID gate.ConnectionID, hear
 	}
 }
 
-// RemoveClient 移除客户端 - 异步执行
+// RemoveClient 立即使登录尝试失效，再异步移除心跳记录。
 func (cm *ConnectManager) RemoveClient(clientID gate.ConnectionID) {
+	cm.sessions.Disconnect(clientID)
 	if err := actor.Tell(context.Background(), cm.Ref(), func(actor.Context) error {
 		cm.doRemoveClient(clientID)
 		return nil
@@ -183,7 +139,7 @@ func (cm *ConnectManager) doCheckHeartbeats() {
 	}
 
 	for clientID, heartbeat := range clientsCopy {
-		_, authenticated := session.FromData(heartbeat.Agent.UserData())
+		observed, authenticated := session.FromData(heartbeat.Agent.UserData())
 		idleTime := now.Sub(heartbeat.LastHeartbeat)
 		timedOut := authenticated && idleTime > HeartbeatTimeout
 		if !authenticated {
@@ -191,6 +147,9 @@ func (cm *ConnectManager) doCheckHeartbeats() {
 			timedOut = idleTime > LoginTimeout
 		}
 		if timedOut {
+			if !cm.sessions.Expire(clientID, observed) {
+				continue
+			}
 			log.Error("客户端心跳超时，准备断开连接: %d, 超时时间: %v",
 				clientID, idleTime)
 

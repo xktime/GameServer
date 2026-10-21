@@ -239,8 +239,17 @@ func (m *RoomManager) PlayerOffline(playerID int64) bool {
 		return false
 	}
 
-	room.sendExcept(playerID, &message.S2C_PlayerOffline{PlayerId: strconv.FormatInt(playerID, 10)})
-	return true
+	// UserManager calls this only after closing the current Session. Wait until
+	// dispatch has actually run, so a timed-out Room task cannot run after the
+	// next login has already committed. Delivery remains best effort.
+	_, err := actor.CallUntilDone(context.Background(), room.Ref(), func(actor.Context) (struct{}, error) {
+		room.messenger.SendExcept(room.realPlayerIDs, playerID, &message.S2C_PlayerOffline{PlayerId: strconv.FormatInt(playerID, 10)})
+		return struct{}{}, nil
+	})
+	if err != nil {
+		log.Error("派发玩家离线失败: player=%d error=%v", playerID, err)
+	}
+	return err == nil
 }
 
 func (m *RoomManager) CloseExpired() int {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
+	"gameserver/modules/game/playersession"
 	"gameserver/modules/login/internal/models"
 	"gameserver/modules/login/internal/processor"
 	"sync"
@@ -25,8 +26,7 @@ var (
 type authTask struct {
 	agent    gate.ConnectionAgent
 	request  *message.C2S_Login
-	sequence uint32
-	attempt  LoginAttempt
+	attempt  *playersession.Attempt
 	complete func(*models.LoginResponse)
 }
 

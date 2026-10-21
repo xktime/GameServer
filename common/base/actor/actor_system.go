@@ -552,6 +552,16 @@ func (s *Scope) Stop(ctx context.Context) error {
 
 // Call 将任务加入队列，并等待执行结果。
 func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error)) (R, error) {
+	return call(ctx, ref, task, false)
+}
+
+// CallUntilDone 的上下文只限制入队等待。任务被接收后，等待它实际完成
+// 或被运行时明确拒绝，避免把观察超时当作领域操作失败。调用链检查与 Call 相同。
+func CallUntilDone[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error)) (R, error) {
+	return call(ctx, ref, task, true)
+}
+
+func call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error), untilDone bool) (R, error) {
 	var zero R
 	if ctx == nil {
 		return zero, fmt.Errorf("actor: context is nil")
@@ -566,6 +576,9 @@ func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error
 	if execution, ok := actorExecution(ctx); ok {
 		identity := ref.identity()
 		if execution.current == identity {
+			if untilDone {
+				execution.Context = context.WithoutCancel(execution.Context)
+			}
 			return task(execution)
 		}
 		for _, caller := range execution.chain {
@@ -579,8 +592,12 @@ func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error
 	callContext, cancel := ref.withDefaultTimeout(ctx)
 	defer cancel()
 	result := make(chan taskResult, 1)
+	taskContext := callContext
+	if untilDone {
+		taskContext = context.WithoutCancel(ctx)
+	}
 	queued := actorTask{
-		ctx:    callContext,
+		ctx:    taskContext,
 		chain:  chain,
 		result: result,
 		run: func(execution Context) (any, error) {
@@ -591,19 +608,24 @@ func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error
 		return zero, err
 	}
 
-	select {
-	case completed := <-result:
-		if completed.err != nil {
-			return zero, completed.err
+	var completed taskResult
+	if untilDone {
+		completed = <-result
+	} else {
+		select {
+		case completed = <-result:
+		case <-callContext.Done():
+			return zero, fmt.Errorf("%w: %v", ErrOutcomeUnknown, callContext.Err())
 		}
-		value, ok := completed.value.(R)
-		if !ok {
-			return zero, fmt.Errorf("actor: task returned %T", completed.value)
-		}
-		return value, nil
-	case <-callContext.Done():
-		return zero, fmt.Errorf("%w: %v", ErrOutcomeUnknown, callContext.Err())
 	}
+	if completed.err != nil {
+		return zero, completed.err
+	}
+	value, ok := completed.value.(R)
+	if !ok {
+		return zero, fmt.Errorf("actor: task returned %T", completed.value)
+	}
+	return value, nil
 }
 
 // Tell 等待任务被接收，但不等待执行完成。调用方的上下文

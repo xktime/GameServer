@@ -44,11 +44,5 @@ func C2S_LoginHandler(login LoginManager, args []interface{}) {
 	log.Debug("收到C2S_Login消息: %v, agent: %v", msg, agent)
 	if err := login.SubmitLogin(msg, agent, sequence); err != nil {
 		log.Error("C2S_LoginHandler: 提交异步登录失败: %v", err)
-		writeLoginFailure(agent, sequence)
 	}
-}
-
-func writeLoginFailure(agent gate.ConnectionAgent, sequence uint32) {
-	agent.WriteMsgWithSeq(&message.S2C_Login{LoginResult: -1}, sequence)
-	agent.Close()
 }

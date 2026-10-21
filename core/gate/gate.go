@@ -14,6 +14,9 @@ import (
 type Gate struct {
 	Processor    network.Processor
 	AgentChanRPC *chanrpc.Server
+	// OnConnectionClosing must only invalidate local state; it runs before any
+	// transport close or asynchronous CloseAgent notification.
+	OnConnectionClosing func(ConnectionID)
 	// WebSocket 连接配置
 	WSAddr   string
 	CertFile string
@@ -96,6 +99,7 @@ type agent struct {
 	userDataMutex sync.RWMutex
 	userData      interface{}
 	closeData     interface{}
+	closing       sync.Once
 }
 
 func (gate *Gate) newAgent(conn network.Conn) *agent {
@@ -107,6 +111,7 @@ func (gate *Gate) newAgent(conn network.Conn) *agent {
 }
 
 func (a *agent) Run() {
+	defer a.invalidateConnection()
 	for {
 		data, err := a.conn.ReadMsg()
 		if err != nil {
@@ -130,6 +135,7 @@ func (a *agent) Run() {
 }
 
 func (a *agent) OnClose() {
+	a.invalidateConnection()
 	if a.gate.AgentChanRPC != nil {
 		err := a.gate.AgentChanRPC.Call0("CloseAgent", a, a.closeSnapshot())
 		if err != nil {
@@ -175,11 +181,21 @@ func (a *agent) RemoteAddr() net.Addr {
 }
 
 func (a *agent) Close() {
+	a.invalidateConnection()
 	a.conn.Close()
 }
 
 func (a *agent) Destroy() {
+	a.invalidateConnection()
 	a.conn.Destroy()
+}
+
+func (a *agent) invalidateConnection() {
+	a.closing.Do(func() {
+		if a.gate != nil && a.gate.OnConnectionClosing != nil {
+			a.gate.OnConnectionClosing(a.connectionID)
+		}
+	})
 }
 
 func (a *agent) ConnectionID() ConnectionID {
