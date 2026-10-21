@@ -89,9 +89,10 @@ type actorEntry struct {
 }
 
 type actorCell struct {
-	ref   ActorRef
-	queue chan actorTask
-	actor any
+	ref        ActorRef
+	queue      chan actorTask
+	queueSlots chan struct{} // 容量占用包括尚未提交的预留和已入队任务。
+	actor      any
 
 	admitMu           sync.RWMutex
 	lifecycleMu       sync.Mutex
@@ -134,11 +135,13 @@ type taskResult struct {
 }
 
 type actorIdentity struct {
+	scope      *Scope
 	key        actorKey
 	generation uint64
 }
 
 // ActorRef 是指向一个 Actor 实例的不可变引用，包含用于识别实例代次的信息。
+// 同一实例按任务实际入队顺序串行执行，不保证并发等待者的入队先后。
 type ActorRef struct {
 	system     *ActorSystem
 	scope      *Scope
@@ -147,11 +150,15 @@ type ActorRef struct {
 }
 
 // Context 携带当前 Actor 和同步调用链信息。
+// 标准 context 派生操作会保留执行身份；仅供当前 handler 的同步调用链使用，
+// 不得跨 goroutine 或在 handler 返回后复用。
 type Context struct {
 	context.Context
 	current actorIdentity
 	chain   []actorIdentity
 }
+
+type actorExecutionKey struct{}
 
 type actorBaseProvider interface {
 	ActorBase() *BaseActor
@@ -475,13 +482,14 @@ func (d *Definition[T, ID]) initialize(key actorKey, entry *actorEntry, id ID) {
 			}
 			provider.ActorBase().ref = ref
 			entry.cell = &actorCell{
-				ref:     ref,
-				queue:   make(chan actorTask, d.queueCapacity),
-				actor:   actor,
-				state:   cellRunning,
-				stopCh:  make(chan struct{}),
-				forceCh: make(chan struct{}),
-				done:    make(chan struct{}),
+				ref:        ref,
+				queue:      make(chan actorTask, d.queueCapacity),
+				queueSlots: make(chan struct{}, d.queueCapacity),
+				actor:      actor,
+				state:      cellRunning,
+				stopCh:     make(chan struct{}),
+				forceCh:    make(chan struct{}),
+				done:       make(chan struct{}),
 			}
 			go entry.cell.process()
 		}()
@@ -550,7 +558,9 @@ func (s *Scope) Stop(ctx context.Context) error {
 	return errors.Join(stopErrors...)
 }
 
-// Call 将任务加入队列，并等待执行结果。
+// Call 将任务加入目标 Actor 队列，并等待执行结果。
+// 同步调用链中再次调用同一实例会返回 ErrCallCycle；Actor 内部复用逻辑应直接调用普通方法。
+// 已接收任务的观察超时返回 ErrOutcomeUnknown，不代表任务已被撤销。
 func Call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error)) (R, error) {
 	return call(ctx, ref, task, false)
 }
@@ -575,12 +585,6 @@ func call[R any](ctx context.Context, ref ActorRef, task func(Context) (R, error
 	}
 	if execution, ok := actorExecution(ctx); ok {
 		identity := ref.identity()
-		if execution.current == identity {
-			if untilDone {
-				execution.Context = context.WithoutCancel(execution.Context)
-			}
-			return task(execution)
-		}
 		for _, caller := range execution.chain {
 			if caller == identity {
 				return zero, ErrCallCycle
@@ -671,7 +675,7 @@ func TryTell(ref ActorRef, task func(Context) error) error {
 	return entry.cell.admit(ref.system.ctx, queued, false)
 }
 
-// Stop 拒绝新任务，执行完已接收的任务，并等待实例终止。
+// Stop 拒绝新任务并唤醒尚未入队的等待者，执行完已接收的任务，并等待实例终止。
 func (r ActorRef) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")
@@ -699,7 +703,7 @@ func (r ActorRef) Stop(ctx context.Context) error {
 }
 
 // ForceStop 拒绝新任务、丢弃排队任务并跳过领域停止钩子，
-// 但仍会等待当前正在执行的任务返回。
+// 唤醒尚未入队的等待者，但仍会等待当前正在执行的任务返回。
 func (r ActorRef) ForceStop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("actor: context is nil")
@@ -769,18 +773,12 @@ func actorChain(ctx context.Context) []actorIdentity {
 }
 
 func actorExecution(ctx context.Context) (Context, bool) {
-	switch execution := ctx.(type) {
-	case Context:
-		return execution, true
-	case *Context:
-		return *execution, true
-	default:
-		return Context{}, false
-	}
+	execution, ok := ctx.Value(actorExecutionKey{}).(Context)
+	return execution, ok
 }
 
 func (r ActorRef) identity() actorIdentity {
-	return actorIdentity{key: r.key, generation: r.generation}
+	return actorIdentity{scope: r.scope, key: r.key, generation: r.generation}
 }
 
 func (c *actorCell) process() {
@@ -796,7 +794,7 @@ func (c *actorCell) process() {
 			c.finishForced()
 			return
 		case task := <-c.queue:
-			c.ref.system.recordDequeued(task)
+			c.recordDequeued(task)
 			select {
 			case <-c.forceCh:
 				c.failTask(task, ErrForcedStop)
@@ -821,7 +819,7 @@ func (c *actorCell) process() {
 					c.finishForced()
 					return
 				case task := <-c.queue:
-					c.ref.system.recordDequeued(task)
+					c.recordDequeued(task)
 					select {
 					case <-c.forceCh:
 						c.failTask(task, ErrForcedStop)
@@ -843,9 +841,10 @@ func (c *actorCell) process() {
 }
 
 func (c *actorCell) execute(task actorTask) bool {
-	identity := actorIdentity{key: c.ref.key, generation: c.ref.generation}
+	identity := c.ref.identity()
 	chain := append(append([]actorIdentity(nil), task.chain...), identity)
 	execution := Context{Context: task.ctx, current: identity, chain: chain}
+	execution.Context = context.WithValue(task.ctx, actorExecutionKey{}, execution)
 	var value any
 	var err error
 	panicked := false
@@ -873,35 +872,54 @@ func (c *actorCell) execute(task actorTask) bool {
 	return c.consecutivePanics >= c.ref.system.panicThreshold
 }
 
-func (c *actorCell) admit(ctx context.Context, task actorTask, wait bool) error {
+func (c *actorCell) admit(ctx context.Context, task actorTask, wait bool) (err error) {
+	defer func() {
+		if err != nil {
+			c.ref.system.metrics.rejectedTasks.Add(1)
+		}
+	}()
+	if err := c.availabilityError(); err != nil {
+		return err
+	}
+	task.enqueuedAt = time.Now()
+	// 在状态锁外预留容量；预留成功仍需在锁内确认入口开放，才能真正接收任务。
+	if wait {
+		select {
+		case c.queueSlots <- struct{}{}:
+		case <-c.stopCh:
+			return ErrActorStopped
+		case <-c.forceCh:
+			return ErrActorStopped
+		case <-c.done:
+			return c.availabilityError()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	} else {
+		select {
+		case c.queueSlots <- struct{}{}:
+		default:
+			return ErrQueueFull
+		}
+	}
+
 	c.admitMu.RLock()
 	defer c.admitMu.RUnlock()
 	if c.state != cellRunning {
-		c.ref.system.metrics.rejectedTasks.Add(1)
+		<-c.queueSlots
 		if c.state == cellQuarantined {
 			return ErrActorQuarantined
 		}
 		return ErrActorStopped
 	}
-	task.enqueuedAt = time.Now()
-	if !wait {
-		select {
-		case c.queue <- task:
-			c.ref.system.metrics.acceptedTasks.Add(1)
-			return nil
-		default:
-			c.ref.system.metrics.rejectedTasks.Add(1)
-			return ErrQueueFull
-		}
-	}
-	select {
-	case c.queue <- task:
-		c.ref.system.metrics.acceptedTasks.Add(1)
-		return nil
-	case <-ctx.Done():
-		c.ref.system.metrics.rejectedTasks.Add(1)
-		return ctx.Err()
-	}
+	c.queue <- task
+	c.ref.system.metrics.acceptedTasks.Add(1)
+	return nil
+}
+
+func (c *actorCell) recordDequeued(task actorTask) {
+	<-c.queueSlots
+	c.ref.system.recordDequeued(task)
 }
 
 func (c *actorCell) requestStop(ctx context.Context) {
@@ -968,7 +986,7 @@ func (c *actorCell) finishForcedLocked() {
 	for {
 		select {
 		case task := <-c.queue:
-			c.ref.system.recordDequeued(task)
+			c.recordDequeued(task)
 			c.failTask(task, ErrForcedStop)
 		default:
 			c.ref.scope.mu.Lock()
@@ -1012,7 +1030,7 @@ func (c *actorCell) quarantine() {
 	for {
 		select {
 		case task := <-c.queue:
-			c.ref.system.recordDequeued(task)
+			c.recordDequeued(task)
 			c.failTask(task, ErrActorQuarantined)
 		default:
 			c.ref.scope.mu.Lock()

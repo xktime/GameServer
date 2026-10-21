@@ -579,8 +579,9 @@ func TestCallReportsUnknownOutcomeAfterAcceptedTaskTimesOut(t *testing.T) {
 	}
 }
 
-func TestCallToCurrentActorExecutesInsideOuterMessage(t *testing.T) {
+func TestSynchronousCallsRejectCurrentActor(t *testing.T) {
 	system := NewActorSystem(time.Second)
+	t.Cleanup(func() { _ = system.Stop(context.Background()) })
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
@@ -596,27 +597,28 @@ func TestCallToCurrentActorExecutesInsideOuterMessage(t *testing.T) {
 		t.Fatalf("create actor: %v", err)
 	}
 
-	order := make([]string, 0, 3)
-	result, err := Call(context.Background(), instance.Ref(), func(execution Context) (string, error) {
-		order = append(order, "outer-before")
-		inner, innerErr := Call(execution, instance.Ref(), func(Context) (string, error) {
-			order = append(order, "inner")
-			return "inner-result", nil
+	for _, test := range []struct {
+		name string
+		call func(context.Context, ActorRef, func(Context) (int, error)) (int, error)
+	}{
+		{name: "Call", call: Call[int]},
+		{name: "CallUntilDone", call: CallUntilDone[int]},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			executed := false
+			_, err := Call(context.Background(), instance.Ref(), func(execution Context) (int, error) {
+				return test.call(execution, instance.Ref(), func(Context) (int, error) {
+					executed = true
+					return 42, nil
+				})
+			})
+			if !errors.Is(err, ErrCallCycle) {
+				t.Fatalf("self call = %v; want ErrCallCycle", err)
+			}
+			if executed {
+				t.Fatal("rejected self call executed its task")
+			}
 		})
-		order = append(order, "outer-after")
-		return inner, innerErr
-	})
-	if err != nil {
-		t.Fatalf("self Call: %v", err)
-	}
-	if result != "inner-result" {
-		t.Fatalf("result = %q; want inner-result", result)
-	}
-	want := []string{"outer-before", "inner", "outer-after"}
-	for i := range want {
-		if order[i] != want[i] {
-			t.Fatalf("execution order = %v; want %v", order, want)
-		}
 	}
 }
 
