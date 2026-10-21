@@ -3,9 +3,10 @@ package managers
 import (
 	"context"
 	"gameserver/common/base/actor"
+	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
-	"sync"
+	"gameserver/modules/game/playersession"
 	"testing"
 	"time"
 )
@@ -25,28 +26,12 @@ func (a *asyncLoginAgent) WriteMsgWithSeq(message any, sequence uint32) {
 }
 
 type fakeLoginAttempts struct {
-	mu         sync.Mutex
-	next       uint64
-	current    LoginAttempt
+	state      *playersession.State
 	heartbeats chan gate.ConnectionID
 }
 
-func (a *fakeLoginAttempts) BeginLogin(connectionID gate.ConnectionID) (LoginAttempt, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.next++
-	a.current = LoginAttempt{ConnectionID: connectionID, Sequence: a.next}
-	return a.current, nil
-}
-
-func (a *fakeLoginAttempts) WithCurrentLogin(attempt LoginAttempt, fn func()) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.current != attempt || fn == nil {
-		return false
-	}
-	fn()
-	return true
+func (a *fakeLoginAttempts) BeginLogin(connectionID gate.ConnectionID, sequence uint32) (*playersession.Attempt, error) {
+	return a.state.Begin(connectionID, sequence)
 }
 
 func (a *fakeLoginAttempts) UpdateHeartbeat(connectionID gate.ConnectionID) {
@@ -55,8 +40,12 @@ func (a *fakeLoginAttempts) UpdateHeartbeat(connectionID gate.ConnectionID) {
 
 type fakeUserLoginService struct{}
 
-func (fakeUserLoginService) UserLogin(gate.Agent, string, int32, message.LoginType) *message.S2C_Login {
-	return &message.S2C_Login{LoginResult: 1}
+func (fakeUserLoginService) UserLogin(attempt *playersession.Attempt, _ string, _ int32, _ message.LoginType) error {
+	if _, ok := attempt.Commit(models.User{AccountId: "test", PlayerId: 42}, &playersession.Slot{}); !ok {
+		return playersession.ErrStaleAttempt
+	}
+	attempt.Reply(&message.S2C_Login{LoginResult: 1})
+	return nil
 }
 
 func TestSubmitLoginReturnsBeforeAuthenticatorFinishes(t *testing.T) {
@@ -64,7 +53,7 @@ func TestSubmitLoginReturnsBeforeAuthenticatorFinishes(t *testing.T) {
 		started: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	attempts := &fakeLoginAttempts{heartbeats: make(chan gate.ConnectionID, 1)}
+	attempts := &fakeLoginAttempts{state: playersession.NewState(), heartbeats: make(chan gate.ConnectionID, 1)}
 	system := actor.NewActorSystem(time.Second)
 	scope, err := system.NewScope("login-manager-test")
 	if err != nil {
@@ -91,6 +80,7 @@ func TestSubmitLoginReturnsBeforeAuthenticatorFinishes(t *testing.T) {
 		testConnectionAgent: testConnectionAgent{id: 7},
 		writes:              make(chan loginWrite, 1),
 	}
+	attempts.state.Register(agent)
 	startedAt := time.Now()
 	if err := manager.SubmitLogin(&message.C2S_Login{ServerId: 1}, agent, 42); err != nil {
 		t.Fatalf("提交登录任务: %v", err)

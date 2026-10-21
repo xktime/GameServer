@@ -2,11 +2,13 @@ package managers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
+	"gameserver/modules/game/playersession"
 	"gameserver/modules/login/internal/models"
 	"gameserver/modules/login/internal/processor"
 	"time"
@@ -23,14 +25,13 @@ type LoginManager struct {
 }
 
 type UserLoginService interface {
-	UserLogin(gate.Agent, string, int32, message.LoginType) *message.S2C_Login
+	UserLogin(*playersession.Attempt, string, int32, message.LoginType) error
 }
 
-// LoginAttemptTracker 为异步登录完成回调提供连接代次校验；
+// LoginAttemptTracker 登记登录尝试并刷新连接心跳；
 // 生产环境由 ConnectManager 实现。
 type LoginAttemptTracker interface {
-	BeginLogin(gate.ConnectionID) (LoginAttempt, error)
-	WithCurrentLogin(LoginAttempt, func()) bool
+	BeginLogin(gate.ConnectionID, uint32) (*playersession.Attempt, error)
 	UpdateHeartbeat(gate.ConnectionID)
 }
 
@@ -70,6 +71,9 @@ func NewLoginManager(ctx context.Context, scope *actor.Scope, users UserLoginSer
 		}
 		config.Attempts = provided.Attempts
 	}
+	if config.Attempts == nil {
+		return nil, fmt.Errorf("login: LoginAttemptTracker is nil")
+	}
 	authPool, err := newAuthWorkerPool(config.Authenticator, config.Workers, config.QueueSize, config.Timeout)
 	if err != nil {
 		return nil, err
@@ -105,26 +109,28 @@ func (m *LoginManager) SubmitLogin(msg *message.C2S_Login, agent gate.Connection
 	if m.authPool == nil {
 		return ErrAuthPoolClosed
 	}
-	attempt := LoginAttempt{}
-	if m.attempts != nil {
-		var err error
-		attempt, err = m.attempts.BeginLogin(agent.ConnectionID())
-		if err != nil {
-			return err
+	attempt, err := m.attempts.BeginLogin(agent.ConnectionID(), sequence)
+	if err != nil {
+		if errors.Is(err, playersession.ErrAuthenticated) {
+			agent.WriteMsgWithSeq(&message.S2C_Login{LoginResult: -1}, sequence)
 		}
+		return err
 	}
 	// 复制请求，避免认证工作协程与调用方共享可变消息对象。
 	request := proto.Clone(msg).(*message.C2S_Login)
 	task := authTask{
-		agent:    agent,
-		request:  request,
-		sequence: sequence,
-		attempt:  attempt,
+		agent:   agent,
+		request: request,
+		attempt: attempt,
 	}
 	task.complete = func(response *models.LoginResponse) {
 		m.completeLogin(task, response)
 	}
-	return m.authPool.submit(task)
+	if err := m.authPool.submit(task); err != nil {
+		attempt.Fail()
+		return err
+	}
+	return nil
 }
 
 // Close 在已入队请求处理完毕后停止工作协程，
@@ -135,43 +141,22 @@ func (m *LoginManager) Close() {
 	}
 }
 
-// completeLogin 在创建会话前及回包前校验请求代次，丢弃已过期的认证结果。
+// completeLogin never occupies ConnectManager's Actor. Player owns the success
+// reply in its commit task; the Attempt owns any failure reply and close.
 func (m *LoginManager) completeLogin(task authTask, loginResp *models.LoginResponse) {
-	complete := func() {
-		response := m.completeLoginResponse(task.agent, task.request, loginResp)
-		task.agent.WriteMsgWithSeq(response, task.sequence)
-		if response.LoginResult != 1 {
-			task.agent.Close()
-			return
-		}
-		if m.attempts != nil {
-			m.attempts.UpdateHeartbeat(task.agent.ConnectionID())
-		}
-	}
-	if m.attempts == nil {
-		complete()
+	if !task.attempt.IsCurrent("") {
 		return
 	}
-	if !m.attempts.WithCurrentLogin(task.attempt, complete) {
+	if loginResp == nil || loginResp.ErrCode != 0 {
+		task.attempt.Fail()
 		return
 	}
-}
-
-func (m *LoginManager) completeLoginResponse(agent gate.Agent, msg *message.C2S_Login, loginResp *models.LoginResponse) *message.S2C_Login {
-	if loginResp == nil {
-		log.Error("login response is nil")
-		return &message.S2C_Login{LoginResult: -1}
-	}
-	log.Debug("loginResp %v", loginResp)
-	if loginResp.ErrCode != 0 {
-		log.Error("login failed %v", loginResp)
-		return &message.S2C_Login{
-			LoginResult: -1,
+	if err := m.users.UserLogin(task.attempt, loginResp.Openid, task.request.ServerId, task.request.LoginType); err != nil {
+		if !errors.Is(err, playersession.ErrStaleAttempt) {
+			log.Error("登录准备失败: connection=%d server=%d error=%v", task.agent.ConnectionID(), task.request.ServerId, err)
+			task.attempt.Fail()
 		}
+		return
 	}
-	response := m.users.UserLogin(agent, loginResp.Openid, msg.ServerId, msg.LoginType)
-	if response == nil {
-		return &message.S2C_Login{LoginResult: -1}
-	}
-	return response
+	m.attempts.UpdateHeartbeat(task.agent.ConnectionID())
 }

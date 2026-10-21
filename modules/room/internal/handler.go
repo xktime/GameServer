@@ -14,12 +14,10 @@ func handleMsg(msg proto.Message, handler interface{}) {
 
 type roomManager interface {
 	handlers.RoomManager
-	roomOfflineHandler
 }
 
 func InitHandler(manager roomManager) {
 	handleMsg(&message.C2S_RecordGameOperate{}, func(args []interface{}) {
 		handlers.C2S_RecordGameOperateHandler(manager, args)
 	})
-	registerCloseAgent(manager)
 }

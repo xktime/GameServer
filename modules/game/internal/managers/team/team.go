@@ -124,7 +124,7 @@ func (r *Registry) Leave(ctx context.Context, teamID int64, playerID int64) erro
 	if err != nil {
 		return err
 	}
-	empty, err := actor.Call(ctx, team.Ref(), func(actor.Context) (bool, error) {
+	empty, err := actor.CallUntilDone(ctx, team.Ref(), func(actor.Context) (bool, error) {
 		log.Debug("玩家 %d 请求离开队伍 %d", playerID, team.TeamId)
 		if team.LeaderId == playerID {
 			team.LeaderId = 0

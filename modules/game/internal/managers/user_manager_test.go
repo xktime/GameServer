@@ -14,7 +14,10 @@ import (
 	"gameserver/modules/game/internal/managers/team"
 	playermodel "gameserver/modules/game/internal/models/player"
 	gameprovision "gameserver/modules/game/internal/provision"
+	"gameserver/modules/game/playersession"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -43,20 +46,66 @@ func (r *fakeUserRepository) Save(user *models.User) error {
 }
 
 type userManagerAgent struct {
-	closed   bool
-	userData any
+	mu          sync.Mutex
+	id          gate.ConnectionID
+	closed      bool
+	userData    any
+	writes      []any
+	sequences   []uint32
+	beforeWrite func()
 }
 
 var _ gate.Agent = (*userManagerAgent)(nil)
 
-func (*userManagerAgent) WriteMsg(any)                {}
-func (*userManagerAgent) WriteMsgWithSeq(any, uint32) {}
-func (*userManagerAgent) LocalAddr() net.Addr         { return nil }
-func (*userManagerAgent) RemoteAddr() net.Addr        { return nil }
-func (a *userManagerAgent) Close()                    { a.closed = true }
-func (*userManagerAgent) Destroy()                    {}
-func (a *userManagerAgent) UserData() any             { return a.userData }
-func (a *userManagerAgent) SetUserData(data any)      { a.userData = data }
+func (a *userManagerAgent) WriteMsg(msg any) { a.WriteMsgWithSeq(msg, 0) }
+func (a *userManagerAgent) WriteMsgWithSeq(msg any, sequence uint32) {
+	if a.beforeWrite != nil {
+		a.beforeWrite()
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.writes = append(a.writes, msg)
+	a.sequences = append(a.sequences, sequence)
+}
+func (*userManagerAgent) LocalAddr() net.Addr               { return nil }
+func (*userManagerAgent) RemoteAddr() net.Addr              { return nil }
+func (a *userManagerAgent) ConnectionID() gate.ConnectionID { return a.id }
+func (a *userManagerAgent) Close()                          { a.mu.Lock(); defer a.mu.Unlock(); a.closed = true }
+func (*userManagerAgent) Destroy()                          {}
+func (a *userManagerAgent) UserData() any                   { a.mu.Lock(); defer a.mu.Unlock(); return a.userData }
+func (a *userManagerAgent) SetUserData(data any)            { a.mu.Lock(); defer a.mu.Unlock(); a.userData = data }
+
+var userTestConnectionID atomic.Uint64
+
+func beginUserLogin(t *testing.T, manager *UserManager, agent *userManagerAgent, sequence uint32) *playersession.Attempt {
+	t.Helper()
+	if agent.id == 0 {
+		agent.id = gate.ConnectionID(userTestConnectionID.Add(1))
+	}
+	manager.sessions.Register(agent)
+	attempt, err := manager.sessions.Begin(agent.id, sequence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return attempt
+}
+
+func testUserLogin(t *testing.T, manager *UserManager, agent *userManagerAgent, openID string, serverID int32, loginType message.LoginType) *message.S2C_Login {
+	t.Helper()
+	attempt := beginUserLogin(t, manager, agent, 1)
+	if err := manager.UserLogin(attempt, openID, serverID, loginType); err != nil {
+		attempt.Fail()
+	}
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	for _, msg := range agent.writes {
+		if response, ok := msg.(*message.S2C_Login); ok {
+			return response
+		}
+	}
+	t.Fatal("missing login reply")
+	return nil
+}
 
 func TestUserManagerInitializationCommandCanRetry(t *testing.T) {
 	system := actor.NewActorSystem(time.Second)
@@ -102,7 +151,7 @@ func TestUserManagerLoginCreatesNewUserThroughRepository(t *testing.T) {
 	manager := newUserManagerRepositoryTestHarness(t, repository, provisionmanager.NewMemoryRepository())
 	agent := &userManagerAgent{}
 
-	response := manager.UserLogin(agent, "new-open-id", 7, message.LoginType_None)
+	response := testUserLogin(t, manager, agent, "new-open-id", 7, message.LoginType_None)
 	if response.LoginResult != 1 {
 		t.Fatalf("新账号登录结果 = %d，期望成功", response.LoginResult)
 	}
@@ -131,7 +180,7 @@ func TestUserManagerLoginFailsWhenRepositoryLoadFails(t *testing.T) {
 	manager := newUserManagerRepositoryTestHarness(t, repository, provisionmanager.NewMemoryRepository())
 	agent := &userManagerAgent{}
 
-	response := manager.UserLogin(agent, "existing-open-id", 8, message.LoginType_None)
+	response := testUserLogin(t, manager, agent, "existing-open-id", 8, message.LoginType_None)
 	if response.LoginResult != -1 {
 		t.Fatalf("查询失败时登录结果 = %d，期望失败", response.LoginResult)
 	}
@@ -149,7 +198,7 @@ func TestUserManagerLoginReusesPendingProvisionIntent(t *testing.T) {
 	manager := newUserManagerRepositoryTestHarness(t, repository, intents)
 
 	first := &userManagerAgent{}
-	if response := manager.UserLogin(first, "pending-open-id", 9, message.LoginType_None); response.LoginResult != 1 {
+	if response := testUserLogin(t, manager, first, "pending-open-id", 9, message.LoginType_None); response.LoginResult != 1 {
 		t.Fatalf("首次登录结果 = %d，期望成功", response.LoginResult)
 	}
 	firstIntent, err := intents.FindByAccount("9_pending-open-id")
@@ -158,7 +207,7 @@ func TestUserManagerLoginReusesPendingProvisionIntent(t *testing.T) {
 	}
 
 	second := &userManagerAgent{}
-	if response := manager.UserLogin(second, "pending-open-id", 9, message.LoginType_None); response.LoginResult != 1 {
+	if response := testUserLogin(t, manager, second, "pending-open-id", 9, message.LoginType_None); response.LoginResult != 1 {
 		t.Fatalf("重试登录结果 = %d，期望成功", response.LoginResult)
 	}
 	secondIntent, err := intents.FindByAccount("9_pending-open-id")
@@ -175,7 +224,7 @@ func TestUserManagerLoginReusesPendingProvisionIntent(t *testing.T) {
 func TestUserManagerTerminatesSessionAfterProvisionFailure(t *testing.T) {
 	manager := newUserManagerRepositoryTestHarness(t, &fakeUserRepository{}, provisionmanager.NewMemoryRepository())
 	agent := &userManagerAgent{}
-	if response := manager.UserLogin(agent, "failed-open-id", 10, message.LoginType_None); response.LoginResult != 1 {
+	if response := testUserLogin(t, manager, agent, "failed-open-id", 10, message.LoginType_None); response.LoginResult != 1 {
 		t.Fatalf("登录结果 = %d，期望成功", response.LoginResult)
 	}
 

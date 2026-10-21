@@ -16,6 +16,14 @@ _避免使用_: User、Agent、Session
 Player 在一次在线期间的临时存在。
 _避免使用_: Player、User、Agent
 
+**Login Attempt**:
+连接发起的一次建立 Player Session 的尝试，具有服务器登记的先后顺序。连接断开、同一连接出现更新尝试，或同一 User 已有登记更晚且成功的尝试时，未完成的旧尝试失效，不能建立 Player Session 或返回登录成功。
+_避免使用_: Player Session、Match Attempt、登录结果
+
+**Session Takeover（会话接管）**:
+同一 User 的新 Player Session 在登录准备成功且 Login Attempt 仍有效时替代旧会话，保留 Player 的当前游戏状态及 Team、Room 归属。准备失败或尝试失效不替代旧会话，旧连接的关闭不代表 Player 下线。
+_避免使用_: Player 下线、重新建角、断线重登
+
 **Team**:
 一组共同参与组队行为的 Player；进入匹配时作为不可拆分的整体，并共享 Room 归属。
 _避免使用_: Group、Party、Room

@@ -57,10 +57,6 @@ func (m *fakeRoomMaintenance) HandleRecordOperate(int64, string, string) *messag
 	return &message.S2C_RecordGameOperate{}
 }
 
-func (m *fakeRoomMaintenance) PlayerOffline(int64) bool {
-	return false
-}
-
 func TestModuleOwnsTenSecondRoomMaintenance(t *testing.T) {
 	previousSkeleton := skeleton
 	skeleton = common.NewSkeleton()

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"gameserver/common/base/actor"
 	"gameserver/common/models"
+	"gameserver/common/msg/message"
 	"gameserver/common/utils"
 	"gameserver/modules/game/internal/managers/team"
 	playermodel "gameserver/modules/game/internal/models/player"
 	gameprovision "gameserver/modules/game/internal/provision"
+	"gameserver/modules/game/playersession"
 	"testing"
 	"time"
 )
@@ -16,6 +18,7 @@ import (
 type fakePlayerRepository struct {
 	loaded  *Player
 	loadErr error
+	saveErr error
 	loadIDs []int64
 	saved   []Snapshot
 }
@@ -45,7 +48,29 @@ func (r *fakePlayerRepository) Save(current *Player) error {
 		TowerLevel: current.TowerLevel,
 		PlayerInfo: info,
 	})
-	return nil
+	return r.saveErr
+}
+
+func TestOfflinePreservesFinalSnapshotWhenSaveFails(t *testing.T) {
+	saveFailure := errors.New("save unavailable")
+	repository := &fakePlayerRepository{loaded: &Player{PlayerId: 42}}
+	registry := newPlayerRepositoryTestRegistry(t, repository)
+	t.Cleanup(func() { repository.saveErr = nil })
+	user := models.User{AccountId: "7_offline", PlayerId: 42}
+	prepared, err := registry.PrepareLogin(context.Background(), user, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitTestPlayer(t, prepared, &lifecycleAgent{}, user)
+	before, err := registry.Snapshot(context.Background(), user.PlayerId)
+	if err != nil || before.TeamID == 0 {
+		t.Fatalf("online snapshot = %#v, %v", before, err)
+	}
+	repository.saveErr = saveFailure
+	after, err := registry.Offline(context.Background(), user.PlayerId)
+	if !errors.Is(err, saveFailure) || after.PlayerID != before.PlayerID || after.TeamID != before.TeamID {
+		t.Fatalf("offline snapshot = %#v, error = %v", after, err)
+	}
 }
 
 func TestRegistryLoginLoadsAndSavesExistingPlayerThroughRepository(t *testing.T) {
@@ -57,10 +82,12 @@ func TestRegistryLoginLoadsAndSavesExistingPlayerThroughRepository(t *testing.T)
 	registry := newPlayerRepositoryTestRegistry(t, repository)
 	agent := &lifecycleAgent{}
 
-	err := registry.Login(context.Background(), agent, models.User{PlayerId: 42, ServerId: 7})
+	user := models.User{AccountId: "7_existing", PlayerId: 42, ServerId: 7}
+	prepared, err := registry.PrepareLogin(context.Background(), user, nil, false)
 	if err != nil {
 		t.Fatalf("老玩家登录: %v", err)
 	}
+	commitTestPlayer(t, prepared, agent, user)
 	if len(repository.loadIDs) != 1 || repository.loadIDs[0] != 42 {
 		t.Fatalf("Repository 加载 ID = %v，期望 [42]", repository.loadIDs)
 	}
@@ -85,7 +112,8 @@ func TestRegistryLoginNewPlayerSkipsRepositoryLoad(t *testing.T) {
 	registry := newPlayerRepositoryTestRegistry(t, repository)
 	agent := &lifecycleAgent{}
 
-	err := registry.LoginProvision(context.Background(), agent, models.User{PlayerId: 43, OpenId: "new-player", ServerId: 8}, gameprovision.PlayerData{
+	user := models.User{AccountId: "8_new-player", PlayerId: 43, OpenId: "new-player", ServerId: 8}
+	prepared, err := registry.PrepareLogin(context.Background(), user, &gameprovision.PlayerData{
 		PlayerID: 43,
 		TeamID:   utils.FlakeId(),
 		PlayerInfo: &playermodel.PlayerInfo{
@@ -94,10 +122,11 @@ func TestRegistryLoginNewPlayerSkipsRepositoryLoad(t *testing.T) {
 			PlayerName: "new-player",
 			Level:      1,
 		},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("新玩家登录: %v", err)
 	}
+	commitTestPlayer(t, prepared, agent, user)
 	if len(repository.loadIDs) != 0 {
 		t.Fatalf("新玩家触发了 Repository 加载: %v", repository.loadIDs)
 	}
@@ -114,12 +143,26 @@ func TestRegistryLoginPropagatesExistingPlayerLoadFailure(t *testing.T) {
 	repository := &fakePlayerRepository{loadErr: loadFailure}
 	registry := newPlayerRepositoryTestRegistry(t, repository)
 
-	err := registry.Login(context.Background(), &lifecycleAgent{}, models.User{PlayerId: 44})
+	_, err := registry.PrepareLogin(context.Background(), models.User{PlayerId: 44}, nil, false)
 	if !errors.Is(err, loadFailure) {
 		t.Fatalf("老玩家加载错误 = %v，期望 %v", err, loadFailure)
 	}
 	if len(repository.saved) != 0 {
 		t.Fatalf("加载失败后仍保存了 Player: %#v", repository.saved)
+	}
+}
+
+func commitTestPlayer(t *testing.T, prepared *PreparedLogin, agent *lifecycleAgent, user models.User) {
+	t.Helper()
+	state := playersession.NewState()
+	state.Register(agent)
+	attempt, err := state.Begin(agent.ConnectionID(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := prepared.Commit(context.Background(), attempt, user, &message.S2C_Login{LoginResult: 1})
+	if err != nil || !committed {
+		t.Fatalf("commit = %t, %v", committed, err)
 	}
 }
 

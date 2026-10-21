@@ -10,12 +10,12 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/common/session"
 	"gameserver/common/utils"
-	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
 	provisionmanager "gameserver/modules/game/internal/managers/provision"
 	"gameserver/modules/game/internal/managers/team"
 	gameprovision "gameserver/modules/game/internal/provision"
+	"gameserver/modules/game/playersession"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +29,8 @@ type UserManager struct {
 	actor.BaseActor
 	players          *player.Registry
 	teams            *team.Registry
-	sessions         *playerSessions
+	sessions         *playersession.State
+	offline          func(int64) bool
 	nameCache        map[string]bool
 	nameBloomFilter  *utils.BloomFilter
 	repository       userRepository                  `bson:"-"`
@@ -92,7 +93,7 @@ func newUserManager(
 		manager := &UserManager{
 			players:          players,
 			teams:            teams,
-			sessions:         newPlayerSessions(),
+			sessions:         playersession.NewState(),
 			nameCache:        make(map[string]bool),
 			nameBloomFilter:  utils.NewBloomFilter(1000000, 7),
 			repository:       repository,
@@ -148,25 +149,26 @@ func (m *UserManager) OnStop(context.Context) error {
 	}
 	now := time.Now().Unix()
 	stopErrors := make([]error, 0)
-	for _, active := range m.sessions.all() {
-		user := active.user
+	for _, active := range m.sessions.All() {
+		user := active.User
 		user.LastOfflineTime = now
-		if err := m.repository.Save(user); err != nil {
+		if err := m.repository.Save(&user); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
 	return errors.Join(stopErrors...)
 }
 
-func (m *UserManager) UserLogin(agent gate.Agent, openID string, serverID int32, loginType message.LoginType) *message.S2C_Login {
-	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (*message.S2C_Login, error) {
-		return m.doUserLogin(execution, agent, openID, serverID, loginType)
+func (m *UserManager) LoginState() *playersession.State { return m.sessions }
+
+// SetOfflineNotifier is configured during startup, before requests are served.
+func (m *UserManager) SetOfflineNotifier(notify func(int64) bool) { m.offline = notify }
+
+func (m *UserManager) UserLogin(attempt *playersession.Attempt, openID string, serverID int32, loginType message.LoginType) error {
+	_, err := actor.CallUntilDone(context.Background(), m.Ref(), func(execution actor.Context) (struct{}, error) {
+		return struct{}{}, m.doUserLogin(execution, attempt, openID, serverID, loginType)
 	})
-	if err != nil {
-		log.Error("用户登录失败: %v", err)
-		return &message.S2C_Login{LoginResult: -1}
-	}
-	return response
+	return err
 }
 
 // HandleProvisionFailure 关闭与失败的首次登录创建意图关联的
@@ -176,12 +178,12 @@ func (m *UserManager) HandleProvisionFailure(ctx context.Context, intent gamepro
 	if ctx == nil {
 		return errors.New("game: provision failure context is nil")
 	}
-	_, err := actor.Call(ctx, m.Ref(), func(execution actor.Context) (struct{}, error) {
-		active, ok := m.sessions.current(intent.AccountID)
+	_, err := actor.CallUntilDone(ctx, m.Ref(), func(execution actor.Context) (struct{}, error) {
+		active, ok := m.sessions.Current(intent.AccountID)
 		if !ok {
 			return struct{}{}, nil
 		}
-		active, ok = m.sessions.close(active.snapshot)
+		active, ok = m.sessions.Close(active.Snapshot)
 		if !ok {
 			return struct{}{}, nil
 		}
@@ -190,25 +192,25 @@ func (m *UserManager) HandleProvisionFailure(ctx context.Context, intent gamepro
 	return err
 }
 
-func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID string, serverID int32, loginType message.LoginType) (*message.S2C_Login, error) {
-	if agent == nil {
-		return &message.S2C_Login{LoginResult: -1}, nil
-	}
-	if _, authenticated := session.FromData(agent.UserData()); authenticated {
-		return &message.S2C_Login{LoginResult: -1}, nil
+func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.Attempt, openID string, serverID int32, loginType message.LoginType) error {
+	if openID == "" {
+		return fmt.Errorf("game: invalid login identity for server %d", serverID)
 	}
 	accountID := fmt.Sprintf("%d_%s", serverID, openID)
-	if existingSession, exists := m.sessions.current(accountID); exists {
-		log.Debug("UserLogin: user already online (顶号操作): %s", accountID)
-		closedSession, _ := m.sessions.close(existingSession.snapshot)
-		if err := m.doUserOffline(ctx, closedSession, true); err != nil {
-			return nil, err
-		}
+	if !attempt.IsCurrent(accountID) {
+		return playersession.ErrStaleAttempt
 	}
+	existing, online := m.sessions.Current(accountID)
 
-	user, err := m.repository.FindByLogin(openID, serverID)
-	if err != nil {
-		return nil, err
+	// Login metadata can also be newer than Mongo, especially while a first
+	// login's durable Intent is still being materialized.
+	user := &existing.User
+	if !online {
+		var err error
+		user, err = m.repository.FindByLogin(openID, serverID)
+		if err != nil {
+			return err
+		}
 	}
 	isNew := user == nil
 	loginTime := time.Now().Unix()
@@ -225,7 +227,7 @@ func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID 
 		}
 		intent, findErr := m.intentRepository.FindByAccount(accountID)
 		if findErr != nil {
-			return nil, findErr
+			return findErr
 		}
 		if intent != nil {
 			// 重试首次登录时，以待处理或失败的持久化创建意图为准，
@@ -241,7 +243,7 @@ func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID 
 			intent.LastError = ""
 			intent.UpdatedAt = time.Now()
 			if err := m.intentRepository.Save(intent); err != nil {
-				return nil, err
+				return err
 			}
 		} else {
 			teamID := utils.FlakeId()
@@ -260,32 +262,25 @@ func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID 
 				Team:          teamData,
 			}
 			if err := m.intentRepository.Save(intent); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	} else {
 		user.RecordLogin(loginTime)
 	}
 
-	var loginErr error
+	if !attempt.IsCurrent(accountID) {
+		return playersession.ErrStaleAttempt
+	}
+	var initial *gameprovision.PlayerData
 	if isNew {
-		loginErr = m.players.LoginProvision(ctx, agent, *user, playerData)
-	} else {
-		loginErr = m.players.Login(ctx, agent, *user)
+		initial = &playerData
 	}
-	if loginErr != nil {
-		return nil, loginErr
-	}
-	activeSession, err := m.sessions.open(user, agent)
+	prepared, err := m.players.PrepareLogin(ctx, *user, initial, online)
 	if err != nil {
-		_ = m.players.Stop(ctx, user.PlayerId)
-		return nil, err
+		return err
 	}
-	agent.SetUserData(activeSession.snapshot)
-	if err := m.repository.Save(user); err != nil {
-		log.Error("保存登录用户 %s 失败: %v", accountID, err)
-	}
-	return &message.S2C_Login{
+	response := &message.S2C_Login{
 		LoginResult: 1,
 		LoginInfo: &message.LoginInfo{
 			OpenId:        user.OpenId,
@@ -293,12 +288,24 @@ func (m *UserManager) doUserLogin(ctx context.Context, agent gate.Agent, openID 
 			TotalDays:     user.TotalLoginDays,
 			IsAccept:      false,
 		},
-	}, nil
+	}
+	committed, err := prepared.Commit(ctx, attempt, *user, response)
+	if !committed {
+		cleanupErr := prepared.Abort(context.Background())
+		if err != nil || cleanupErr != nil {
+			return errors.Join(err, cleanupErr)
+		}
+		return playersession.ErrStaleAttempt
+	}
+	if err := m.repository.Save(user); err != nil {
+		log.Error("保存登录用户 %s 失败: %v", accountID, err)
+	}
+	return err
 }
 
 func (m *UserManager) ClosePlayerSession(snapshot session.PlayerSession) {
 	if err := actor.Tell(context.Background(), m.Ref(), func(execution actor.Context) error {
-		active, ok := m.sessions.close(snapshot)
+		active, ok := m.sessions.Close(snapshot)
 		if !ok {
 			return nil
 		}
@@ -308,36 +315,33 @@ func (m *UserManager) ClosePlayerSession(snapshot session.PlayerSession) {
 	}
 }
 
-func (m *UserManager) doUserOffline(ctx context.Context, active activePlayerSession, save bool) error {
-	user := active.user
+func (m *UserManager) doUserOffline(ctx context.Context, active playersession.Active, save bool) error {
+	user := active.User
 	offlineErrors := make([]error, 0)
+	// Only a verified current Session reaches this point. Room no longer treats
+	// raw transport CloseAgent events as Player offline events.
+	if m.offline != nil {
+		m.offline(user.PlayerId)
+	}
 	if save {
 		user.LastOfflineTime = time.Now().Unix()
-		if err := m.repository.Save(user); err != nil {
+		if err := m.repository.Save(&user); err != nil {
 			offlineErrors = append(offlineErrors, err)
 		}
 	}
 
-	playerSnapshot, err := m.players.Snapshot(ctx, user.PlayerId)
-	if err == nil {
-		if sendErr := m.players.SendToClient(ctx, user.PlayerId, &message.S2C_Logout{}); sendErr != nil {
-			offlineErrors = append(offlineErrors, sendErr)
-		}
-		if stopErr := m.players.Stop(ctx, user.PlayerId); stopErr != nil {
-			offlineErrors = append(offlineErrors, stopErr)
-		}
-		if playerSnapshot.TeamID != 0 {
-			if leaveErr := m.teams.Leave(ctx, playerSnapshot.TeamID, user.PlayerId); leaveErr != nil &&
-				!errors.Is(leaveErr, actor.ErrActorStopped) {
-				offlineErrors = append(offlineErrors, leaveErr)
-			}
-		}
-	} else if !errors.Is(err, actor.ErrActorStopped) {
+	playerSnapshot, err := m.players.Offline(ctx, user.PlayerId)
+	if err != nil && !errors.Is(err, actor.ErrActorStopped) {
 		offlineErrors = append(offlineErrors, err)
 	}
-	if active.agent != nil {
-		active.agent.SetUserData(nil)
-		active.agent.Close()
+	if playerSnapshot.TeamID != 0 {
+		if leaveErr := m.teams.Leave(ctx, playerSnapshot.TeamID, user.PlayerId); leaveErr != nil &&
+			!errors.Is(leaveErr, actor.ErrActorStopped) {
+			offlineErrors = append(offlineErrors, leaveErr)
+		}
+	}
+	if active.Agent != nil {
+		active.Agent.Close()
 	}
 	log.Debug("User offline: %s, PlayerId: %d", user.AccountId, user.PlayerId)
 	return errors.Join(offlineErrors...)
