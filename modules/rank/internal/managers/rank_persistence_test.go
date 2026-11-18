@@ -9,6 +9,7 @@ import (
 	"gameserver/common/msg/message"
 	"gameserver/modules/rank/internal/documents"
 	rankmodels "gameserver/modules/rank/internal/models"
+	"gameserver/modules/rank/playerread"
 	"sort"
 	"sync/atomic"
 	"testing"
@@ -32,7 +33,7 @@ type memoryRankStore struct {
 	deleteError       error
 }
 
-func (r *memoryRankStore) LoadRank() (*documents.RankManager, error) {
+func (r *memoryRankStore) LoadRank(ctx context.Context) (*documents.RankManager, error) {
 	if r.loadRankError != nil {
 		return nil, r.loadRankError
 	}
@@ -44,7 +45,7 @@ func (r *memoryRankStore) LoadRank() (*documents.RankManager, error) {
 	return &data, err
 }
 
-func (r *memoryRankStore) LoadSeason() (*SeasonManager, error) {
+func (r *memoryRankStore) LoadSeason(ctx context.Context) (*SeasonManager, error) {
 	if len(r.loadSeasonErrors) > 0 {
 		err := r.loadSeasonErrors[0]
 		r.loadSeasonErrors = r.loadSeasonErrors[1:]
@@ -58,7 +59,7 @@ func (r *memoryRankStore) LoadSeason() (*SeasonManager, error) {
 	return &data, err
 }
 
-func (r *memoryRankStore) LoadBoards() ([]documents.Leaderboard, error) {
+func (r *memoryRankStore) LoadBoards(ctx context.Context) ([]documents.Leaderboard, error) {
 	if r.loadBoardsError != nil {
 		return nil, r.loadBoardsError
 	}
@@ -78,7 +79,7 @@ func (r *memoryRankStore) LoadBoards() ([]documents.Leaderboard, error) {
 	return result, nil
 }
 
-func (r *memoryRankStore) Save(data mongodb.PersistData) error {
+func (r *memoryRankStore) Save(ctx context.Context, data mongodb.PersistData) error {
 	switch doc := data.(type) {
 	case *documents.RankManager:
 		if r.saveRankError != nil {
@@ -115,17 +116,17 @@ func (r *memoryRankStore) Save(data mongodb.PersistData) error {
 	}
 }
 
-func (r *memoryRankStore) InsertBoard(board *documents.Leaderboard) error {
+func (r *memoryRankStore) InsertBoard(ctx context.Context, board *documents.Leaderboard) error {
 	if err := r.insertBoardErrors[board.PersistId]; err != nil {
 		return err
 	}
 	if _, exists := r.boards[board.PersistId]; exists {
 		return nil
 	}
-	return r.Save(board)
+	return r.Save(ctx, board)
 }
 
-func (r *memoryRankStore) DeleteBoard(id string) error {
+func (r *memoryRankStore) DeleteBoard(ctx context.Context, id string) error {
 	if r.deleteError != nil {
 		return r.deleteError
 	}
@@ -133,7 +134,7 @@ func (r *memoryRankStore) DeleteBoard(id string) error {
 	return nil
 }
 
-func startTestRankManager(t *testing.T, repository rankDocumentStore, players fakePlayerReader, now func() time.Time) (*RankManager, *actor.ActorSystem) {
+func startTestRankManager(t *testing.T, repository rankDocumentStore, players playerread.PlayerReader, now func() time.Time) (*RankManager, *actor.ActorSystem) {
 	t.Helper()
 	system := actor.NewActorSystem(time.Second)
 	t.Cleanup(func() {

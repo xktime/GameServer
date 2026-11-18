@@ -2,9 +2,9 @@ package managers
 
 import (
 	"context"
+	"errors"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
-	matchmodels "gameserver/modules/match/internal/models"
 	"gameserver/modules/match/playerread"
 	"gameserver/modules/room/matchentry"
 	"reflect"
@@ -16,50 +16,76 @@ import (
 type fakeMatchPlayerReader struct {
 	players map[int64]playerread.PlayerSnapshot
 	teams   map[int64]playerread.TeamSnapshot
+	err     error
 }
 
-func (f *fakeMatchPlayerReader) FindOnline(playerID int64) (playerread.PlayerSnapshot, bool) {
+func (f *fakeMatchPlayerReader) FindOnline(ctx context.Context, playerID int64) (playerread.PlayerSnapshot, bool, error) {
+	if f.err != nil {
+		return playerread.PlayerSnapshot{}, false, f.err
+	}
 	snapshot, ok := f.players[playerID]
-	return snapshot, ok
+	return snapshot, ok, nil
 }
 
-func (f *fakeMatchPlayerReader) FindOnlineTeam(playerID int64) (playerread.TeamSnapshot, bool) {
+func (f *fakeMatchPlayerReader) FindOnlineTeam(ctx context.Context, playerID int64) (playerread.TeamSnapshot, bool, error) {
+	if f.err != nil {
+		return playerread.TeamSnapshot{}, false, f.err
+	}
 	snapshot, ok := f.teams[playerID]
 	snapshot.MemberIDs = append([]int64(nil), snapshot.MemberIDs...)
-	return snapshot, ok
+	return snapshot, ok, nil
 }
 
-func newMatchTestManager(players playerread.PlayerReader) *MatchManager {
-	return &MatchManager{
+func TestMatchManagerPropagatesLookupFailuresWithoutChangingQueue(t *testing.T) {
+	for _, failure := range []error{context.Canceled, context.DeadlineExceeded, actor.ErrActorQuarantined, errors.New("storage unavailable")} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			players := &fakeMatchPlayerReader{err: failure}
+			manager := newMatchTestManager(players)
+			manager.matchQueues[1].AddTeamRequest(&teamMatchRequest{TeamId: 7, PlayerIds: []int64{42}})
+			if _, response, err := manager.doHandleMatch(context.Background(), 42, &message.C2S_StartMatch{Type: 1}); response != nil || !errors.Is(err, failure) {
+				t.Fatalf("start match lookup failure = %v, %v", response, err)
+			}
+			if _, response, err := manager.doHandleCancelMatch(context.Background(), 42); response != nil || !errors.Is(err, failure) {
+				t.Fatalf("cancel match lookup failure = %v, %v", response, err)
+			}
+			if manager.matchQueues[1].GetQueueSize() != 1 || !manager.matchQueues[1].IsTeamInQueue(7) {
+				t.Fatal("failed lookup changed the matching queue")
+			}
+		})
+	}
+}
+
+func newMatchTestManager(players playerread.PlayerReader) *matchActor {
+	return &matchActor{
 		players: players,
 		now:     time.Now,
-		matchQueues: map[int32]*matchmodels.MatchQueue{
-			1: matchmodels.NewMatchQueue(),
+		matchQueues: map[int32]*matchQueue{
+			1: newMatchQueue(),
 		},
 	}
 }
 
 func TestMatchManagerStartsAndCancelsMatchFromSnapshots(t *testing.T) {
 	players := &fakeMatchPlayerReader{
-		players: map[int64]playerread.PlayerSnapshot{42: {TeamID: 7}},
-		teams:   map[int64]playerread.TeamSnapshot{42: {MemberIDs: []int64{42, 43}}},
+		teams: map[int64]playerread.TeamSnapshot{42: {TeamID: 7, MemberIDs: []int64{42, 43}}},
 	}
 	manager := newMatchTestManager(players)
-	teamID, response := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: 1})
-	if response == nil || !response.Result || teamID != 7 {
+	teamID, response, err := manager.doHandleMatch(context.Background(), 42, &message.C2S_StartMatch{Type: 1})
+	if err != nil || response == nil || !response.Result || teamID != 7 {
 		t.Fatalf("开始匹配结果 = %d, %#v", teamID, response)
 	}
 	request := manager.matchQueues[1].TeamRequests[7]
-	if request == nil || !slices.Equal(request.PlayerIds, []int64{42, 43}) || request.TeamSize != 2 {
+	if request == nil || !slices.Equal(request.PlayerIds, []int64{42, 43}) {
 		t.Fatalf("匹配队列请求 = %#v", request)
 	}
-	duplicateTeamID, duplicateResponse := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: 1})
-	if duplicateResponse == nil || duplicateResponse.Result || duplicateTeamID != 0 || manager.matchQueues[1].GetQueueSize() != 1 {
+	duplicateTeamID, duplicateResponse, err := manager.doHandleMatch(context.Background(), 42, &message.C2S_StartMatch{Type: 1})
+	if err != nil || duplicateResponse == nil || duplicateResponse.Result || duplicateTeamID != 0 || manager.matchQueues[1].GetQueueSize() != 1 {
 		t.Fatalf("重复开始匹配结果 = %d, %#v", duplicateTeamID, duplicateResponse)
 	}
 
-	teamID, cancelResponse := manager.doHandleCancelMatch(42)
-	if cancelResponse == nil || !cancelResponse.Result || teamID != 7 {
+	players.players = map[int64]playerread.PlayerSnapshot{42: {TeamID: 7}}
+	teamID, cancelResponse, err := manager.doHandleCancelMatch(context.Background(), 42)
+	if err != nil || cancelResponse == nil || !cancelResponse.Result || teamID != 7 {
 		t.Fatalf("取消匹配结果 = %d, %#v", teamID, cancelResponse)
 	}
 	if manager.matchQueues[1].IsTeamInQueue(7) {
@@ -70,15 +96,14 @@ func TestMatchManagerStartsAndCancelsMatchFromSnapshots(t *testing.T) {
 func TestMatchManagerUsesInjectedClockForQueueAndTimeout(t *testing.T) {
 	now := time.Date(2026, time.August, 23, 12, 0, 0, 0, time.UTC)
 	players := &fakeMatchPlayerReader{
-		players: map[int64]playerread.PlayerSnapshot{42: {TeamID: 7}},
-		teams:   map[int64]playerread.TeamSnapshot{42: {MemberIDs: []int64{42}}},
+		teams: map[int64]playerread.TeamSnapshot{42: {TeamID: 7, MemberIDs: []int64{42}}},
 	}
 	manager := newMatchTestManager(players)
 	manager.now = func() time.Time { return now }
 
-	teamID, response := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: 1})
+	teamID, response, err := manager.doHandleMatch(context.Background(), 42, &message.C2S_StartMatch{Type: 1})
 	request := manager.matchQueues[1].TeamRequests[7]
-	if response == nil || !response.Result || teamID != 7 || request == nil {
+	if err != nil || response == nil || !response.Result || teamID != 7 || request == nil {
 		t.Fatalf("开始匹配结果 = %d, %#v，请求 = %#v", teamID, response, request)
 	}
 	if !request.JoinTime.Equal(now) {
@@ -86,7 +111,7 @@ func TestMatchManagerUsesInjectedClockForQueueAndTimeout(t *testing.T) {
 	}
 
 	now = now.Add(5*time.Minute + time.Nanosecond)
-	manager.ProcessTimeoutRequests()
+	manager.processTimeoutRequests()
 	if manager.matchQueues[1].IsTeamInQueue(7) {
 		t.Fatal("超过五分钟的请求应由注入时钟判定为过期")
 	}
@@ -106,7 +131,7 @@ func TestMatchManagerRejectsUnavailableParticipants(t *testing.T) {
 		{
 			name: "player without team",
 			players: &fakeMatchPlayerReader{
-				players: map[int64]playerread.PlayerSnapshot{42: {}},
+				teams: map[int64]playerread.TeamSnapshot{42: {MemberIDs: []int64{42}}},
 			},
 			matchType: 1,
 		},
@@ -121,7 +146,7 @@ func TestMatchManagerRejectsUnavailableParticipants(t *testing.T) {
 			name: "invalid match type",
 			players: &fakeMatchPlayerReader{
 				players: map[int64]playerread.PlayerSnapshot{42: {TeamID: 7}},
-				teams:   map[int64]playerread.TeamSnapshot{42: {MemberIDs: []int64{42}}},
+				teams:   map[int64]playerread.TeamSnapshot{42: {TeamID: 7, MemberIDs: []int64{42}}},
 			},
 			matchType: 2,
 		},
@@ -130,8 +155,8 @@ func TestMatchManagerRejectsUnavailableParticipants(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			manager := newMatchTestManager(test.players)
-			teamID, response := manager.doHandleMatch(42, &message.C2S_StartMatch{Type: test.matchType})
-			if response == nil || response.Result || teamID != 0 {
+			teamID, response, err := manager.doHandleMatch(context.Background(), 42, &message.C2S_StartMatch{Type: test.matchType})
+			if err != nil || response == nil || response.Result || teamID != 0 {
 				t.Fatalf("不可用参与者的开始匹配结果 = %d, %#v", teamID, response)
 			}
 			if manager.matchQueues[1].GetQueueSize() != 0 {
@@ -146,7 +171,7 @@ func TestMatchManagerBuildsSyntheticRobotTeams(t *testing.T) {
 	manager := newMatchTestManager(&fakeMatchPlayerReader{})
 	manager.now = func() time.Time { return now }
 
-	teams := manager.syntheticRobotTeams(1, 2)
+	teams := manager.syntheticRobotTeams(2)
 	if len(teams) != 2 {
 		t.Fatalf("机器人 Team 数量 = %d，期望 2", len(teams))
 	}
@@ -166,7 +191,7 @@ type fakeRoomAcceptor struct {
 	responses  []matchentry.Acceptance
 }
 
-func (f *fakeRoomAcceptor) AcceptMatch(admission matchentry.Admission) matchentry.Acceptance {
+func (f *fakeRoomAcceptor) AcceptMatch(ctx context.Context, admission matchentry.Admission) matchentry.Acceptance {
 	copied := matchentry.Admission{MatchID: admission.MatchID, Teams: make([]matchentry.MatchedTeam, len(admission.Teams))}
 	for index, team := range admission.Teams {
 		copied.Teams[index] = team
@@ -193,30 +218,30 @@ func TestMatchingRetriesSameAdmissionAfterRetryable(t *testing.T) {
 		return "match-1"
 	}
 	manager.settlements = make(map[string]*matchSettlement)
-	manager.matchQueues[1].AddTeamRequest(&matchmodels.TeamMatchRequest{
-		TeamId: 7, PlayerIds: []int64{42}, TeamSize: 1, MatchType: 1,
+	manager.matchQueues[1].AddTeamRequest(&teamMatchRequest{
+		TeamId: 7, PlayerIds: []int64{42},
 	})
 
-	manager.Matching()
+	manager.matching(context.Background())
 	request := manager.matchQueues[1].TeamRequests[7]
-	canceledTeamID, cancelResponse := manager.doHandleCancelMatch(42)
-	if request == nil || request.MatchID != "match-1" || manager.matchQueues[1].RemoveTeamRequest(7) || canceledTeamID != 0 || cancelResponse.Result {
+	canceledTeamID, cancelResponse, err := manager.doHandleCancelMatch(context.Background(), 42)
+	if err != nil || request == nil || request.MatchID != "match-1" || manager.matchQueues[1].RemoveTeamRequest(7) || canceledTeamID != 0 || cancelResponse.Result {
 		t.Fatalf("retryable settlement state = %#v", request)
 	}
 	if len(rooms.admissions) != 1 || len(rooms.admissions[0].Teams) != 5 {
 		t.Fatalf("first admission = %#v", rooms.admissions)
 	}
-	manager.ProcessTimeoutRequests()
+	manager.processTimeoutRequests()
 	if request = manager.matchQueues[1].TeamRequests[7]; request == nil || request.MatchID != "match-1" {
 		t.Fatalf("timeout removed settling request: %#v", request)
 	}
 
-	manager.Matching()
+	manager.matching(context.Background())
 	if len(rooms.admissions) != 2 || !reflect.DeepEqual(rooms.admissions[0], rooms.admissions[1]) {
 		t.Fatalf("retried admissions = %#v", rooms.admissions)
 	}
-	if matchIDCalls != 1 || manager.matchQueues[1].IsTeamInQueue(7) || manager.matchQueues[1].IsPlayerInQueue(42) {
-		t.Fatalf("resolved state = MatchID calls:%d requests:%#v players:%#v", matchIDCalls, manager.matchQueues[1].TeamRequests, manager.matchQueues[1].PlayerToTeam)
+	if matchIDCalls != 1 || manager.matchQueues[1].IsTeamInQueue(7) {
+		t.Fatalf("resolved state = MatchID calls:%d requests:%#v", matchIDCalls, manager.matchQueues[1].TeamRequests)
 	}
 }
 
@@ -230,20 +255,20 @@ func TestMatchingRemovesRejectedTeamsAndRequeuesTheRest(t *testing.T) {
 	manager.newMatchID = func() string { return "match-1" }
 	manager.settlements = make(map[string]*matchSettlement)
 	queue := manager.matchQueues[1]
-	queue.AddTeamRequest(&matchmodels.TeamMatchRequest{
-		TeamId: 7, PlayerIds: []int64{42, 43}, TeamSize: 2, MatchType: 1,
+	queue.AddTeamRequest(&teamMatchRequest{
+		TeamId: 7, PlayerIds: []int64{42, 43},
 	})
-	queue.AddTeamRequest(&matchmodels.TeamMatchRequest{
-		TeamId: 8, PlayerIds: []int64{44}, TeamSize: 1, MatchType: 1,
+	queue.AddTeamRequest(&teamMatchRequest{
+		TeamId: 8, PlayerIds: []int64{44},
 	})
 
-	manager.Matching()
+	manager.matching(context.Background())
 
-	if queue.IsTeamInQueue(7) || queue.IsPlayerInQueue(42) || queue.IsPlayerInQueue(43) {
-		t.Fatalf("rejected Team remained queued: requests=%#v players=%#v", queue.TeamRequests, queue.PlayerToTeam)
+	if queue.IsTeamInQueue(7) {
+		t.Fatalf("rejected Team remained queued: requests=%#v", queue.TeamRequests)
 	}
 	request := queue.TeamRequests[8]
-	if request == nil || request.MatchID != "" || !queue.IsPlayerInQueue(44) {
+	if request == nil || request.MatchID != "" {
 		t.Fatalf("non-rejected Team was not requeued: %#v", request)
 	}
 	if len(manager.settlements) != 0 || len(rooms.admissions) != 1 {
@@ -266,10 +291,10 @@ func TestNewMatchManagerRegistersReadyActorInScope(t *testing.T) {
 		t.Fatalf("NewMatchManager: %v", err)
 	}
 
-	if manager.players != players || manager.rooms != rooms || manager.newMatchID == nil || manager.now == nil || manager.matchQueues[1] == nil || manager.settlements == nil {
+	if manager.actor.players != players || manager.actor.rooms != rooms || manager.actor.newMatchID == nil || manager.actor.now == nil || manager.actor.matchQueues[1] == nil || manager.actor.settlements == nil {
 		t.Fatalf("initialized manager = %#v", manager)
 	}
-	if _, err := actor.Call(context.Background(), manager.Ref(), func(actor.Context) (struct{}, error) {
+	if _, err := actor.Command(context.Background(), manager.actor.Ref(), func(actor.Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); err != nil {
 		t.Fatalf("Call ready manager: %v", err)

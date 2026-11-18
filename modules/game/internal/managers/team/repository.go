@@ -1,25 +1,28 @@
 package team
 
-import "gameserver/common/db/mongodb"
+import (
+	"context"
+	"gameserver/common/db/mongodb"
+)
 
-type teamRepository interface {
-	FindByID(teamID int64) (*Team, error)
-	Save(team *Team) error
-	DeleteByID(teamID int64) error
+type Repository interface {
+	FindByID(ctx context.Context, teamID int64) (*Team, error)
+	Save(ctx context.Context, team *Team) error
+	DeleteByID(ctx context.Context, teamID int64) error
 }
 
 type mongoTeamRepository struct{}
 
-func (mongoTeamRepository) FindByID(teamID int64) (*Team, error) {
-	return mongodb.FindOneById[Team](teamID)
+func (mongoTeamRepository) FindByID(ctx context.Context, teamID int64) (*Team, error) {
+	return mongodb.FindOneByIDContext[Team](ctx, teamID)
 }
 
-func (mongoTeamRepository) Save(team *Team) error {
-	_, err := mongodb.Save(team)
+func (mongoTeamRepository) Save(ctx context.Context, team *Team) error {
+	_, err := mongodb.SaveContext(ctx, team)
 	return err
 }
 
-func (mongoTeamRepository) DeleteByID(teamID int64) error {
-	_, err := mongodb.DeleteByID[Team](teamID)
+func (mongoTeamRepository) DeleteByID(ctx context.Context, teamID int64) error {
+	_, err := mongodb.DeleteByIDContext[Team](ctx, teamID)
 	return err
 }

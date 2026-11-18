@@ -1,7 +1,10 @@
 package roomaccept
 
-import "gameserver/modules/room/matchentry"
+import (
+	"context"
+	"gameserver/modules/room/matchentry"
+)
 
 type Acceptor interface {
-	AcceptMatch(admission matchentry.Admission) matchentry.Acceptance
+	AcceptMatch(ctx context.Context, admission matchentry.Admission) matchentry.Acceptance
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"gameserver/core/cluster"
 	"gameserver/core/conf"
@@ -18,7 +19,7 @@ type HTTPServer interface {
 	Shutdown(context.Context) error
 }
 
-func Run(ctx context.Context, httpServer HTTPServer, mods ...module.Module) error {
+func Run(ctx context.Context, httpServer HTTPServer, mods ...module.Module) (runErr error) {
 	// 日志器
 	if conf.LogLevel != "" {
 		logger, err := log.New(conf.LogLevel, conf.LogPath, conf.LogFlag)
@@ -43,7 +44,7 @@ func Run(ctx context.Context, httpServer HTTPServer, mods ...module.Module) erro
 	defer func() {
 		console.Destroy()
 		cluster.Destroy()
-		runtime.Stop()
+		runErr = errors.Join(runErr, runtime.Stop())
 	}()
 
 	if err := httpServer.Start(); err != nil {

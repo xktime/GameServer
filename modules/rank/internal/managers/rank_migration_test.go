@@ -14,7 +14,7 @@ import (
 
 func saveTestDocument(t *testing.T, store *memoryRankStore, data mongodb.PersistData) {
 	t.Helper()
-	if err := store.Save(data); err != nil {
+	if err := store.Save(context.Background(), data); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -58,17 +58,17 @@ func TestRankMigrationResumesAndNeverOverwritesNewOrEmptyBoards(t *testing.T) {
 				store.saveRankError = failure
 			}
 			repository := &rankRepository{store: store}
-			if _, err := repository.Load(); !errors.Is(err, failure) {
+			if _, err := repository.Load(context.Background()); !errors.Is(err, failure) {
 				t.Fatalf("migration did not report interruption: %v", err)
 			}
-			metadata, err := store.LoadRank()
+			metadata, err := store.LoadRank(context.Background())
 			if err != nil || metadata.StorageVersion != 0 || len(metadata.RankCache) == 0 {
 				t.Fatalf("interrupted migration discarded legacy source: %+v %v", metadata, err)
 			}
 			store.insertBoardErrors, store.saveRankError = nil, nil
 			// 已迁入榜的新进度必须在下一次启动中保留。
 			saveTestDocument(t, store, testBoard(ladder, 2, 888))
-			state, err := repository.Load()
+			state, err := repository.Load(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,12 +102,12 @@ func TestRankMigrationResumesAndNeverOverwritesNewOrEmptyBoards(t *testing.T) {
 			state.metadata.RankCache = legacy.RankCache
 			saveTestDocument(t, store, state.metadata)
 			delete(store.boards, documents.BoardID(power, 0))
-			state, err = repository.Load()
+			state, err = repository.Load(context.Background())
 			if err != nil || len(state.boards) != 3 {
 				t.Fatalf("completed migration fell back to legacy data: %+v %v", state, err)
 			}
 			store.loadBoardsError = failure
-			if _, err := repository.Load(); !errors.Is(err, failure) {
+			if _, err := repository.Load(context.Background()); !errors.Is(err, failure) {
 				t.Fatalf("read failure was treated as an empty board: %v", err)
 			}
 		})
@@ -181,7 +181,7 @@ func TestRankRecoveryDoesNotReplaySavedDailySnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	crashStore := cloneTestStore(store)
-	boards, err := crashStore.LoadBoards()
+	boards, err := crashStore.LoadBoards(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

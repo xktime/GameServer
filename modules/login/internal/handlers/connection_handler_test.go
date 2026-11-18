@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
@@ -53,7 +54,7 @@ func (m asyncFixedLoginManager) SubmitLogin(_ *message.C2S_Login, _ gate.Connect
 	return nil
 }
 
-func (asyncFixedLoginManager) Close() {}
+func (asyncFixedLoginManager) Close(context.Context) error { return nil }
 
 func TestLoginHandlerSubmitsLogin(t *testing.T) {
 	agent := &handlerConnectionAgent{id: 7}

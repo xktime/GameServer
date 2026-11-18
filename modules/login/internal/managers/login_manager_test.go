@@ -2,7 +2,6 @@ package managers
 
 import (
 	"context"
-	"gameserver/common/base/actor"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
@@ -54,12 +53,7 @@ func TestSubmitLoginReturnsBeforeAuthenticatorFinishes(t *testing.T) {
 		release: make(chan struct{}),
 	}
 	attempts := &fakeLoginAttempts{state: playersession.NewState(), heartbeats: make(chan gate.ConnectionID, 1)}
-	system := actor.NewActorSystem(time.Second)
-	scope, err := system.NewScope("login-manager-test")
-	if err != nil {
-		t.Fatalf("创建 Scope: %v", err)
-	}
-	manager, err := NewLoginManager(context.Background(), scope, fakeUserLoginService{}, LoginManagerOptions{
+	manager, err := NewLoginManager(fakeUserLoginService{}, LoginManagerOptions{
 		Authenticator: authenticator,
 		Workers:       1,
 		QueueSize:     1,
@@ -69,12 +63,7 @@ func TestSubmitLoginReturnsBeforeAuthenticatorFinishes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 LoginManager: %v", err)
 	}
-	defer func() {
-		manager.Close()
-		if err := system.Stop(context.Background()); err != nil {
-			t.Errorf("停止 ActorSystem: %v", err)
-		}
-	}()
+	defer manager.Close(context.Background())
 
 	agent := &asyncLoginAgent{
 		testConnectionAgent: testConnectionAgent{id: 7},

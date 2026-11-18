@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-func TestCallUntilDoneKeepsAcceptedTaskOwnershipAfterCancellation(t *testing.T) {
+func TestCommandKeepsAcceptedTaskOwnershipAfterCancellation(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	t.Cleanup(func() { _ = system.Stop(context.Background()) })
 	scope, _ := system.NewScope("completion")
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) { return &systemTestActor{}, nil })
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) { return &systemTestActor{}, nil }, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestCallUntilDoneKeepsAcceptedTaskOwnershipAfterCancellation(t *testing.T) 
 	release := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		value, err := CallUntilDone(ctx, instance.Ref(), func(execution Context) (int, error) {
+		value, err := Command(ctx, instance.Ref(), func(execution Context) (int, error) {
 			close(started)
 			<-release
 			if execution.Err() != nil {
@@ -51,23 +51,23 @@ func TestCallUntilDoneKeepsAcceptedTaskOwnershipAfterCancellation(t *testing.T) 
 	}
 }
 
-func TestCallUntilDoneReportsPanicsAndPreservesCycleDetection(t *testing.T) {
+func TestCommandReportsPanicsAndPreservesCycleDetection(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	t.Cleanup(func() { _ = system.Stop(context.Background()) })
 	scope, _ := system.NewScope("completion")
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) { return &systemTestActor{}, nil })
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) { return &systemTestActor{}, nil }, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}
 	first, _ := definition.GetOrCreate(context.Background(), "first")
 	second, _ := definition.GetOrCreate(context.Background(), "second")
-	_, err = CallUntilDone(context.Background(), first.Ref(), func(Context) (int, error) { panic("failed prepare") })
+	_, err = Command(context.Background(), first.Ref(), func(Context) (int, error) { panic("failed prepare") })
 	if !errors.Is(err, ErrHandlerPanic) {
 		t.Fatalf("panic outcome = %v", err)
 	}
-	_, err = CallUntilDone(context.Background(), first.Ref(), func(ctx Context) (int, error) {
-		return CallUntilDone(ctx, second.Ref(), func(ctx Context) (int, error) {
-			return CallUntilDone(ctx, first.Ref(), func(Context) (int, error) { return 0, nil })
+	_, err = Command(context.Background(), first.Ref(), func(ctx Context) (int, error) {
+		return Command(ctx, second.Ref(), func(ctx Context) (int, error) {
+			return Command(ctx, first.Ref(), func(Context) (int, error) { return 0, nil })
 		})
 	})
 	if !errors.Is(err, ErrCallCycle) {

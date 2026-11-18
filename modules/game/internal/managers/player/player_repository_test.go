@@ -23,7 +23,16 @@ type fakePlayerRepository struct {
 	saved   []Snapshot
 }
 
-func (r *fakePlayerRepository) FindByID(playerID int64) (*Player, error) {
+type stubTeamRepository struct{}
+
+func (stubTeamRepository) FindByID(context.Context, int64) (*team.Team, error) {
+	return nil, nil
+}
+
+func (stubTeamRepository) Save(context.Context, *team.Team) error  { return nil }
+func (stubTeamRepository) DeleteByID(context.Context, int64) error { return nil }
+
+func (r *fakePlayerRepository) FindByID(ctx context.Context, playerID int64) (*Player, error) {
 	r.loadIDs = append(r.loadIDs, playerID)
 	if r.loaded == nil {
 		return nil, r.loadErr
@@ -36,7 +45,22 @@ func (r *fakePlayerRepository) FindByID(playerID int64) (*Player, error) {
 	return &copyOfPlayer, r.loadErr
 }
 
-func (r *fakePlayerRepository) Save(current *Player) error {
+func (r *fakePlayerRepository) FindByName(ctx context.Context, name string) (*Player, error) {
+	if r.loaded == nil || r.loaded.PlayerInfo == nil || r.loaded.PlayerInfo.PlayerName != name {
+		return nil, r.loadErr
+	}
+	return r.FindByID(ctx, r.loaded.PlayerId)
+}
+
+func (r *fakePlayerRepository) FindAll(ctx context.Context) ([]Player, error) {
+	if r.loaded == nil {
+		return nil, r.loadErr
+	}
+	stored, err := r.FindByID(ctx, r.loaded.PlayerId)
+	return []Player{*stored}, err
+}
+
+func (r *fakePlayerRepository) Save(ctx context.Context, current *Player) error {
 	var info *playermodel.PlayerInfo
 	if current.PlayerInfo != nil {
 		copyOfInfo := *current.PlayerInfo
@@ -70,6 +94,40 @@ func TestOfflinePreservesFinalSnapshotWhenSaveFails(t *testing.T) {
 	after, err := registry.Offline(context.Background(), user.PlayerId)
 	if !errors.Is(err, saveFailure) || after.PlayerID != before.PlayerID || after.TeamID != before.TeamID {
 		t.Fatalf("offline snapshot = %#v, error = %v", after, err)
+	}
+}
+
+func TestRegistryStopRetriesPersistenceBeforeAllowingColdLogin(t *testing.T) {
+	saveFailure := errors.New("save unavailable")
+	repository := &fakePlayerRepository{loaded: &Player{PlayerId: 42}}
+	registry := newPlayerRepositoryTestRegistry(t, repository)
+	t.Cleanup(func() { repository.saveErr = nil })
+	user := models.User{AccountId: "7_stop-retry", PlayerId: 42}
+	prepared, err := registry.PrepareLogin(context.Background(), user, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitTestPlayer(t, prepared, &lifecycleAgent{}, user)
+	repository.saveErr = saveFailure
+	if err := registry.Stop(context.Background(), user.PlayerId); !errors.Is(err, saveFailure) {
+		t.Fatalf("first Stop = %v; want persistence failure", err)
+	}
+	if _, err := registry.PrepareLogin(context.Background(), user, nil, false); !errors.Is(err, saveFailure) {
+		t.Fatalf("cold login with failed persistence = %v; want %v", err, saveFailure)
+	}
+	repository.saveErr = nil
+	if err := registry.Stop(context.Background(), user.PlayerId); err != nil {
+		t.Fatalf("retry Stop: %v", err)
+	}
+	if got := len(repository.saved); got != 3 {
+		t.Fatalf("save attempts = %d; want 3", got)
+	}
+	prepared, err = registry.PrepareLogin(context.Background(), user, nil, false)
+	if err != nil {
+		t.Fatalf("cold login after successful retry: %v", err)
+	}
+	if err := prepared.Abort(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -166,7 +224,7 @@ func commitTestPlayer(t *testing.T, prepared *PreparedLogin, agent *lifecycleAge
 	}
 }
 
-func newPlayerRepositoryTestRegistry(t *testing.T, repository playerRepository) *Registry {
+func newPlayerRepositoryTestRegistry(t *testing.T, repository Repository) *Registry {
 	t.Helper()
 	utils.InitSnowflake(1)
 	system := actor.NewActorSystem(time.Second)
@@ -179,11 +237,11 @@ func newPlayerRepositoryTestRegistry(t *testing.T, repository playerRepository) 
 	if err != nil {
 		t.Fatalf("创建 Scope: %v", err)
 	}
-	teams, err := team.NewRegistry(scope)
+	teams, err := team.NewRegistryWithRepository(scope, stubTeamRepository{})
 	if err != nil {
 		t.Fatalf("创建 Team Registry: %v", err)
 	}
-	registry, err := newRegistry(scope, teams, repository)
+	registry, err := NewRegistryWithRepository(scope, teams, repository)
 	if err != nil {
 		t.Fatalf("创建 Player Registry: %v", err)
 	}

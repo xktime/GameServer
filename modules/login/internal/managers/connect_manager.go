@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/session"
+	"gameserver/common/utils"
 	"gameserver/core/gate"
 	"gameserver/core/log"
 	"gameserver/modules/game/playersession"
+	"sync"
 	"time"
 )
 
@@ -25,6 +27,21 @@ type ClientHeartbeat struct {
 
 // ConnectManager 的连接状态由绑定的 Actor 队列串行访问。
 type ConnectManager struct {
+	sessions   *playersession.State
+	actor      *connectActor
+	definition *actor.Definition[*connectActor, string]
+	mu         sync.RWMutex
+	recoveryMu utils.KeyedMutex[string]
+}
+
+func (h *ConnectManager) currentActor() *connectActor {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.actor
+}
+
+// connectActor 的可变状态只允许在所属邮箱内访问。
+type connectActor struct {
 	actor.BaseActor
 	clients  map[gate.ConnectionID]*ClientHeartbeat
 	now      func() time.Time
@@ -39,24 +56,30 @@ func newConnectManager(ctx context.Context, scope *actor.Scope, now func() time.
 	if sessions == nil {
 		return nil, fmt.Errorf("login: Player Session state is nil")
 	}
-	definition, err := actor.Define(scope, actor.Login, func(context.Context, string) (*ConnectManager, error) {
-		return &ConnectManager{
+	definition, err := actor.Define(scope, func(context.Context, string) (*connectActor, error) {
+		return &connectActor{
 			clients:  make(map[gate.ConnectionID]*ClientHeartbeat),
 			now:      now,
 			sessions: sessions,
 		}, nil
-	})
+	}, actor.DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		return nil, err
 	}
-	return definition.GetOrCreate(ctx, "connect")
+	instance, err := definition.GetOrCreate(ctx, "connect")
+	if err != nil {
+		return nil, err
+	}
+	return &ConnectManager{sessions: sessions, actor: instance, definition: definition}, nil
 }
 
-func (cm *ConnectManager) Register(agent gate.ConnectionAgent) {
+func (handle *ConnectManager) Register(agent gate.ConnectionAgent) {
+	cm := handle.currentActor()
+
 	if agent == nil {
 		return
 	}
-	cm.sessions.Register(agent)
+	handle.sessions.Register(agent)
 	connectedAt := cm.now()
 	if err := actor.Tell(context.Background(), cm.Ref(), func(actor.Context) error {
 		cm.clients[agent.ConnectionID()] = &ClientHeartbeat{
@@ -66,23 +89,25 @@ func (cm *ConnectManager) Register(agent gate.ConnectionAgent) {
 		}
 		return nil
 	}); err != nil {
-		cm.sessions.Disconnect(agent.ConnectionID())
+		handle.sessions.Disconnect(agent.ConnectionID())
 		log.Error("登记连接失败: %v", err)
 	}
 }
 
 // BeginLogin performs only a short state transition, without entering the
 // connection Actor or waiting for User/Player preparation.
-func (cm *ConnectManager) BeginLogin(connectionID gate.ConnectionID, sequence uint32) (*playersession.Attempt, error) {
-	return cm.sessions.Begin(connectionID, sequence)
+func (handle *ConnectManager) BeginLogin(connectionID gate.ConnectionID, sequence uint32) (*playersession.Attempt, error) {
+	return handle.sessions.Begin(connectionID, sequence)
 }
 
-func (m *ConnectManager) OnTimer() {
-	m.CheckHeartbeats()
+func (handle *ConnectManager) OnTimer() {
+	handle.CheckHeartbeats()
 }
 
 // UpdateHeartbeat 更新客户端心跳 - 异步执行
-func (cm *ConnectManager) UpdateHeartbeat(connectionID gate.ConnectionID) {
+func (handle *ConnectManager) UpdateHeartbeat(connectionID gate.ConnectionID) {
+	cm := handle.currentActor()
+
 	heartbeatAt := cm.now()
 	if err := actor.Tell(context.Background(), cm.Ref(), func(actor.Context) error {
 		cm.doUpdateHeartbeat(connectionID, heartbeatAt)
@@ -93,15 +118,17 @@ func (cm *ConnectManager) UpdateHeartbeat(connectionID gate.ConnectionID) {
 }
 
 // doUpdateHeartbeat 更新客户端心跳的同步实现
-func (cm *ConnectManager) doUpdateHeartbeat(connectionID gate.ConnectionID, heartbeatAt time.Time) {
+func (cm *connectActor) doUpdateHeartbeat(connectionID gate.ConnectionID, heartbeatAt time.Time) {
 	if client, exists := cm.clients[connectionID]; exists {
 		client.LastHeartbeat = heartbeatAt
 	}
 }
 
 // RemoveClient 立即使登录尝试失效，再异步移除心跳记录。
-func (cm *ConnectManager) RemoveClient(clientID gate.ConnectionID) {
-	cm.sessions.Disconnect(clientID)
+func (handle *ConnectManager) RemoveClient(clientID gate.ConnectionID) {
+	cm := handle.currentActor()
+
+	handle.sessions.Disconnect(clientID)
 	if err := actor.Tell(context.Background(), cm.Ref(), func(actor.Context) error {
 		cm.doRemoveClient(clientID)
 		return nil
@@ -111,7 +138,7 @@ func (cm *ConnectManager) RemoveClient(clientID gate.ConnectionID) {
 }
 
 // doRemoveClient 移除客户端的同步实现
-func (cm *ConnectManager) doRemoveClient(clientID gate.ConnectionID) {
+func (cm *connectActor) doRemoveClient(clientID gate.ConnectionID) {
 	if _, exists := cm.clients[clientID]; exists {
 		delete(cm.clients, clientID)
 		log.Debug("移除客户端心跳: %d", clientID)
@@ -119,7 +146,9 @@ func (cm *ConnectManager) doRemoveClient(clientID gate.ConnectionID) {
 }
 
 // CheckHeartbeats 检查所有客户端的心跳 - 异步执行
-func (cm *ConnectManager) CheckHeartbeats() {
+func (handle *ConnectManager) CheckHeartbeats() {
+	cm := handle.currentActor()
+
 	if err := actor.Tell(context.Background(), cm.Ref(), func(actor.Context) error {
 		cm.doCheckHeartbeats()
 		return nil
@@ -129,16 +158,10 @@ func (cm *ConnectManager) CheckHeartbeats() {
 }
 
 // doCheckHeartbeats 检查所有客户端心跳的同步实现
-func (cm *ConnectManager) doCheckHeartbeats() {
+func (cm *connectActor) doCheckHeartbeats() {
 	now := cm.now()
 	var clientsToRemove []gate.ConnectionID
-	// 复制一份客户端列表，避免在遍历时修改map
-	clientsCopy := make(map[gate.ConnectionID]*ClientHeartbeat)
-	for k, v := range cm.clients {
-		clientsCopy[k] = v
-	}
-
-	for clientID, heartbeat := range clientsCopy {
+	for clientID, heartbeat := range cm.clients {
 		observed, authenticated := session.FromData(heartbeat.Agent.UserData())
 		idleTime := now.Sub(heartbeat.LastHeartbeat)
 		timedOut := authenticated && idleTime > HeartbeatTimeout
@@ -172,8 +195,10 @@ func (cm *ConnectManager) doCheckHeartbeats() {
 }
 
 // GetActiveClients 同步读取活跃客户端数量。
-func (cm *ConnectManager) GetActiveClients() int {
-	result, err := actor.Call(context.Background(), cm.Ref(), func(actor.Context) (int, error) {
+func (handle *ConnectManager) GetActiveClients() int {
+	cm := handle.currentActor()
+
+	result, err := actor.Query(context.Background(), cm.Ref(), func(actor.Context) (int, error) {
 		return len(cm.clients), nil
 	})
 	if err != nil {
@@ -184,12 +209,15 @@ func (cm *ConnectManager) GetActiveClients() int {
 }
 
 // GetAllClients 同步返回客户端信息快照（用于调试）。
-func (cm *ConnectManager) GetAllClients() map[gate.ConnectionID]*ClientHeartbeat {
-	result, err := actor.Call(context.Background(), cm.Ref(), func(actor.Context) (map[gate.ConnectionID]*ClientHeartbeat, error) {
+func (handle *ConnectManager) GetAllClients() map[gate.ConnectionID]*ClientHeartbeat {
+	cm := handle.currentActor()
+
+	result, err := actor.Query(context.Background(), cm.Ref(), func(actor.Context) (map[gate.ConnectionID]*ClientHeartbeat, error) {
 		// 返回副本，避免外部修改
 		clients := make(map[gate.ConnectionID]*ClientHeartbeat)
 		for k, v := range cm.clients {
-			clients[k] = v
+			copyOfHeartbeat := *v
+			clients[k] = &copyOfHeartbeat
 		}
 		return clients, nil
 	})

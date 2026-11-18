@@ -1,40 +1,34 @@
 package game
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"gameserver/modules/game/internal/managers"
 	"gameserver/modules/room/participant"
 
 	"google.golang.org/protobuf/proto"
 )
 
 type roomTeamSetter interface {
-	SetRoomProjection(teamID int64, roomID string) bool
+	SetRoomProjection(ctx context.Context, teamID int64, roomID string) error
 }
 
 type roomTeamProjection struct {
 	teams roomTeamSetter
 }
 
-func NewRoomTeamProjection(teams *managers.TeamManager) participant.TeamRoomProjection {
-	return newRoomTeamProjection(teams)
-}
-
-func newRoomTeamProjection(teams roomTeamSetter) participant.TeamRoomProjection {
+func NewRoomTeamProjection(teams roomTeamSetter) participant.TeamRoomProjection {
 	return &roomTeamProjection{teams: teams}
 }
 
-func (p *roomTeamProjection) Apply(desired []participant.DesiredTeamRoom) error {
-	failedTeamIDs := make([]int64, 0)
+func (p *roomTeamProjection) Apply(ctx context.Context, desired []participant.DesiredTeamRoom) error {
+	var projectionErrors []error
 	for _, projection := range desired {
-		if !p.teams.SetRoomProjection(projection.TeamID, projection.RoomID) {
-			failedTeamIDs = append(failedTeamIDs, projection.TeamID)
+		if err := p.teams.SetRoomProjection(ctx, projection.TeamID, projection.RoomID); err != nil {
+			projectionErrors = append(projectionErrors, fmt.Errorf("project RoomID for team %d: %w", projection.TeamID, err))
 		}
 	}
-	if len(failedTeamIDs) > 0 {
-		return fmt.Errorf("failed to project RoomID for teams %v", failedTeamIDs)
-	}
-	return nil
+	return errors.Join(projectionErrors...)
 }
 
 type roomPlayerMessenger struct {
@@ -46,11 +40,7 @@ type roomPlayerSender interface {
 }
 
 func NewRoomPlayerMessenger(players roomPlayerSender) participant.PlayerMessenger {
-	return newRoomPlayerMessenger(players.SendToPlayer)
-}
-
-func newRoomPlayerMessenger(send func(playerID int64, msg proto.Message)) participant.PlayerMessenger {
-	return &roomPlayerMessenger{send: send}
+	return &roomPlayerMessenger{send: players.SendToPlayer}
 }
 
 func (m *roomPlayerMessenger) Send(playerIDs []int64, msg proto.Message) {

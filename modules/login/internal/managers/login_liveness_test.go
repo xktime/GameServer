@@ -38,12 +38,12 @@ func TestSlowUserPreparationDoesNotBlockConnectionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	users := &slowUserLogin{started: make(chan struct{}), release: make(chan struct{})}
-	manager, err := NewLoginManager(context.Background(), scope, users, LoginManagerOptions{Authenticator: immediateAuthenticator{}, Workers: 1, QueueSize: 2, Attempts: connections})
+	manager, err := NewLoginManager(users, LoginManagerOptions{Authenticator: immediateAuthenticator{}, Workers: 1, QueueSize: 2, Attempts: connections})
 	if err != nil {
 		t.Fatal(err)
 	}
 	release := sync.OnceFunc(func() { close(users.release) })
-	defer func() { release(); manager.Close(); _ = system.Stop(context.Background()) }()
+	defer func() { release(); manager.Close(context.Background()); _ = system.Stop(context.Background()) }()
 	first := &asyncLoginAgent{testConnectionAgent: testConnectionAgent{id: 1}, writes: make(chan loginWrite, 2)}
 	second := &asyncLoginAgent{testConnectionAgent: testConnectionAgent{id: 2}, writes: make(chan loginWrite, 2)}
 	connections.Register(first)
@@ -79,7 +79,7 @@ func TestSlowUserPreparationDoesNotBlockConnectionLifecycle(t *testing.T) {
 		t.Fatal("slow User preparation blocked connection Actor")
 	}
 	release()
-	manager.Close()
+	manager.Close(context.Background())
 	select {
 	case write := <-first.writes:
 		t.Fatalf("disconnected attempt replied: %#v", write)
@@ -104,11 +104,15 @@ func TestQueueRejectionRepliesOnceAndInvalidatesOnlyRejectedConnection(t *testin
 		t.Fatal(err)
 	}
 	auth := &blockingAuthenticator{started: make(chan struct{}), release: make(chan struct{})}
-	manager, err := NewLoginManager(context.Background(), scope, fakeUserLoginService{}, LoginManagerOptions{Authenticator: auth, Workers: 1, QueueSize: 1, Timeout: time.Second, Attempts: connections})
+	manager, err := NewLoginManager(fakeUserLoginService{}, LoginManagerOptions{Authenticator: auth, Workers: 1, QueueSize: 1, Timeout: time.Second, Attempts: connections})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { close(auth.release); manager.Close(); _ = system.Stop(context.Background()) }()
+	defer func() {
+		close(auth.release)
+		manager.Close(context.Background())
+		_ = system.Stop(context.Background())
+	}()
 	agents := make([]*asyncLoginAgent, 3)
 	for i := range agents {
 		agents[i] = &asyncLoginAgent{testConnectionAgent: testConnectionAgent{id: gate.ConnectionID(i + 1)}, writes: make(chan loginWrite, 3)}
@@ -153,13 +157,13 @@ func TestAuthenticatedLoginRejectionRepliesWithoutClosingSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := NewLoginManager(context.Background(), scope, fakeUserLoginService{}, LoginManagerOptions{
+	manager, err := NewLoginManager(fakeUserLoginService{}, LoginManagerOptions{
 		Authenticator: immediateAuthenticator{}, Workers: 1, QueueSize: 1, Attempts: connections,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { manager.Close(); _ = system.Stop(context.Background()) })
+	t.Cleanup(func() { manager.Close(context.Background()); _ = system.Stop(context.Background()) })
 	agent := &asyncLoginAgent{testConnectionAgent: testConnectionAgent{id: 1}, writes: make(chan loginWrite, 3)}
 	connections.Register(agent)
 	if err := manager.SubmitLogin(&message.C2S_Login{ServerId: 7}, agent, 11); err != nil {
@@ -177,7 +181,7 @@ func TestAuthenticatedLoginRejectionRepliesWithoutClosingSession(t *testing.T) {
 	if err := manager.SubmitLogin(&message.C2S_Login{ServerId: 7}, agent, 12); !errors.Is(err, playersession.ErrAuthenticated) {
 		t.Fatalf("repeated login = %v", err)
 	}
-	manager.Close()
+	manager.Close(context.Background())
 	select {
 	case write := <-agent.writes:
 		if response, ok := write.message.(*message.S2C_Login); !ok || response.LoginResult != -1 || write.sequence != 12 {

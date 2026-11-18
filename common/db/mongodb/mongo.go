@@ -14,8 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// actor里面的数据才会自动保存
-// 其他地方需要改了马上存储，否则都需要放到actor里面去修改
+// PersistData 提供文档标识；集合名由持久化数据的 Go 类型名决定。
+// 保存时机由调用方或领域 Actor 的 OnStop 显式控制。
 type PersistData interface {
 	GetPersistId() interface{}
 }
@@ -67,9 +67,9 @@ func Close(ctx context.Context) error {
 }
 
 // 查询单条
-func FindOne[T PersistData](filter interface{}) (*T, error) {
+func FindOneContext[T PersistData](parent context.Context, filter interface{}) (*T, error) {
 	collection := getCollectionNameByType[T]()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	var result T
 	err := mongoInstance.getCollection(collection).FindOne(ctx, filter).Decode(&result)
@@ -82,14 +82,15 @@ func FindOne[T PersistData](filter interface{}) (*T, error) {
 	return &result, nil
 }
 
-func FindOneById[T PersistData](id interface{}) (*T, error) {
-	return FindOne[T](bson.M{"_id": id})
+// FindOneByIDContext 保留调用方的取消与截止时间，并应用单次查询的时间上限。
+func FindOneByIDContext[T PersistData](ctx context.Context, id interface{}) (*T, error) {
+	return FindOneContext[T](ctx, bson.M{"_id": id})
 }
 
 // 查询多条
-func FindAll[T PersistData](filter bson.M) ([]T, error) {
+func FindAllContext[T PersistData](parent context.Context, filter bson.M) ([]T, error) {
 	collection := getCollectionNameByType[T]()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	cur, err := mongoInstance.getCollection(collection).Find(ctx, filter)
 	if err != nil {
@@ -111,13 +112,12 @@ func FindAll[T PersistData](filter bson.M) ([]T, error) {
 }
 
 // 删除
-func DeleteByID[T PersistData](id interface{}) (*mongo.DeleteResult, error) {
+func DeleteByIDContext[T PersistData](parent context.Context, id interface{}) (*mongo.DeleteResult, error) {
 	if mongoInstance == nil {
-		log.Debug("DeleteByID: MongoDB未初始化，跳过删除")
-		return nil, nil
+		return nil, fmt.Errorf("mongodb: not initialized")
 	}
 	collection := getCollectionNameByType[T]()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	result, err := mongoInstance.getCollection(collection).DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
@@ -132,14 +132,13 @@ func DeleteByID[T PersistData](id interface{}) (*mongo.DeleteResult, error) {
 	return result, nil
 }
 
-func Save(doc PersistData) (*mongo.UpdateResult, error) {
+func SaveContext(parent context.Context, doc PersistData) (*mongo.UpdateResult, error) {
 	if mongoInstance == nil {
-		log.Debug("Save: MongoDB未初始化，跳过保存")
-		return nil, nil
+		return nil, fmt.Errorf("mongodb: not initialized")
 	}
 	id := doc.GetPersistId()
 	collection := getCollectionName(doc)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	opts := options.Replace().SetUpsert(true)
 	result, err := mongoInstance.getCollection(collection).ReplaceOne(ctx, bson.M{"_id": id}, doc, opts)
@@ -157,15 +156,15 @@ func Save(doc PersistData) (*mongo.UpdateResult, error) {
 	return result, nil
 }
 
-// SaveIfAbsent 仅在文档的 _id 不存在时插入数据。
+// SaveIfAbsentContext 仅在文档的 _id 不存在时插入数据。
 // 重放持久化创建意图时，保留在线 Actor 已经写入的状态。
-func SaveIfAbsent(doc PersistData) (bool, error) {
+func SaveIfAbsentContext(parent context.Context, doc PersistData) (bool, error) {
 	if mongoInstance == nil {
 		return false, fmt.Errorf("mongodb: not initialized")
 	}
 	id := doc.GetPersistId()
 	collection := getCollectionName(doc)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	result, err := mongoInstance.getCollection(collection).InsertOne(ctx, doc)
 	if err != nil {
@@ -183,6 +182,9 @@ func SaveIfAbsent(doc PersistData) (bool, error) {
 func BulkSave(docs []PersistData) (*mongo.BulkWriteResult, error) {
 	if len(docs) == 0 {
 		return nil, nil
+	}
+	if mongoInstance == nil {
+		return nil, fmt.Errorf("mongodb: not initialized")
 	}
 
 	// 获取集合名称

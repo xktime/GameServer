@@ -50,7 +50,7 @@ func TestRankManagerRetainsOffBoardScoresAcrossUpdatesAndRestart(t *testing.T) {
 	if err := system.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	boards, err := repository.LoadBoards()
+	boards, err := repository.LoadBoards(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestRankManagerKeepsHistorySentinelAndBoundsSeasonQueries(t *testing.T) {
 	if err := system.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	boards, err := store.LoadBoards()
+	boards, err := store.LoadBoards(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

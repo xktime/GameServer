@@ -35,10 +35,13 @@ type authWorkerPool struct {
 	authenticator processor.Authenticator
 	timeout       time.Duration
 	queue         chan authTask
+	ctx           context.Context
+	cancel        context.CancelFunc
 
 	mu     sync.Mutex
 	closed bool
 	wg     sync.WaitGroup
+	done   chan struct{}
 }
 
 func newAuthWorkerPool(authenticator processor.Authenticator, workers, queueSize int, timeout time.Duration) (*authWorkerPool, error) {
@@ -55,10 +58,14 @@ func newAuthWorkerPool(authenticator processor.Authenticator, workers, queueSize
 		return nil, errors.New("login: auth timeout must be positive")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	p := &authWorkerPool{
 		authenticator: authenticator,
 		timeout:       timeout,
 		queue:         make(chan authTask, queueSize),
+		ctx:           ctx,
+		cancel:        cancel,
+		done:          make(chan struct{}),
 	}
 	p.wg.Add(workers)
 	for i := 0; i < workers; i++ {
@@ -71,9 +78,15 @@ func newAuthWorkerPool(authenticator processor.Authenticator, workers, queueSize
 func (p *authWorkerPool) worker() {
 	defer p.wg.Done()
 	for task := range p.queue {
-		ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
-		response := p.authenticator.Authenticate(ctx, task.agent, task.request)
-		cancel()
+		var response *models.LoginResponse
+		if p.ctx.Err() == nil {
+			ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
+			response = p.authenticator.Authenticate(ctx, task.agent, task.request)
+			cancel()
+		}
+		if p.ctx.Err() != nil {
+			response = nil
+		}
 		if task.complete != nil {
 			task.complete(response)
 		}
@@ -95,15 +108,21 @@ func (p *authWorkerPool) submit(task authTask) error {
 	}
 }
 
-// close 停止接收新任务，并等待工作协程处理完队列中的任务。
-func (p *authWorkerPool) close() {
+// close 停止接收新任务并等待排空；等待超时后取消在途认证，排队任务以失败结束。
+// 超时只结束本次等待，调用方仍可用新的上下文等待全部工作协程退出。
+func (p *authWorkerPool) close(ctx context.Context) error {
 	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
-		return
+	if !p.closed {
+		p.closed = true
+		close(p.queue)
+		go func() { p.wg.Wait(); p.cancel(); close(p.done) }()
 	}
-	p.closed = true
-	close(p.queue)
 	p.mu.Unlock()
-	p.wg.Wait()
+	select {
+	case <-p.done:
+		return nil
+	case <-ctx.Done():
+		p.cancel()
+		return ctx.Err()
+	}
 }

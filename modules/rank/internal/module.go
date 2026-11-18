@@ -40,8 +40,12 @@ func (m *Module) OnInit() {
 }
 
 func (m *Module) OnDestroy() {
-	m.job.Stop()
-	if err := m.scope.Stop(context.Background()); err != nil {
+	stopContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := m.job.Stop(stopContext); err != nil {
+		log.Error("停止 rank 定时任务失败: %v", err)
+	}
+	if err := m.scope.Stop(stopContext); err != nil {
 		log.Error("停止 rank Actor Scope 失败: %v", err)
 	}
 }

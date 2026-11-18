@@ -13,7 +13,7 @@ import (
 )
 
 type PreparedLogin struct {
-	player *Player
+	player *playerActor
 	team   *team.LoginPreparation
 	owned  bool
 }
@@ -31,7 +31,11 @@ func (r *Registry) PrepareLogin(ctx context.Context, user models.User, initial *
 	if err == nil {
 		return nil, fmt.Errorf("player %d already exists without an active session", user.PlayerId)
 	}
-	if !errors.Is(err, actor.ErrActorStopped) {
+	if errors.Is(err, actor.ErrStopFailed) {
+		if err := r.Stop(ctx, user.PlayerId); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, actor.ErrActorNotFound) {
 		return nil, err
 	}
 	instance, err = r.definition.GetOrCreate(ctx, user.PlayerId)
@@ -39,10 +43,10 @@ func (r *Registry) PrepareLogin(ctx context.Context, user models.User, initial *
 		return nil, err
 	}
 	prepared := &PreparedLogin{player: instance, owned: true}
-	_, err = actor.CallUntilDone(ctx, instance.Ref(), func(execution actor.Context) (struct{}, error) {
+	_, err = actor.Command(ctx, instance.Ref(), func(execution actor.Context) (struct{}, error) {
 		if initial != nil {
 			instance.InitProvisionData(*initial)
-		} else if err := instance.InitPlayerData(user.PlayerId); err != nil {
+		} else if err := instance.InitPlayerData(execution, user.PlayerId); err != nil {
 			return struct{}{}, err
 		}
 		preparedTeam, err := instance.teams.PrepareLogin(execution, instance.TeamId, user.PlayerId, initial != nil)
@@ -61,7 +65,7 @@ func (r *Registry) PrepareLogin(ctx context.Context, user models.User, initial *
 
 func (p *PreparedLogin) Commit(ctx context.Context, attempt *playersession.Attempt, user models.User, response *message.S2C_Login) (bool, error) {
 	committed := false
-	_, err := actor.CallUntilDone(ctx, p.player.Ref(), func(actor.Context) (struct{}, error) {
+	_, err := actor.Command(ctx, p.player.Ref(), func(actor.Context) (struct{}, error) {
 		previous, won := attempt.Commit(user, &p.player.connection)
 		committed = won
 		if !committed {

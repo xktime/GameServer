@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 
@@ -8,17 +9,17 @@ import (
 )
 
 type userRepository interface {
-	FindByLogin(openID string, serverID int32) (*models.User, error)
-	Save(user *models.User) error
+	FindByLogin(ctx context.Context, openID string, serverID int32) (*models.User, error)
+	Save(ctx context.Context, user *models.User) error
 }
 
 type mongoUserRepository struct{}
 
-func (mongoUserRepository) FindByLogin(openID string, serverID int32) (*models.User, error) {
-	return mongodb.FindOne[models.User](bson.M{"OpenId": openID, "ServerId": serverID})
+func (mongoUserRepository) FindByLogin(ctx context.Context, openID string, serverID int32) (*models.User, error) {
+	return mongodb.FindOneContext[models.User](ctx, bson.M{"OpenId": openID, "ServerId": serverID})
 }
 
-func (mongoUserRepository) Save(user *models.User) error {
-	_, err := mongodb.Save(user)
+func (mongoUserRepository) Save(ctx context.Context, user *models.User) error {
+	_, err := mongodb.SaveContext(ctx, user)
 	return err
 }

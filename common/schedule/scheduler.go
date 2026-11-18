@@ -1,12 +1,13 @@
 package schedule
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
 type Job interface {
-	Stop()
+	Stop(context.Context) error
 }
 
 type Scheduler interface {
@@ -31,6 +32,11 @@ func (tickerScheduler) Every(interval time.Duration, callback func()) Job {
 		for {
 			select {
 			case <-ticker.C:
+				select {
+				case <-job.stop:
+					return
+				default:
+				}
 				callback()
 			case <-job.stop:
 				return
@@ -46,9 +52,15 @@ type tickerJob struct {
 	done     chan struct{}
 }
 
-func (j *tickerJob) Stop() {
+// Stop 禁止后续回调，并在截止时间内等待当前回调结束。超时后可再次等待。
+func (j *tickerJob) Stop(ctx context.Context) error {
 	j.stopOnce.Do(func() {
 		close(j.stop)
 	})
-	<-j.done
+	select {
+	case <-j.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

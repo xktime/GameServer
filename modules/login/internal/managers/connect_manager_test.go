@@ -206,7 +206,7 @@ func blockConnectManager(t *testing.T, manager *ConnectManager) func() {
 	t.Helper()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	if err := actor.Tell(context.Background(), manager.Ref(), func(actor.Context) error {
+	if err := actor.Tell(context.Background(), manager.actor.Ref(), func(actor.Context) error {
 		close(started)
 		<-release
 		return nil

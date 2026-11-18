@@ -15,7 +15,8 @@ type testModule struct {
 }
 
 type testHTTPServer struct {
-	startErr error
+	startErr    error
+	shutdownErr error
 }
 
 func (s *testHTTPServer) Start() error {
@@ -23,7 +24,7 @@ func (s *testHTTPServer) Start() error {
 }
 
 func (s *testHTTPServer) Shutdown(context.Context) error {
-	return nil
+	return s.shutdownErr
 }
 
 func (m *testModule) OnInit() {}
@@ -85,5 +86,48 @@ func TestRunStopsModulesWhenHTTPServerFailsToStart(t *testing.T) {
 	case <-m.destroyed:
 	default:
 		t.Fatal("server did not destroy the module after HTTP startup failed")
+	}
+}
+
+type failingShutdownModule struct {
+	testModule
+	err error
+}
+
+func (m *failingShutdownModule) Shutdown() error {
+	m.OnDestroy()
+	return m.err
+}
+
+func TestRunReportsModuleShutdownErrorsAndStillStopsOtherModules(t *testing.T) {
+	for _, phase := range []string{"startup", "shutdown"} {
+		t.Run(phase, func(t *testing.T) {
+			cleanupErr := errors.New("room projection cleanup failed")
+			httpErr := errors.New("HTTP failed")
+			httpServer := &testHTTPServer{}
+			if phase == "startup" {
+				httpServer.startErr = httpErr
+			} else {
+				httpServer.shutdownErr = httpErr
+			}
+			first := &testModule{started: make(chan struct{}), destroyed: make(chan struct{})}
+			last := &failingShutdownModule{
+				testModule: testModule{started: make(chan struct{}), destroyed: make(chan struct{})},
+				err:        cleanupErr,
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			err := server.Run(ctx, httpServer, first, last)
+			if !errors.Is(err, cleanupErr) || !errors.Is(err, httpErr) {
+				t.Fatalf("Run() = %v; want both HTTP and module cleanup errors", err)
+			}
+			for _, stopped := range []<-chan struct{}{first.destroyed, last.destroyed} {
+				select {
+				case <-stopped:
+				default:
+					t.Fatal("cleanup failure prevented another module from stopping")
+				}
+			}
+		})
 	}
 }

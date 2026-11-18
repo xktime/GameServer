@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
@@ -18,7 +17,6 @@ import (
 
 // LoginManager 将认证任务提交到有限容量的 Worker Pool。
 type LoginManager struct {
-	actor.BaseActor
 	users    UserLoginService
 	authPool *authWorkerPool
 	attempts LoginAttemptTracker
@@ -36,7 +34,7 @@ type LoginAttemptTracker interface {
 }
 
 // LoginManagerOptions 配置容量有限的认证工作池。
-// 零值表示使用生产环境默认配置。
+// Attempts 必须提供；其余字段的零值使用生产环境默认配置。
 type LoginManagerOptions struct {
 	Authenticator processor.Authenticator
 	Workers       int
@@ -45,56 +43,30 @@ type LoginManagerOptions struct {
 	Attempts      LoginAttemptTracker
 }
 
-func NewLoginManager(ctx context.Context, scope *actor.Scope, users UserLoginService, options ...LoginManagerOptions) (*LoginManager, error) {
+func NewLoginManager(users UserLoginService, options LoginManagerOptions) (*LoginManager, error) {
 	if users == nil {
 		return nil, fmt.Errorf("login: UserLoginService is nil")
 	}
-	config := LoginManagerOptions{
-		Authenticator: processor.NewPlatformAuthenticator(),
-		Workers:       DefaultAuthWorkers,
-		QueueSize:     DefaultAuthQueueSize,
-		Timeout:       DefaultAuthTimeout,
-	}
-	if len(options) > 0 {
-		provided := options[0]
-		if provided.Authenticator != nil {
-			config.Authenticator = provided.Authenticator
-		}
-		if provided.Workers != 0 {
-			config.Workers = provided.Workers
-		}
-		if provided.QueueSize != 0 {
-			config.QueueSize = provided.QueueSize
-		}
-		if provided.Timeout != 0 {
-			config.Timeout = provided.Timeout
-		}
-		config.Attempts = provided.Attempts
-	}
-	if config.Attempts == nil {
+	if options.Attempts == nil {
 		return nil, fmt.Errorf("login: LoginAttemptTracker is nil")
 	}
-	authPool, err := newAuthWorkerPool(config.Authenticator, config.Workers, config.QueueSize, config.Timeout)
+	if options.Authenticator == nil {
+		options.Authenticator = processor.NewPlatformAuthenticator()
+	}
+	if options.Workers == 0 {
+		options.Workers = DefaultAuthWorkers
+	}
+	if options.QueueSize == 0 {
+		options.QueueSize = DefaultAuthQueueSize
+	}
+	if options.Timeout == 0 {
+		options.Timeout = DefaultAuthTimeout
+	}
+	authPool, err := newAuthWorkerPool(options.Authenticator, options.Workers, options.QueueSize, options.Timeout)
 	if err != nil {
 		return nil, err
 	}
-	definition, err := actor.Define(scope, actor.Login, func(context.Context, string) (*LoginManager, error) {
-		return &LoginManager{
-			users:    users,
-			authPool: authPool,
-			attempts: config.Attempts,
-		}, nil
-	})
-	if err != nil {
-		authPool.close()
-		return nil, err
-	}
-	manager, err := definition.GetOrCreate(ctx, "singleton")
-	if err != nil {
-		authPool.close()
-		return nil, err
-	}
-	return manager, nil
+	return &LoginManager{users: users, authPool: authPool, attempts: options.Attempts}, nil
 }
 
 // SubmitLogin 将平台认证任务提交到容量有限的工作池后立即返回，
@@ -133,12 +105,13 @@ func (m *LoginManager) SubmitLogin(msg *message.C2S_Login, agent gate.Connection
 	return nil
 }
 
-// Close 在已入队请求处理完毕后停止工作协程，
+// Close 排空认证池；等待超时后取消认证，后续调用可继续等待工作协程退出。
 // 由登录模块在关闭时调用。
-func (m *LoginManager) Close() {
+func (m *LoginManager) Close(ctx context.Context) error {
 	if m.authPool != nil {
-		m.authPool.close()
+		return m.authPool.close(ctx)
 	}
+	return nil
 }
 
 // completeLogin never occupies ConnectManager's Actor. Player owns the success

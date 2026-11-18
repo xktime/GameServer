@@ -26,14 +26,14 @@ func TestStopWakesBlockedSendersAndRespectsDeadline(t *testing.T) {
 		send func(context.Context, ActorRef, func(Context) error) error
 	}{
 		{name: "Tell", send: Tell},
-		{name: "Call", send: func(ctx context.Context, ref ActorRef, task func(Context) error) error {
-			_, err := Call(ctx, ref, func(execution Context) (struct{}, error) {
+		{name: "Query", send: func(ctx context.Context, ref ActorRef, task func(Context) error) error {
+			_, err := Query(ctx, ref, func(execution Context) (struct{}, error) {
 				return struct{}{}, task(execution)
 			})
 			return err
 		}},
-		{name: "CallUntilDone", send: func(ctx context.Context, ref ActorRef, task func(Context) error) error {
-			_, err := CallUntilDone(ctx, ref, func(execution Context) (struct{}, error) {
+		{name: "Command", send: func(ctx context.Context, ref ActorRef, task func(Context) error) error {
+			_, err := Command(ctx, ref, func(execution Context) (struct{}, error) {
 				return struct{}{}, task(execution)
 			})
 			return err
@@ -54,7 +54,7 @@ func TestStopWakesBlockedSendersAndRespectsDeadline(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				definition, err := DefineWithOptions(scope, Test1, func(context.Context, int) (*systemTestActor, error) {
+				definition, err := Define(scope, func(context.Context, int) (*systemTestActor, error) {
 					return &systemTestActor{}, nil
 				}, DefinitionOptions{QueueCapacity: 1})
 				if err != nil {
@@ -120,14 +120,14 @@ func TestStopWakesBlockedSendersAndRespectsDeadline(t *testing.T) {
 				}
 				select {
 				case err := <-senderDone:
-					if !errors.Is(err, ErrActorStopped) {
-						t.Fatalf("blocked sender = %v; want ErrActorStopped", err)
+					if !errors.Is(err, ErrActorStopping) {
+						t.Fatalf("blocked sender = %v; want ErrActorStopping", err)
 					}
 				case <-time.After(time.Second):
 					t.Fatal("stop did not wake the blocked sender")
 				}
-				if err := TryTell(instance.Ref(), func(Context) error { return nil }); !errors.Is(err, ErrActorStopped) {
-					t.Fatalf("new sender after stop = %v; want ErrActorStopped", err)
+				if err := TryTell(instance.Ref(), func(Context) error { return nil }); !errors.Is(err, ErrActorStopping) {
+					t.Fatalf("new sender after stop = %v; want ErrActorStopping", err)
 				}
 				releaseOnce.Do(func() { close(release) })
 				finishContext, cancelFinish := context.WithTimeout(context.Background(), time.Second)
@@ -153,7 +153,7 @@ func TestConcurrentAdmissionAndStopPreserveAcceptedTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition, err := DefineWithOptions(scope, Test1, func(context.Context, int) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, int) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
 	}, DefinitionOptions{QueueCapacity: 1})
 	if err != nil {
@@ -189,7 +189,7 @@ func TestConcurrentAdmissionAndStopPreserveAcceptedTasks(t *testing.T) {
 			err := <-results
 			if err == nil {
 				accepted++
-			} else if !errors.Is(err, ErrActorStopped) {
+			} else if !errors.Is(err, ErrActorStopped) && !errors.Is(err, ErrActorStopping) {
 				cancelStop()
 				t.Fatalf("iteration %d: send = %v", id, err)
 			}

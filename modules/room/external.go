@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/event_dispatcher"
@@ -56,6 +57,6 @@ func (m *RoomExternal) GetModule() module.Module {
 	return m.Module
 }
 
-func (m *RoomExternal) AcceptMatch(admission matchentry.Admission) matchentry.Acceptance {
-	return m.RoomManager.AcceptMatch(admission)
+func (m *RoomExternal) AcceptMatch(ctx context.Context, admission matchentry.Admission) matchentry.Acceptance {
+	return m.RoomManager.AcceptMatch(ctx, admission)
 }

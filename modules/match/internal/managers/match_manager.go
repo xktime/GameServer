@@ -5,23 +5,38 @@ import (
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
+	"gameserver/common/utils"
 	"gameserver/core/log"
-	match_models "gameserver/modules/match/internal/models"
 	"gameserver/modules/match/playerread"
 	"gameserver/modules/match/roomaccept"
 	"gameserver/modules/room/matchentry"
 	"sort"
+	"sync"
 	"time"
 )
 
 // MatchManager 匹配管理器
 type MatchManager struct {
+	actor      *matchActor
+	definition *actor.Definition[*matchActor, string]
+	mu         sync.RWMutex
+	recoveryMu utils.KeyedMutex[string]
+}
+
+func (h *MatchManager) currentActor() *matchActor {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.actor
+}
+
+// matchActor 的可变状态只允许在所属邮箱内访问。
+type matchActor struct {
 	actor.BaseActor
 	players         playerread.PlayerReader
 	rooms           roomaccept.Acceptor
 	newMatchID      func() string
 	now             func() time.Time
-	matchQueues     map[int32]*match_models.MatchQueue `bson:"-"`
+	matchQueues     map[int32]*matchQueue
 	settlements     map[string]*matchSettlement
 	nextSyntheticID int64
 }
@@ -46,26 +61,32 @@ func NewMatchManager(ctx context.Context, scope *actor.Scope, players playerread
 	if now == nil {
 		return nil, fmt.Errorf("match: Clock is nil")
 	}
-	definition, err := actor.Define(scope, actor.Match, func(context.Context, string) (*MatchManager, error) {
-		return &MatchManager{
+	definition, err := actor.Define(scope, func(context.Context, string) (*matchActor, error) {
+		return &matchActor{
 			players:     players,
 			rooms:       rooms,
 			newMatchID:  newMatchID,
 			now:         now,
-			matchQueues: map[int32]*match_models.MatchQueue{1: match_models.NewMatchQueue()},
+			matchQueues: map[int32]*matchQueue{1: newMatchQueue()},
 			settlements: make(map[string]*matchSettlement),
 		}, nil
-	})
+	}, actor.DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		return nil, err
 	}
-	return definition.GetOrCreate(ctx, "singleton")
+	instance, err := definition.GetOrCreate(ctx, "singleton")
+	if err != nil {
+		return nil, err
+	}
+	return &MatchManager{actor: instance, definition: definition}, nil
 }
 
-func (m *MatchManager) OnTimer() {
-	if err := actor.Tell(context.Background(), m.Ref(), func(actor.Context) error {
-		m.Matching()
-		m.ProcessTimeoutRequests()
+func (handle *MatchManager) OnTimer() {
+	m := handle.currentActor()
+
+	if err := actor.Tell(context.Background(), m.Ref(), func(execution actor.Context) error {
+		m.matching(execution)
+		m.processTimeoutRequests()
 		return nil
 	}); err != nil {
 		log.Error("提交匹配定时任务失败: %v", err)
@@ -73,9 +94,9 @@ func (m *MatchManager) OnTimer() {
 }
 
 // Matching 定时任务，每10秒执行一次匹配
-func (m *MatchManager) Matching() {
+func (m *matchActor) matching(ctx context.Context) {
 	log.Debug("开始执行匹配任务")
-	m.retrySettlements()
+	m.retrySettlements(ctx)
 
 	for matchType, q := range m.matchQueues {
 		if q.GetQueueSize() == 0 {
@@ -86,24 +107,24 @@ func (m *MatchManager) Matching() {
 			continue
 		}
 		for _, group := range groups {
-			m.startSettlement(q, matchType, group)
+			m.startSettlement(ctx, q, matchType, group)
 		}
 		log.Debug("匹配任务完成，处理了 %d 个匹配组，匹配类型: %d", len(groups), matchType)
 	}
 }
 
-func (m *MatchManager) retrySettlements() {
+func (m *matchActor) retrySettlements(ctx context.Context) {
 	matchIDs := make([]string, 0, len(m.settlements))
 	for matchID := range m.settlements {
 		matchIDs = append(matchIDs, matchID)
 	}
 	sort.Strings(matchIDs)
 	for _, matchID := range matchIDs {
-		m.settle(m.settlements[matchID])
+		m.settle(ctx, m.settlements[matchID])
 	}
 }
 
-func (m *MatchManager) startSettlement(q *match_models.MatchQueue, matchType int32, group []*match_models.TeamMatchRequest) {
+func (m *matchActor) startSettlement(ctx context.Context, q *matchQueue, matchType int32, group []*teamMatchRequest) {
 	teamIDs := make([]int64, 0, len(group))
 	teams := make([]matchentry.MatchedTeam, 0, len(group))
 	for _, request := range group {
@@ -125,11 +146,11 @@ func (m *MatchManager) startSettlement(q *match_models.MatchQueue, matchType int
 		admission: matchentry.Admission{MatchID: matchID, Teams: teams},
 	}
 	m.settlements[matchID] = settlement
-	m.settle(settlement)
+	m.settle(ctx, settlement)
 }
 
-func (m *MatchManager) settle(settlement *matchSettlement) {
-	result := m.rooms.AcceptMatch(copyAdmission(settlement.admission))
+func (m *matchActor) settle(ctx context.Context, settlement *matchSettlement) {
+	result := m.rooms.AcceptMatch(ctx, copyAdmission(settlement.admission))
 	switch result.Status {
 	case matchentry.Accepted, matchentry.AlreadyAccepted:
 		m.matchQueues[settlement.matchType].RemoveSettledMatch(settlement.admission.MatchID)
@@ -154,10 +175,12 @@ func copyAdmission(admission matchentry.Admission) matchentry.Admission {
 }
 
 // HandleMatch 处理队伍开始匹配请求
-func (m *MatchManager) HandleMatch(playerID int64, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
-	result, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (matchHandleResult, error) {
-		teamID, response := m.doHandleMatch(playerID, msg)
-		return matchHandleResult{teamID: teamID, response: response}, nil
+func (handle *MatchManager) HandleMatch(playerID int64, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
+	m := handle.currentActor()
+
+	result, err := actor.Command(context.Background(), m.Ref(), func(execution actor.Context) (matchHandleResult, error) {
+		teamID, response, err := m.doHandleMatch(execution, playerID, msg)
+		return matchHandleResult{teamID: teamID, response: response}, err
 	})
 	if err != nil {
 		log.Error("处理匹配失败: %v", err)
@@ -172,21 +195,24 @@ type matchHandleResult struct {
 }
 
 // doHandleMatch 处理队伍开始匹配请求的同步实现
-func (m *MatchManager) doHandleMatch(playerID int64, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch) {
-	playerSnapshot, ok := m.players.FindOnline(playerID)
+func (m *matchActor) doHandleMatch(ctx context.Context, playerID int64, msg *message.C2S_StartMatch) (int64, *message.S2C_StartMatch, error) {
+	teamSnapshot, ok, err := m.players.FindOnlineTeam(ctx, playerID)
+	if err != nil {
+		return 0, nil, err
+	}
 	if !ok {
-		log.Error("玩家不存在: %d", playerID)
+		log.Error("无法获取玩家 %d 的队伍信息", playerID)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
-		}
+		}, nil
 	}
 
 	// 检查玩家是否有队伍
-	if playerSnapshot.TeamID == 0 {
+	if teamSnapshot.TeamID == 0 {
 		log.Error("玩家 %d 没有队伍，无法开始匹配", playerID)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
-		}
+		}, nil
 	}
 
 	q := m.matchQueues[msg.Type]
@@ -194,35 +220,24 @@ func (m *MatchManager) doHandleMatch(playerID int64, msg *message.C2S_StartMatch
 		log.Error("匹配队列不合法: %d", msg.Type)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
-		}
+		}, nil
 	}
 
 	// 检查队伍是否已经在该类型匹配队列中
-	if q.IsTeamInQueue(playerSnapshot.TeamID) {
-		log.Debug("队伍 %d 已经在匹配队列中", playerSnapshot.TeamID)
+	if q.IsTeamInQueue(teamSnapshot.TeamID) {
+		log.Debug("队伍 %d 已经在匹配队列中", teamSnapshot.TeamID)
 		return 0, &message.S2C_StartMatch{
 			Result: false,
-		}
-	}
-
-	// 获取队伍信息
-	teamSnapshot, ok := m.players.FindOnlineTeam(playerID)
-	if !ok {
-		log.Error("无法获取玩家 %d 的队伍信息", playerID)
-		return 0, &message.S2C_StartMatch{
-			Result: false,
-		}
+		}, nil
 	}
 
 	// 创建队伍匹配请求
-	teamId := playerSnapshot.TeamID
-	teamMatchReq := &match_models.TeamMatchRequest{
+	teamId := teamSnapshot.TeamID
+	teamMatchReq := &teamMatchRequest{
 		TeamId:    teamId,
 		PlayerIds: teamSnapshot.MemberIDs,
-		MatchType: msg.Type,
 		JoinTime:  m.now(),
 		IsRobot:   false,
-		TeamSize:  len(teamSnapshot.MemberIDs),
 	}
 
 	// 加入对应类型的匹配队列
@@ -233,14 +248,16 @@ func (m *MatchManager) doHandleMatch(playerID int64, msg *message.C2S_StartMatch
 
 	return teamId, &message.S2C_StartMatch{
 		Result: true,
-	}
+	}, nil
 }
 
 // HandleCancelMatch 处理取消匹配请求
-func (m *MatchManager) HandleCancelMatch(playerID int64) (int64, *message.S2C_CancelMatch) {
-	result, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (cancelMatchResult, error) {
-		teamID, response := m.doHandleCancelMatch(playerID)
-		return cancelMatchResult{teamID: teamID, response: response}, nil
+func (handle *MatchManager) HandleCancelMatch(playerID int64) (int64, *message.S2C_CancelMatch) {
+	m := handle.currentActor()
+
+	result, err := actor.Command(context.Background(), m.Ref(), func(execution actor.Context) (cancelMatchResult, error) {
+		teamID, response, err := m.doHandleCancelMatch(execution, playerID)
+		return cancelMatchResult{teamID: teamID, response: response}, err
 	})
 	if err != nil {
 		log.Error("取消匹配失败: %v", err)
@@ -255,13 +272,16 @@ type cancelMatchResult struct {
 }
 
 // doHandleCancelMatch 处理取消匹配请求的同步实现
-func (m *MatchManager) doHandleCancelMatch(playerID int64) (int64, *message.S2C_CancelMatch) {
-	playerSnapshot, ok := m.players.FindOnline(playerID)
+func (m *matchActor) doHandleCancelMatch(ctx context.Context, playerID int64) (int64, *message.S2C_CancelMatch, error) {
+	playerSnapshot, ok, err := m.players.FindOnline(ctx, playerID)
+	if err != nil {
+		return 0, nil, err
+	}
 	if !ok {
 		log.Error("玩家不存在: %d", playerID)
 		return 0, &message.S2C_CancelMatch{
 			Result: false,
-		}
+		}, nil
 	}
 
 	// 检查玩家是否有队伍
@@ -269,7 +289,7 @@ func (m *MatchManager) doHandleCancelMatch(playerID int64) (int64, *message.S2C_
 		log.Error("玩家 %d 没有队伍，无法取消匹配", playerID)
 		return 0, &message.S2C_CancelMatch{
 			Result: false,
-		}
+		}, nil
 	}
 
 	// 从所有类型的匹配队列中尝试移除该队伍
@@ -285,12 +305,12 @@ func (m *MatchManager) doHandleCancelMatch(playerID int64) (int64, *message.S2C_
 		log.Debug("队伍 %d 已从匹配队列中移除", playerSnapshot.TeamID)
 		return playerSnapshot.TeamID, &message.S2C_CancelMatch{
 			Result: true,
-		}
+		}, nil
 	} else {
 		log.Debug("队伍 %d 不在任何匹配队列中", playerSnapshot.TeamID)
 		return 0, &message.S2C_CancelMatch{
 			Result: false,
-		}
+		}, nil
 	}
 }
 
@@ -300,7 +320,7 @@ func getTargetRoomSize(matchType int32) int {
 }
 
 // executeTeamMatchingForType 执行指定类型的队伍匹配逻辑
-func (m *MatchManager) executeTeamMatchingForType(q *match_models.MatchQueue, matchType int32) [][]*match_models.TeamMatchRequest {
+func (m *matchActor) executeTeamMatchingForType(q *matchQueue, matchType int32) [][]*teamMatchRequest {
 	teamRequests := q.GetTeamRequests()
 	if len(teamRequests) == 0 {
 		return nil
@@ -309,33 +329,35 @@ func (m *MatchManager) executeTeamMatchingForType(q *match_models.MatchQueue, ma
 		matchType, len(teamRequests), q.GetTotalPlayers())
 
 	targetRoomSize := getTargetRoomSize(matchType)
-	var matchedGroups [][]*match_models.TeamMatchRequest
+	var matchedGroups [][]*teamMatchRequest
 
 	// 按队伍大小排序，优先匹配大队伍
-	sortedRequests := sortTeamsBySize(teamRequests)
+	sort.SliceStable(teamRequests, func(i, j int) bool {
+		return len(teamRequests[i].PlayerIds) > len(teamRequests[j].PlayerIds)
+	})
 
 	// 尝试组合队伍以达到目标房间大小
-	currentGroup := make([]*match_models.TeamMatchRequest, 0)
+	currentGroup := make([]*teamMatchRequest, 0)
 	currentSize := 0
 
-	for _, teamReq := range sortedRequests {
+	for _, teamReq := range teamRequests {
 		// 如果当前队伍加入后会超过目标大小，且当前组不为空，则完成当前组
-		if currentSize+teamReq.TeamSize > targetRoomSize && len(currentGroup) > 0 {
+		if currentSize+len(teamReq.PlayerIds) > targetRoomSize && len(currentGroup) > 0 {
 			// 尝试用机器人填充当前组
 			currentGroup = m.fillGroupWithRobots(currentGroup, currentSize, targetRoomSize)
 			matchedGroups = append(matchedGroups, currentGroup)
-			currentGroup = make([]*match_models.TeamMatchRequest, 0)
+			currentGroup = make([]*teamMatchRequest, 0)
 			currentSize = 0
 		}
 
 		// 添加队伍到当前组
 		currentGroup = append(currentGroup, teamReq)
-		currentSize += teamReq.TeamSize
+		currentSize += len(teamReq.PlayerIds)
 
 		// 如果达到目标大小，完成当前组
 		if currentSize >= targetRoomSize {
 			matchedGroups = append(matchedGroups, currentGroup)
-			currentGroup = make([]*match_models.TeamMatchRequest, 0)
+			currentGroup = make([]*teamMatchRequest, 0)
 			currentSize = 0
 		}
 	}
@@ -351,7 +373,7 @@ func (m *MatchManager) executeTeamMatchingForType(q *match_models.MatchQueue, ma
 }
 
 // fillGroupWithRobots 用机器人填充队伍组到目标大小
-func (m *MatchManager) fillGroupWithRobots(group []*match_models.TeamMatchRequest, currentSize, targetSize int) []*match_models.TeamMatchRequest {
+func (m *matchActor) fillGroupWithRobots(group []*teamMatchRequest, currentSize, targetSize int) []*teamMatchRequest {
 	if currentSize >= targetSize {
 		return group
 	}
@@ -359,47 +381,23 @@ func (m *MatchManager) fillGroupWithRobots(group []*match_models.TeamMatchReques
 	// 计算需要补充的机器人数量
 	needRobots := targetSize - currentSize
 
-	// 获取匹配类型（从第一个队伍获取，如果存在的话）
-	matchType := int32(0)
-	if len(group) > 0 {
-		matchType = group[0].MatchType
-	}
 	// 生成机器人队伍来填充
-	robotTeam := m.syntheticRobotTeams(matchType, needRobots)
+	robotTeam := m.syntheticRobotTeams(needRobots)
 	group = append(group, robotTeam...)
 	return group
 }
 
-// sortTeamsBySize 按队伍大小排序，大队伍优先
-func sortTeamsBySize(teams []*match_models.TeamMatchRequest) []*match_models.TeamMatchRequest {
-	// 简单的冒泡排序，按队伍大小降序排列
-	sorted := make([]*match_models.TeamMatchRequest, len(teams))
-	copy(sorted, teams)
-
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := 0; j < len(sorted)-i-1; j++ {
-			if sorted[j].TeamSize < sorted[j+1].TeamSize {
-				sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-			}
-		}
-	}
-
-	return sorted
-}
-
-func (m *MatchManager) syntheticRobotTeams(matchType int32, needRobots int) []*match_models.TeamMatchRequest {
-	robotTeams := make([]*match_models.TeamMatchRequest, 0, needRobots)
+func (m *matchActor) syntheticRobotTeams(needRobots int) []*teamMatchRequest {
+	robotTeams := make([]*teamMatchRequest, 0, needRobots)
 	for i := 0; i < needRobots; i++ {
 		m.nextSyntheticID--
 		teamID := m.nextSyntheticID
 		m.nextSyntheticID--
 		playerID := m.nextSyntheticID
-		robotTeam := &match_models.TeamMatchRequest{
+		robotTeam := &teamMatchRequest{
 			PlayerIds: []int64{playerID},
 			IsRobot:   true,
-			TeamSize:  1,
 			TeamId:    teamID,
-			MatchType: matchType,
 			JoinTime:  m.now(),
 		}
 		robotTeams = append(robotTeams, robotTeam)
@@ -409,7 +407,7 @@ func (m *MatchManager) syntheticRobotTeams(matchType int32, needRobots int) []*m
 }
 
 // ProcessTimeoutRequests 处理超时的匹配请求
-func (m *MatchManager) ProcessTimeoutRequests() {
+func (m *matchActor) processTimeoutRequests() {
 	expiredTime := m.now().Add(-5 * time.Minute)
 	for _, q := range m.matchQueues {
 		var expiredTeams []int64
@@ -421,12 +419,7 @@ func (m *MatchManager) ProcessTimeoutRequests() {
 
 		// 移除过期请求
 		for _, teamId := range expiredTeams {
-			if req, exists := q.TeamRequests[teamId]; exists {
-				// 清理玩家到队伍的映射关系
-				for _, playerId := range req.PlayerIds {
-					delete(q.PlayerToTeam, playerId)
-				}
-				delete(q.TeamRequests, teamId)
+			if q.RemoveTeamRequest(teamId) {
 				log.Debug("清理过期的匹配请求: 队伍 %d", teamId)
 			}
 		}

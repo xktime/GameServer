@@ -2,9 +2,11 @@ package managers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
+	"gameserver/common/utils"
 	"gameserver/core/log"
 	"gameserver/modules/room/matchentry"
 	"gameserver/modules/room/participant"
@@ -16,13 +18,15 @@ import (
 
 type RoomManager struct {
 	mu                        sync.Mutex
-	roomDefinition            *actor.Definition[*Room, string]
+	recoveryMu                utils.KeyedMutex[string]
+	stopped                   bool
+	roomDefinition            *actor.Definition[*roomActor, string]
 	projection                participant.TeamRoomProjection
-	messenger                 participant.PlayerMessenger
 	now                       func() time.Time
 	newRoomID                 func() string
-	rooms                     map[string]*Room
-	closedRooms               map[string]struct{}
+	rooms                     map[string]*roomActor
+	closedRooms               map[string]closedRoomState
+	stoppingRooms             map[string]actor.ActorRef
 	matchRooms                map[string]string
 	roomMatches               map[string]string
 	closedMatches             map[string]time.Time
@@ -34,6 +38,11 @@ type RoomManager struct {
 }
 
 const MatchTombstoneTTL = 5 * time.Minute
+
+type closedRoomState struct {
+	teamIDs  []int64
+	closedAt time.Time
+}
 
 type teamRoomProjectionState struct {
 	roomID  string
@@ -64,20 +73,20 @@ func NewRoomManager(
 	if newRoomID == nil {
 		return nil, fmt.Errorf("room: RoomID generator is nil")
 	}
-	definition, err := actor.Define(scope, actor.Room, func(context.Context, string) (*Room, error) {
-		return &Room{maxLifetime: MaxRoomLifetime, messenger: messenger}, nil
-	})
+	definition, err := actor.Define(scope, func(context.Context, string) (*roomActor, error) {
+		return &roomActor{maxLifetime: MaxRoomLifetime, messenger: messenger}, nil
+	}, actor.DefinitionOptions{QueueCapacity: 256})
 	if err != nil {
 		return nil, err
 	}
 	return &RoomManager{
 		roomDefinition:            definition,
 		projection:                projection,
-		messenger:                 messenger,
 		now:                       now,
 		newRoomID:                 newRoomID,
-		rooms:                     make(map[string]*Room),
-		closedRooms:               make(map[string]struct{}),
+		rooms:                     make(map[string]*roomActor),
+		closedRooms:               make(map[string]closedRoomState),
+		stoppingRooms:             make(map[string]actor.ActorRef),
 		matchRooms:                make(map[string]string),
 		roomMatches:               make(map[string]string),
 		closedMatches:             make(map[string]time.Time),
@@ -88,7 +97,7 @@ func NewRoomManager(
 	}, nil
 }
 
-func (m *RoomManager) AcceptMatch(admission matchentry.Admission) matchentry.Acceptance {
+func (m *RoomManager) AcceptMatch(ctx context.Context, admission matchentry.Admission) matchentry.Acceptance {
 	if !validAdmission(admission) {
 		return matchentry.Acceptance{
 			Status:          matchentry.Rejected,
@@ -96,6 +105,10 @@ func (m *RoomManager) AcceptMatch(admission matchentry.Admission) matchentry.Acc
 		}
 	}
 	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return matchentry.Acceptance{Status: matchentry.Retryable}
+	}
 	if roomID, ok := m.matchRooms[admission.MatchID]; ok {
 		m.mu.Unlock()
 		return matchentry.Acceptance{Status: matchentry.AlreadyAccepted, RoomID: roomID}
@@ -152,10 +165,14 @@ func (m *RoomManager) AcceptMatch(admission matchentry.Admission) matchentry.Acc
 			})
 		}
 	}
-	room, err := createRoom(context.Background(), m.roomDefinition, roomID, memberIDs, realPlayerIDs, teamIDs, realTeamIDs, now, m.messenger)
+	room, err := createRoom(ctx, m.roomDefinition, roomID, memberIDs, realPlayerIDs, teamIDs, realTeamIDs, now)
 	if err != nil {
 		m.mu.Unlock()
-		log.Error("创建房间 %s 失败: %v", roomID, err)
+		// 初始化由 Scope 管理，调用方取消等待后仍可能生成实例。
+		cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupErr := m.roomDefinition.Stop(cleanupContext, roomID)
+		cancelCleanup()
+		log.Error("创建房间 %s 失败: %v", roomID, errors.Join(err, cleanupErr))
 		return matchentry.Acceptance{Status: matchentry.Retryable}
 	}
 	m.rooms[roomID] = room
@@ -173,48 +190,90 @@ func (m *RoomManager) AcceptMatch(admission matchentry.Admission) matchentry.Acc
 	}
 	m.mu.Unlock()
 
-	m.applyProjection(desired)
-	room.send(&message.S2C_MatchResult{RoomId: roomID, PlayerInfos: playerInfos})
+	// 房间已提交，后续投影和通知不再受调用方取消影响，同时保留 Actor 调用链。
+	committedContext := context.WithoutCancel(ctx)
+	m.applyProjection(committedContext, desired)
+	room.send(committedContext, &message.S2C_MatchResult{RoomId: roomID, PlayerInfos: playerInfos})
 	return matchentry.Acceptance{Status: matchentry.Accepted, RoomID: roomID}
 }
 
+// CloseRoom 的完成记录保留一个墓碑周期，未完成的清理继续保留以供重试。
 func (m *RoomManager) CloseRoom(roomID string) bool {
+	closed, err := m.closeRoom(context.Background(), roomID, false)
+	if err != nil {
+		log.Error("关闭房间 %s 失败: %v", roomID, err)
+	}
+	return closed
+}
+
+func (m *RoomManager) closeRoom(ctx context.Context, roomID string, quarantined bool) (bool, error) {
 	m.mu.Lock()
-	if _, closed := m.closedRooms[roomID]; closed {
-		m.mu.Unlock()
-		return true
-	}
-	room, exists := m.rooms[roomID]
-	if !exists {
-		m.mu.Unlock()
-		return false
-	}
-	delete(m.rooms, roomID)
-	m.closedRooms[roomID] = struct{}{}
-	if matchID, ok := m.roomMatches[roomID]; ok {
-		delete(m.roomMatches, roomID)
-		delete(m.matchRooms, matchID)
-		m.closedMatches[matchID] = m.now()
-	}
-	for _, playerID := range room.memberIDs {
-		if m.playerRooms[playerID] == roomID {
-			delete(m.playerRooms, playerID)
+	var desired []teamRoomProjectionAttempt
+	if closed, exists := m.closedRooms[roomID]; exists {
+		desired = make([]teamRoomProjectionAttempt, 0, len(closed.teamIDs))
+		for _, teamID := range closed.teamIDs {
+			state := m.desiredTeamRooms[teamID]
+			if m.projectedTeamRoomVersions[teamID] < state.version {
+				desired = append(desired, teamRoomProjectionAttempt{
+					desired: participant.DesiredTeamRoom{TeamID: teamID, RoomID: state.roomID},
+					version: state.version,
+				})
+			}
+		}
+	} else {
+		room, exists := m.rooms[roomID]
+		if !exists {
+			m.mu.Unlock()
+			return false, nil
+		}
+		delete(m.rooms, roomID)
+		// 保留清理涉及的 Team，房间索引删除后仍可单独重试其投影。
+		closedAt := m.now()
+		m.closedRooms[roomID] = closedRoomState{teamIDs: room.realTeamIDs, closedAt: closedAt}
+		m.stoppingRooms[roomID] = room.Ref()
+		if matchID, ok := m.roomMatches[roomID]; ok {
+			delete(m.roomMatches, roomID)
+			delete(m.matchRooms, matchID)
+			m.closedMatches[matchID] = closedAt
+		}
+		for _, playerID := range room.memberIDs {
+			if m.playerRooms[playerID] == roomID {
+				delete(m.playerRooms, playerID)
+			}
+		}
+		for _, teamID := range room.teamIDs {
+			if m.teamRooms[teamID] == roomID {
+				delete(m.teamRooms, teamID)
+			}
+		}
+		desired = make([]teamRoomProjectionAttempt, 0, len(room.realTeamIDs))
+		for _, teamID := range room.realTeamIDs {
+			desired = append(desired, m.setDesiredTeamRoomLocked(teamID, ""))
 		}
 	}
-	for _, teamID := range room.teamIDs {
-		if m.teamRooms[teamID] == roomID {
-			delete(m.teamRooms, teamID)
-		}
-	}
-	desired := make([]teamRoomProjectionAttempt, 0, len(room.realTeamIDs))
-	for _, teamID := range room.realTeamIDs {
-		desired = append(desired, m.setDesiredTeamRoomLocked(teamID, ""))
-	}
+	ref, pending := m.stoppingRooms[roomID]
 	m.mu.Unlock()
 
-	room.Stop()
-	m.applyProjection(desired)
-	return true
+	var stopErr error
+	if pending && !quarantined {
+		stopErr = m.stopRoomActor(ctx, roomID, ref)
+	}
+	projectionErr := m.applyProjection(ctx, desired)
+	return true, errors.Join(stopErr, projectionErr)
+}
+
+func (m *RoomManager) stopRoomActor(ctx context.Context, roomID string, ref actor.ActorRef) error {
+	if err := ref.Stop(ctx); err != nil {
+		return err
+	}
+	m.markRoomStopped(roomID)
+	return nil
+}
+
+func (m *RoomManager) markRoomStopped(roomID string) {
+	m.mu.Lock()
+	delete(m.stoppingRooms, roomID)
+	m.mu.Unlock()
 }
 
 func (m *RoomManager) HandleRecordOperate(playerID int64, roomID string, operateInfo string) *message.S2C_RecordGameOperate {
@@ -226,11 +285,14 @@ func (m *RoomManager) HandleRecordOperate(playerID int64, roomID string, operate
 		return &message.S2C_RecordGameOperate{}
 	}
 
-	room.sendExcept(playerID, &message.S2C_RecordGameOperate{OperateInfo: operateInfo})
+	if err := room.sendExcept(context.Background(), playerID, &message.S2C_RecordGameOperate{OperateInfo: operateInfo}); err != nil {
+		log.Error("发送房间操作失败: %v", err)
+		return &message.S2C_RecordGameOperate{}
+	}
 	return &message.S2C_RecordGameOperate{OperateInfo: operateInfo}
 }
 
-func (m *RoomManager) PlayerOffline(playerID int64) bool {
+func (m *RoomManager) PlayerOffline(ctx context.Context, playerID int64) bool {
 	m.mu.Lock()
 	roomID, member := m.playerRooms[playerID]
 	room := m.rooms[roomID]
@@ -242,10 +304,7 @@ func (m *RoomManager) PlayerOffline(playerID int64) bool {
 	// UserManager calls this only after closing the current Session. Wait until
 	// dispatch has actually run, so a timed-out Room task cannot run after the
 	// next login has already committed. Delivery remains best effort.
-	_, err := actor.CallUntilDone(context.Background(), room.Ref(), func(actor.Context) (struct{}, error) {
-		room.messenger.SendExcept(room.realPlayerIDs, playerID, &message.S2C_PlayerOffline{PlayerId: strconv.FormatInt(playerID, 10)})
-		return struct{}{}, nil
-	})
+	err := room.sendExcept(ctx, playerID, &message.S2C_PlayerOffline{PlayerId: strconv.FormatInt(playerID, 10)})
 	if err != nil {
 		log.Error("派发玩家离线失败: player=%d error=%v", playerID, err)
 	}
@@ -273,10 +332,10 @@ func (m *RoomManager) CloseExpired() int {
 func (m *RoomManager) Maintain() {
 	m.CloseExpired()
 	m.ReconcileProjections()
-	m.pruneExpiredMatchTombstones()
+	m.pruneExpiredTombstones()
 }
 
-func (m *RoomManager) pruneExpiredMatchTombstones() {
+func (m *RoomManager) pruneExpiredTombstones() {
 	now := m.now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -287,23 +346,56 @@ func (m *RoomManager) pruneExpiredMatchTombstones() {
 		}
 		delete(m.closedMatches, matchID)
 	}
+	for roomID, closed := range m.closedRooms {
+		if now.Before(closed.closedAt.Add(MatchTombstoneTTL)) {
+			continue
+		}
+		if _, stopping := m.stoppingRooms[roomID]; stopping {
+			continue
+		}
+		projected := true
+		for _, teamID := range closed.teamIDs {
+			if m.projectedTeamRoomVersions[teamID] < m.desiredTeamRooms[teamID].version {
+				projected = false
+				break
+			}
+		}
+		if projected {
+			delete(m.closedRooms, roomID)
+		}
+	}
 }
 
-func (m *RoomManager) Stop() {
+func (m *RoomManager) Stop(ctx context.Context) error {
 	m.mu.Lock()
-	roomIDs := make([]string, 0, len(m.rooms))
+	m.stopped = true
+	roomIDs := make([]string, 0, len(m.rooms)+len(m.stoppingRooms))
 	for roomID := range m.rooms {
+		roomIDs = append(roomIDs, roomID)
+	}
+	for roomID := range m.stoppingRooms {
 		roomIDs = append(roomIDs, roomID)
 	}
 	m.mu.Unlock()
 
 	sort.Strings(roomIDs)
+	var failures []error
 	for _, roomID := range roomIDs {
-		m.CloseRoom(roomID)
+		if _, err := m.closeRoom(ctx, roomID, false); err != nil {
+			failures = append(failures, err)
+		}
 	}
+	if err := m.reconcileProjections(ctx); err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
 }
 
 func (m *RoomManager) ReconcileProjections() {
+	m.reconcileProjections(context.Background())
+}
+
+func (m *RoomManager) reconcileProjections(ctx context.Context) error {
 	m.mu.Lock()
 	desired := make([]teamRoomProjectionAttempt, 0, len(m.desiredTeamRooms))
 	for teamID, state := range m.desiredTeamRooms {
@@ -317,7 +409,7 @@ func (m *RoomManager) ReconcileProjections() {
 	m.mu.Unlock()
 
 	sortProjectionAttempts(desired)
-	m.applyProjection(desired)
+	return m.applyProjection(ctx, desired)
 }
 
 func (m *RoomManager) setDesiredTeamRoomLocked(teamID int64, roomID string) teamRoomProjectionAttempt {
@@ -330,14 +422,17 @@ func (m *RoomManager) setDesiredTeamRoomLocked(teamID int64, roomID string) team
 	}
 }
 
-func (m *RoomManager) applyProjection(attempts []teamRoomProjectionAttempt) {
+func (m *RoomManager) applyProjection(ctx context.Context, attempts []teamRoomProjectionAttempt) error {
 	for len(attempts) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		desired := make([]participant.DesiredTeamRoom, len(attempts))
 		for index, attempt := range attempts {
 			desired[index] = attempt.desired
 		}
-		if err := m.projection.Apply(desired); err != nil {
-			return
+		if err := m.projection.Apply(ctx, desired); err != nil {
+			return err
 		}
 
 		latestByTeam := make(map[int64]teamRoomProjectionAttempt)
@@ -366,6 +461,7 @@ func (m *RoomManager) applyProjection(attempts []teamRoomProjectionAttempt) {
 		}
 		sortProjectionAttempts(attempts)
 	}
+	return nil
 }
 
 func sortProjectionAttempts(attempts []teamRoomProjectionAttempt) {

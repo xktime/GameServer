@@ -1,13 +1,10 @@
-package models
+package managers
 
-import (
-	"slices"
-	"testing"
-)
+import "testing"
 
 func TestMatchQueueSettlingBlocksCancelUntilResolved(t *testing.T) {
-	queue := NewMatchQueue()
-	queue.AddTeamRequest(&TeamMatchRequest{TeamId: 7, PlayerIds: []int64{42}, TeamSize: 1})
+	queue := newMatchQueue()
+	queue.AddTeamRequest(&teamMatchRequest{TeamId: 7, PlayerIds: []int64{42}})
 
 	if !queue.MarkSettling([]int64{7}, "match-1") {
 		t.Fatal("MarkSettling() = false")
@@ -30,7 +27,7 @@ func TestMatchQueueSettlingBlocksCancelUntilResolved(t *testing.T) {
 	if removed := queue.RemoveSettledMatch("match-1"); removed != 1 {
 		t.Fatalf("RemoveSettledMatch() = %d", removed)
 	}
-	if queue.IsTeamInQueue(7) || queue.IsPlayerInQueue(42) || !slices.Equal(queue.GetTeamRequests(), []*TeamMatchRequest{}) {
-		t.Fatalf("resolved queue = %#v, players = %#v", queue.TeamRequests, queue.PlayerToTeam)
+	if queue.IsTeamInQueue(7) || len(queue.GetTeamRequests()) != 0 {
+		t.Fatalf("resolved queue = %#v", queue.TeamRequests)
 	}
 }

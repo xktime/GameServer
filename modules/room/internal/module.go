@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"gameserver/common"
 	"gameserver/common/base/actor"
 	"gameserver/common/schedule"
@@ -26,7 +28,7 @@ type Module struct {
 type roomMaintenance interface {
 	roomManager
 	Maintain()
-	Stop()
+	Stop(context.Context) error
 }
 
 func NewModule(scope *actor.Scope, scheduler schedule.Scheduler, maintenance roomMaintenance) *Module {
@@ -40,9 +42,31 @@ func (m *Module) OnInit() {
 }
 
 func (m *Module) OnDestroy() {
-	m.job.Stop()
-	m.maintenance.Stop()
-	if err := m.scope.Stop(context.Background()); err != nil {
-		log.Error("停止 room Actor Scope 失败: %v", err)
+	if err := m.Shutdown(); err != nil {
+		log.Error("停止 room 模块失败: %v", err)
 	}
+}
+
+func (m *Module) Shutdown() error {
+	var failures []error
+	stopContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := m.job.Stop(stopContext); err != nil {
+		failures = append(failures, fmt.Errorf("stop room maintenance job: %w", err))
+	}
+	if err := m.maintenance.Stop(stopContext); err != nil {
+		// 普通投影错误也可能恢复，必须在 game 保存 Team 前重试。
+		retryContext, cancelRetry := context.WithTimeout(context.Background(), 5*time.Second)
+		retryErr := m.maintenance.Stop(retryContext)
+		cancelRetry()
+		if retryErr != nil {
+			failures = append(failures, fmt.Errorf("stop room manager: %w", errors.Join(err, retryErr)))
+		}
+	}
+	scopeContext, cancelScope := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelScope()
+	if err := m.scope.Stop(scopeContext); err != nil {
+		failures = append(failures, fmt.Errorf("stop room actor scope: %w", err))
+	}
+	return errors.Join(failures...)
 }

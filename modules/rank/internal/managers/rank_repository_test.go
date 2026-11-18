@@ -17,10 +17,10 @@ import (
 
 func TestMongoRankRepositoryRejectsSkippedSave(t *testing.T) {
 	repository := mongoRankStore{}
-	if err := repository.Save(&documents.RankManager{PersistId: 1}); err == nil {
+	if err := repository.Save(context.Background(), &documents.RankManager{PersistId: 1}); err == nil {
 		t.Error("MongoDB 未初始化时，不应把跳过排行榜保存报告为成功")
 	}
-	if err := repository.Save(&SeasonManager{PersistId: 1}); err == nil {
+	if err := repository.Save(context.Background(), &SeasonManager{PersistId: 1}); err == nil {
 		t.Error("MongoDB 未初始化时，不应把跳过赛季保存报告为成功")
 	}
 }

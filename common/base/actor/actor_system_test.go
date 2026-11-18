@@ -55,11 +55,11 @@ func TestActorRefStopRecoversDomainHookPanicAndAllowsRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*stopHookTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*stopHookTestActor, error) {
 		instance := &stopHookTestActor{}
 		instance.panicStops.Store(1)
 		return instance, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestDefinitionGetOrCreateCoalescesConcurrentInitialization(t *testing.T) {
 	var initializationCount atomic.Int32
 	initializationStarted := make(chan struct{}, 1)
 	releaseInitialization := make(chan struct{})
-	definition, err := Define(scope, Test1, func(ctx context.Context, id string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(ctx context.Context, id string) (*systemTestActor, error) {
 		initializationCount.Add(1)
 		initializationStarted <- struct{}{}
 		select {
@@ -100,7 +100,7 @@ func TestDefinitionGetOrCreateCoalescesConcurrentInitialization(t *testing.T) {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -148,14 +148,14 @@ func TestDefinitionRejectsSecondFactoryForTypeInSameScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	if _, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	if _, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	}); err != nil {
+	}, DefinitionOptions{QueueCapacity: 1024}); err != nil {
 		t.Fatalf("define first factory: %v", err)
 	}
-	if _, err := Define(scope, Test2, func(context.Context, int64) (*systemTestActor, error) {
+	if _, err := Define(scope, func(context.Context, int64) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	}); err == nil {
+	}, DefinitionOptions{QueueCapacity: 1024}); err == nil {
 		t.Fatal("second factory for one actor type succeeded")
 	}
 }
@@ -168,16 +168,16 @@ func TestDefinitionLookupDoesNotCreateMissingActor(t *testing.T) {
 	}
 
 	var initializationCount atomic.Int32
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		initializationCount.Add(1)
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
 
-	if _, err := definition.Lookup(context.Background(), "missing"); !errors.Is(err, ErrActorStopped) {
-		t.Fatalf("lookup missing actor: got %v, want %v", err, ErrActorStopped)
+	if _, err := definition.Lookup(context.Background(), "missing"); !errors.Is(err, ErrActorNotFound) {
+		t.Fatalf("lookup missing actor: got %v, want %v", err, ErrActorNotFound)
 	}
 	if got := initializationCount.Load(); got != 0 {
 		t.Fatalf("lookup initialized %d actors; want 0", got)
@@ -198,8 +198,8 @@ func TestDefinitionLookupDoesNotCreateMissingActor(t *testing.T) {
 	if err := created.Ref().Stop(context.Background()); err != nil {
 		t.Fatalf("stop actor: %v", err)
 	}
-	if _, err := definition.Lookup(context.Background(), "created"); !errors.Is(err, ErrActorStopped) {
-		t.Fatalf("lookup stopped actor: got %v, want %v", err, ErrActorStopped)
+	if _, err := definition.Lookup(context.Background(), "created"); !errors.Is(err, ErrActorNotFound) {
+		t.Fatalf("lookup stopped actor: got %v, want %v", err, ErrActorNotFound)
 	}
 }
 
@@ -209,9 +209,9 @@ func TestDefinitionLookupRejectsActorWhileItIsStopping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*blockingStopTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*blockingStopTestActor, error) {
 		return &blockingStopTestActor{started: make(chan struct{}), release: make(chan struct{})}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -225,11 +225,11 @@ func TestDefinitionLookupRejectsActorWhileItIsStopping(t *testing.T) {
 		stopResult <- instance.Ref().Stop(context.Background())
 	}()
 	<-instance.started
-	if _, err := definition.Lookup(context.Background(), "stopping"); !errors.Is(err, ErrActorStopped) {
-		t.Fatalf("lookup stopping actor: got %v, want %v", err, ErrActorStopped)
+	if _, err := definition.Lookup(context.Background(), "stopping"); !errors.Is(err, ErrActorStopping) {
+		t.Fatalf("lookup stopping actor: got %v, want %v", err, ErrActorStopping)
 	}
-	if _, err := definition.GetOrCreate(context.Background(), "stopping"); !errors.Is(err, ErrActorStopped) {
-		t.Fatalf("get stopping actor: got %v, want %v", err, ErrActorStopped)
+	if _, err := definition.GetOrCreate(context.Background(), "stopping"); !errors.Is(err, ErrActorStopping) {
+		t.Fatalf("get stopping actor: got %v, want %v", err, ErrActorStopping)
 	}
 	close(instance.release)
 	if err := <-stopResult; err != nil {
@@ -237,15 +237,15 @@ func TestDefinitionLookupRejectsActorWhileItIsStopping(t *testing.T) {
 	}
 }
 
-func TestCallSerializesTasksForOneActor(t *testing.T) {
+func TestCommandSerializesTasksForOneActor(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestCallSerializesTasksForOneActor(t *testing.T) {
 	for range calls {
 		go func() {
 			defer wg.Done()
-			_, callErr := Call(context.Background(), instance.Ref(), func(Context) (int32, error) {
+			_, callErr := Command(context.Background(), instance.Ref(), func(Context) (int32, error) {
 				current := active.Add(1)
 				for {
 					maximum := maximumActive.Load()
@@ -301,9 +301,9 @@ func TestTellReturnsAfterTaskIsAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -349,9 +349,9 @@ func TestTellExecutionCanCallAnotherActorAfterAdmissionReturns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestTellExecutionCanCallAnotherActorAfterAdmissionReturns(t *testing.T) {
 	completed := make(chan error, 1)
 	if err := Tell(context.Background(), first.Ref(), func(execution Context) error {
 		<-release
-		_, err := Call(execution, second.Ref(), func(Context) (struct{}, error) {
+		_, err := Query(execution, second.Ref(), func(Context) (struct{}, error) {
 			return struct{}{}, nil
 		})
 		completed <- err
@@ -393,9 +393,9 @@ func TestTellStartsANewSynchronousCallChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -409,9 +409,9 @@ func TestTellStartsANewSynchronousCallChain(t *testing.T) {
 	}
 
 	nestedResult := make(chan error, 1)
-	_, err = Call(context.Background(), first.Ref(), func(execution Context) (struct{}, error) {
+	_, err = Query(context.Background(), first.Ref(), func(execution Context) (struct{}, error) {
 		return struct{}{}, Tell(execution, second.Ref(), func(secondExecution Context) error {
-			_, err := Call(secondExecution, first.Ref(), func(Context) (struct{}, error) {
+			_, err := Query(secondExecution, first.Ref(), func(Context) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			nestedResult <- err
@@ -431,15 +431,15 @@ func TestTellStartsANewSynchronousCallChain(t *testing.T) {
 	}
 }
 
-func TestCallRejectsACycleStartedByTell(t *testing.T) {
+func TestQueryRejectsACycleStartedByTell(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -454,8 +454,8 @@ func TestCallRejectsACycleStartedByTell(t *testing.T) {
 
 	completed := make(chan error, 1)
 	if err := Tell(context.Background(), first.Ref(), func(firstContext Context) error {
-		_, err := Call(firstContext, second.Ref(), func(secondContext Context) (struct{}, error) {
-			return Call(secondContext, first.Ref(), func(Context) (struct{}, error) {
+		_, err := Query(firstContext, second.Ref(), func(secondContext Context) (struct{}, error) {
+			return Query(secondContext, first.Ref(), func(Context) (struct{}, error) {
 				return struct{}{}, nil
 			})
 		})
@@ -481,9 +481,9 @@ func TestTryTellReportsQueueFullAndRunsEveryAcceptedTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestTryTellReportsQueueFullAndRunsEveryAcceptedTask(t *testing.T) {
 	}
 
 	close(release)
-	if _, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); err != nil {
 		t.Fatalf("wait for accepted tasks: %v", err)
@@ -536,15 +536,15 @@ func TestTryTellReportsQueueFullAndRunsEveryAcceptedTask(t *testing.T) {
 	}
 }
 
-func TestCallReportsUnknownOutcomeAfterAcceptedTaskTimesOut(t *testing.T) {
+func TestQueryCanStopWaitingAfterAcceptedTaskTimesOut(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -558,18 +558,21 @@ func TestCallReportsUnknownOutcomeAfterAcceptedTaskTimesOut(t *testing.T) {
 	var effects atomic.Int32
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	_, err = Call(ctx, instance.Ref(), func(Context) (struct{}, error) {
+	value, err := Query(ctx, instance.Ref(), func(Context) (int, error) {
 		close(started)
 		<-release
 		effects.Add(1)
-		return struct{}{}, nil
+		return 42, nil
 	})
-	if !errors.Is(err, ErrOutcomeUnknown) {
-		t.Fatalf("Call error = %v; want ErrOutcomeUnknown", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Call error = %v; want context.DeadlineExceeded", err)
+	}
+	if value != 0 {
+		t.Fatalf("timed-out Query result = %d; want 0", value)
 	}
 	<-started
 	close(release)
-	if _, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); err != nil {
 		t.Fatalf("wait for timed-out task: %v", err)
@@ -586,9 +589,9 @@ func TestSynchronousCallsRejectCurrentActor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -601,12 +604,12 @@ func TestSynchronousCallsRejectCurrentActor(t *testing.T) {
 		name string
 		call func(context.Context, ActorRef, func(Context) (int, error)) (int, error)
 	}{
-		{name: "Call", call: Call[int]},
-		{name: "CallUntilDone", call: CallUntilDone[int]},
+		{name: "Query", call: Query[int]},
+		{name: "Command", call: Command[int]},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			executed := false
-			_, err := Call(context.Background(), instance.Ref(), func(execution Context) (int, error) {
+			_, err := Query(context.Background(), instance.Ref(), func(execution Context) (int, error) {
 				return test.call(execution, instance.Ref(), func(Context) (int, error) {
 					executed = true
 					return 42, nil
@@ -622,15 +625,15 @@ func TestSynchronousCallsRejectCurrentActor(t *testing.T) {
 	}
 }
 
-func TestCallRejectsAnActorCycle(t *testing.T) {
+func TestQueryRejectsAnActorCycle(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -643,9 +646,9 @@ func TestCallRejectsAnActorCycle(t *testing.T) {
 		t.Fatalf("create second actor: %v", err)
 	}
 
-	_, err = Call(context.Background(), first.Ref(), func(firstContext Context) (struct{}, error) {
-		return Call(firstContext, second.Ref(), func(secondContext Context) (struct{}, error) {
-			return Call(secondContext, first.Ref(), func(Context) (struct{}, error) {
+	_, err = Query(context.Background(), first.Ref(), func(firstContext Context) (struct{}, error) {
+		return Query(firstContext, second.Ref(), func(secondContext Context) (struct{}, error) {
+			return Query(secondContext, first.Ref(), func(Context) (struct{}, error) {
 				return struct{}{}, nil
 			})
 		})
@@ -663,12 +666,12 @@ func TestGetOrCreateRetriesAfterInitializationFailureBackoff(t *testing.T) {
 	}
 	initializationFailure := errors.New("database unavailable")
 	var attempts atomic.Int32
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		if attempts.Add(1) == 1 {
 			return nil, initializationFailure
 		}
 		return &systemTestActor{ready: true}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -705,9 +708,9 @@ func TestActorRefStopRejectsNewTasksAndDrainsAcceptedTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -741,7 +744,7 @@ func TestActorRefStopRejectsNewTasksAndDrainsAcceptedTasks(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		err := TryTell(instance.Ref(), func(Context) error { return nil })
-		if errors.Is(err, ErrActorStopped) {
+		if errors.Is(err, ErrActorStopping) {
 			break
 		}
 		if err != nil && !errors.Is(err, ErrQueueFull) {
@@ -770,7 +773,7 @@ func TestActorRefStopRejectsNewTasksAndDrainsAcceptedTasks(t *testing.T) {
 	if !drained.Load() {
 		t.Fatal("accepted task was not drained")
 	}
-	if _, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); !errors.Is(err, ErrActorStopped) {
 		t.Fatalf("Call after Stop error = %v; want ErrActorStopped", err)
@@ -783,9 +786,9 @@ func TestActorRefStopRunsDomainHookAfterDrainingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*stopHookTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*stopHookTestActor, error) {
 		return &stopHookTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -820,11 +823,11 @@ func TestActorRefStopKeepsFailedActorIsolatedUntilPersistenceRetrySucceeds(t *te
 		t.Fatalf("create scope: %v", err)
 	}
 	persistError := errors.New("persist failed")
-	definition, err := Define(scope, Test1, func(context.Context, string) (*stopHookTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*stopHookTestActor, error) {
 		instance := &stopHookTestActor{stopError: persistError}
 		instance.failStops.Store(1)
 		return instance, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -836,10 +839,10 @@ func TestActorRefStopKeepsFailedActorIsolatedUntilPersistenceRetrySucceeds(t *te
 	if err := instance.Ref().Stop(context.Background()); !errors.Is(err, persistError) {
 		t.Fatalf("first Stop error = %v; want %v", err, persistError)
 	}
-	if _, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		return struct{}{}, nil
-	}); !errors.Is(err, ErrActorStopped) {
-		t.Fatalf("Call while persistence is failed = %v; want ErrActorStopped", err)
+	}); !errors.Is(err, ErrStopFailed) {
+		t.Fatalf("Call while persistence is failed = %v; want ErrStopFailed", err)
 	}
 	if err := instance.Ref().Stop(context.Background()); err != nil {
 		t.Fatalf("retry Stop: %v", err)
@@ -855,9 +858,9 @@ func TestActorContinuesAfterHandlerPanic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -866,12 +869,12 @@ func TestActorContinuesAfterHandlerPanic(t *testing.T) {
 		t.Fatalf("create actor: %v", err)
 	}
 
-	if _, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		panic("broken handler")
 	}); !errors.Is(err, ErrHandlerPanic) {
 		t.Fatalf("panic Call error = %v; want ErrHandlerPanic", err)
 	}
-	result, err := Call(context.Background(), instance.Ref(), func(Context) (string, error) {
+	result, err := Query(context.Background(), instance.Ref(), func(Context) (string, error) {
 		return "still-running", nil
 	})
 	if err != nil {
@@ -882,18 +885,18 @@ func TestActorContinuesAfterHandlerPanic(t *testing.T) {
 	}
 }
 
-func TestActorIsQuarantinedAfterThreeConsecutivePanicsAndRebuildsAfterCooldown(t *testing.T) {
+func TestActorIsQuarantinedAfterThreeConsecutivePanicsUntilExplicitDisposal(t *testing.T) {
 	system := NewActorSystem(time.Second)
-	system.quarantineDuration = 20 * time.Millisecond
+	t.Cleanup(func() { _ = system.Stop(context.Background()) })
 	scope, err := system.NewScope("test")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
 	var creations atomic.Int32
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		creations.Add(1)
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -904,13 +907,13 @@ func TestActorIsQuarantinedAfterThreeConsecutivePanicsAndRebuildsAfterCooldown(t
 	oldRef := instance.Ref()
 
 	for attempt := 1; attempt <= 3; attempt++ {
-		if _, err := Call(context.Background(), oldRef, func(Context) (struct{}, error) {
+		if _, err := Query(context.Background(), oldRef, func(Context) (struct{}, error) {
 			panic("deterministic failure")
 		}); !errors.Is(err, ErrHandlerPanic) {
 			t.Fatalf("panic %d error = %v; want ErrHandlerPanic", attempt, err)
 		}
 	}
-	if _, err := Call(context.Background(), oldRef, func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), oldRef, func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); !errors.Is(err, ErrActorQuarantined) {
 		t.Fatalf("Call during quarantine = %v; want ErrActorQuarantined", err)
@@ -919,18 +922,30 @@ func TestActorIsQuarantinedAfterThreeConsecutivePanicsAndRebuildsAfterCooldown(t
 		t.Fatalf("GetOrCreate during quarantine = %v; want ErrActorQuarantined", err)
 	}
 
-	time.Sleep(system.quarantineDuration + 10*time.Millisecond)
+	if _, err := definition.Lookup(context.Background(), "quarantine"); !errors.Is(err, ErrActorQuarantined) {
+		t.Fatalf("Lookup during quarantine = %v; want ErrActorQuarantined", err)
+	}
+	if got := creations.Load(); got != 1 {
+		t.Fatalf("quarantined actor was recreated: creations = %d", got)
+	}
+	target, err := definition.QuarantineTarget(context.Background(), "quarantine")
+	if err != nil {
+		t.Fatalf("read quarantine identity: %v", err)
+	}
+	if err := definition.ForceStopQuarantined(context.Background(), target); err != nil {
+		t.Fatalf("dispose quarantined actor: %v", err)
+	}
 	rebuilt, err := definition.GetOrCreate(context.Background(), "quarantine")
 	if err != nil {
 		t.Fatalf("rebuild actor: %v", err)
 	}
 	if rebuilt == instance {
-		t.Fatal("cooldown reused quarantined actor")
+		t.Fatal("recreation reused quarantined actor")
 	}
 	if got := creations.Load(); got != 2 {
 		t.Fatalf("actor creations = %d; want 2", got)
 	}
-	if _, err := Call(context.Background(), oldRef, func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), oldRef, func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); !errors.Is(err, ErrStaleActorRef) {
 		t.Fatalf("old reference error = %v; want ErrStaleActorRef", err)
@@ -947,15 +962,15 @@ func TestScopeStopOnlyStopsActorsOwnedByThatScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create second scope: %v", err)
 	}
-	firstDefinition, err := Define(firstScope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	firstDefinition, err := Define(firstScope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define first actor: %v", err)
 	}
-	secondDefinition, err := Define(secondScope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	secondDefinition, err := Define(secondScope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define second actor: %v", err)
 	}
@@ -971,7 +986,7 @@ func TestScopeStopOnlyStopsActorsOwnedByThatScope(t *testing.T) {
 	if err := firstScope.Stop(context.Background()); err != nil {
 		t.Fatalf("stop first scope: %v", err)
 	}
-	if _, err := Call(context.Background(), first.Ref(), func(Context) (struct{}, error) {
+	if _, err := Query(context.Background(), first.Ref(), func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); !errors.Is(err, ErrActorStopped) {
 		t.Fatalf("first actor error = %v; want ErrActorStopped", err)
@@ -979,7 +994,7 @@ func TestScopeStopOnlyStopsActorsOwnedByThatScope(t *testing.T) {
 	if _, err := firstDefinition.GetOrCreate(context.Background(), "new"); !errors.Is(err, ErrScopeStopped) {
 		t.Fatalf("GetOrCreate in stopped scope = %v; want ErrScopeStopped", err)
 	}
-	result, err := Call(context.Background(), second.Ref(), func(Context) (string, error) {
+	result, err := Query(context.Background(), second.Ref(), func(Context) (string, error) {
 		return "running", nil
 	})
 	if err != nil {
@@ -998,9 +1013,9 @@ func TestActorSystemStopClosesAllScopesOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s scope: %v", name, err)
 		}
-		definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+		definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 			return &systemTestActor{}, nil
-		})
+		}, DefinitionOptions{QueueCapacity: 1024})
 		if err != nil {
 			t.Fatalf("define %s actor: %v", name, err)
 		}
@@ -1018,7 +1033,7 @@ func TestActorSystemStopClosesAllScopesOnce(t *testing.T) {
 		t.Fatalf("second Stop: %v", err)
 	}
 	for i, ref := range refs {
-		if _, err := Call(context.Background(), ref, func(Context) (struct{}, error) {
+		if _, err := Query(context.Background(), ref, func(Context) (struct{}, error) {
 			return struct{}{}, nil
 		}); !errors.Is(err, ErrActorStopped) {
 			t.Fatalf("actor %d error = %v; want ErrActorStopped", i, err)
@@ -1036,11 +1051,11 @@ func TestScopeStopCancelsSharedInitialization(t *testing.T) {
 		t.Fatalf("create scope: %v", err)
 	}
 	started := make(chan struct{})
-	definition, err := Define(scope, Test1, func(ctx context.Context, _ string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(ctx context.Context, _ string) (*systemTestActor, error) {
 		close(started)
 		<-ctx.Done()
 		return nil, ctx.Err()
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -1072,7 +1087,7 @@ func TestForceStopFailsQueuedCallsAndSkipsDomainStopHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := DefineWithOptions(scope, Test1, func(context.Context, string) (*stopHookTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*stopHookTestActor, error) {
 		return &stopHookTestActor{}, nil
 	}, DefinitionOptions{QueueCapacity: 1})
 	if err != nil {
@@ -1095,7 +1110,7 @@ func TestForceStopFailsQueuedCallsAndSkipsDomainStopHook(t *testing.T) {
 	<-started
 	queuedCall := make(chan error, 1)
 	go func() {
-		_, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+		_, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 			return struct{}{}, nil
 		})
 		queuedCall <- err
@@ -1119,7 +1134,7 @@ func TestForceStopFailsQueuedCallsAndSkipsDomainStopHook(t *testing.T) {
 	deadline = time.Now().Add(time.Second)
 	for {
 		err := TryTell(instance.Ref(), func(Context) error { return nil })
-		if errors.Is(err, ErrActorStopped) {
+		if errors.Is(err, ErrActorStopping) {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -1156,9 +1171,9 @@ func TestActorCanRequestOwnStopWithoutWaitingOnItself(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := Define(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define actor: %v", err)
 	}
@@ -1168,7 +1183,7 @@ func TestActorCanRequestOwnStopWithoutWaitingOnItself(t *testing.T) {
 	}
 
 	deferredTask := make(chan struct{})
-	_, err = Call(context.Background(), instance.Ref(), func(execution Context) (struct{}, error) {
+	_, err = Query(context.Background(), instance.Ref(), func(execution Context) (struct{}, error) {
 		if err := Tell(execution, instance.Ref(), func(Context) error {
 			close(deferredTask)
 			return nil
@@ -1185,7 +1200,10 @@ func TestActorCanRequestOwnStopWithoutWaitingOnItself(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("accepted self Tell was not drained")
 	}
-	if _, err := Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	if err := instance.Ref().Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); !errors.Is(err, ErrActorStopped) {
 		t.Fatalf("Call after self Stop = %v; want ErrActorStopped", err)
@@ -1198,7 +1216,7 @@ func TestActorSystemMetricsTrackAdmissionQueueWaitAndPanics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := DefineWithOptions(scope, Test1, func(context.Context, string) (*systemTestActor, error) {
+	definition, err := Define(scope, func(context.Context, string) (*systemTestActor, error) {
 		return &systemTestActor{}, nil
 	}, DefinitionOptions{QueueCapacity: 1})
 	if err != nil {
@@ -1236,7 +1254,7 @@ func TestActorSystemMetricsTrackAdmissionQueueWaitAndPanics(t *testing.T) {
 	close(release)
 	<-queuedDone
 
-	_, err = Call(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
+	_, err = Query(context.Background(), instance.Ref(), func(Context) (struct{}, error) {
 		panic("metrics panic")
 	})
 	if !errors.Is(err, ErrHandlerPanic) {

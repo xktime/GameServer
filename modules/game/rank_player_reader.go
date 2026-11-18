@@ -1,12 +1,13 @@
 package game
 
 import (
+	"context"
 	managerplayer "gameserver/modules/game/internal/managers/player"
 	"gameserver/modules/rank/playerread"
 )
 
 type onlinePlayerFinder interface {
-	GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool)
+	GetPlayerSnapshot(ctx context.Context, playerID int64) (managerplayer.Snapshot, bool, error)
 }
 
 type rankPlayerReader struct {
@@ -22,15 +23,15 @@ func NewRankPlayerReader() playerread.PlayerReader {
 	return rankPlayerReader{players: External.UserManager}
 }
 
-func (r rankPlayerReader) FindOnline(playerID int64) (playerread.PlayerSnapshot, bool) {
-	playerSnapshot, found := r.players.GetPlayerSnapshot(playerID)
-	if !found || playerSnapshot.PlayerInfo == nil {
-		return playerread.PlayerSnapshot{}, false
+func (r rankPlayerReader) FindOnline(ctx context.Context, playerID int64) (playerread.PlayerSnapshot, bool, error) {
+	playerSnapshot, found, err := r.players.GetPlayerSnapshot(ctx, playerID)
+	if err != nil || !found || playerSnapshot.PlayerInfo == nil {
+		return playerread.PlayerSnapshot{}, false, err
 	}
 
 	return playerread.PlayerSnapshot{
 		Name:      playerSnapshot.PlayerInfo.PlayerName,
 		AvatarURL: playerSnapshot.PlayerInfo.GetAvatarURL(),
 		Level:     playerSnapshot.PlayerInfo.Level,
-	}, true
+	}, true, nil
 }

@@ -127,10 +127,26 @@ type slowPlayerRepository struct {
 	release chan struct{}
 }
 
-func (r *slowPlayerRepository) FindByID(id int64) (*Player, error) {
+func TestPreparedPlayerRejectsOrdinaryRequestsUntilCommit(t *testing.T) {
+	repository := &fakePlayerRepository{loaded: &Player{PlayerId: 42}}
+	registry := newPlayerRepositoryTestRegistry(t, repository)
+	prepared, err := registry.PrepareLogin(context.Background(), models.User{PlayerId: 42}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = prepared.Abort(context.Background()) })
+	if _, err := registry.Snapshot(context.Background(), 42); !errors.Is(err, ErrPlayerNotReady) {
+		t.Fatalf("snapshot before commit = %v", err)
+	}
+	if _, _, err := registry.ModifyName(context.Background(), 42, "new-name"); !errors.Is(err, ErrPlayerNotReady) {
+		t.Fatalf("write before commit = %v", err)
+	}
+}
+
+func (r *slowPlayerRepository) FindByID(ctx context.Context, id int64) (*Player, error) {
 	close(r.started)
 	<-r.release
-	return r.fakePlayerRepository.FindByID(id)
+	return r.fakePlayerRepository.FindByID(ctx, id)
 }
 
 func TestCanceledColdPreparationWaitsForInitializationAndDoesNotPersist(t *testing.T) {
@@ -170,7 +186,7 @@ func TestCanceledColdPreparationWaitsForInitializationAndDoesNotPersist(t *testi
 	if err := prepared.prepared.Abort(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.lookup(context.Background(), user.PlayerId); !errors.Is(err, actor.ErrActorStopped) {
+	if _, err := registry.lookup(context.Background(), user.PlayerId); !errors.Is(err, actor.ErrActorNotFound) {
 		t.Fatalf("uncommitted Player still present: %v", err)
 	}
 	if len(repository.saved) != 0 || agent.UserData() != nil {

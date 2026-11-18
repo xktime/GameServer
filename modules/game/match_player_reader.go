@@ -1,17 +1,18 @@
 package game
 
 import (
+	"context"
 	managerplayer "gameserver/modules/game/internal/managers/player"
 	"gameserver/modules/game/internal/managers/team"
 	"gameserver/modules/match/playerread"
 )
 
 type matchPlayerFinder interface {
-	GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool)
+	GetPlayerSnapshot(ctx context.Context, playerID int64) (managerplayer.Snapshot, bool, error)
 }
 
 type matchTeamFinder interface {
-	GetTeamByPlayerID(playerID int64) (team.Snapshot, bool)
+	GetTeamByPlayerID(ctx context.Context, playerID int64) (team.Snapshot, bool, error)
 }
 
 type matchPlayerReader struct {
@@ -31,20 +32,21 @@ func NewMatchPlayerReader() playerread.PlayerReader {
 	}
 }
 
-func (r matchPlayerReader) FindOnline(playerID int64) (playerread.PlayerSnapshot, bool) {
-	playerSnapshot, found := r.players.GetPlayerSnapshot(playerID)
-	if !found {
-		return playerread.PlayerSnapshot{}, false
+func (r matchPlayerReader) FindOnline(ctx context.Context, playerID int64) (playerread.PlayerSnapshot, bool, error) {
+	playerSnapshot, found, err := r.players.GetPlayerSnapshot(ctx, playerID)
+	if err != nil || !found {
+		return playerread.PlayerSnapshot{}, false, err
 	}
-	return playerread.PlayerSnapshot{TeamID: playerSnapshot.TeamID}, true
+	return playerread.PlayerSnapshot{TeamID: playerSnapshot.TeamID}, true, nil
 }
 
-func (r matchPlayerReader) FindOnlineTeam(playerID int64) (playerread.TeamSnapshot, bool) {
-	teamSnapshot, found := r.teams.GetTeamByPlayerID(playerID)
-	if !found {
-		return playerread.TeamSnapshot{}, false
+func (r matchPlayerReader) FindOnlineTeam(ctx context.Context, playerID int64) (playerread.TeamSnapshot, bool, error) {
+	teamSnapshot, found, err := r.teams.GetTeamByPlayerID(ctx, playerID)
+	if err != nil || !found {
+		return playerread.TeamSnapshot{}, false, err
 	}
 	return playerread.TeamSnapshot{
+		TeamID:    teamSnapshot.TeamID,
 		MemberIDs: append([]int64(nil), teamSnapshot.MemberIDs...),
-	}, true
+	}, true, nil
 }

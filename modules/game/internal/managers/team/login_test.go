@@ -18,7 +18,7 @@ func TestAbortLoginDoesNotDeleteDurableTeam(t *testing.T) {
 	if err := prepared.Abort(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.lookup(context.Background(), 7); !errors.Is(err, actor.ErrActorStopped) {
+	if _, err := registry.lookup(context.Background(), 7); !errors.Is(err, actor.ErrActorNotFound) {
 		t.Fatalf("temporary Team remained: %v", err)
 	}
 	if len(repository.deletedIDs) != 0 || len(repository.saved) != 0 {

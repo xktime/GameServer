@@ -41,9 +41,21 @@ func (m *Module) OnInit() {
 }
 
 func (m *Module) OnDestroy() {
-	m.job.Stop()
-	m.login.Close()
-	if err := m.scope.Stop(context.Background()); err != nil {
+	stopContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := m.job.Stop(stopContext); err != nil {
+		log.Error("停止 login 定时任务失败: %v", err)
+	}
+	if err := m.login.Close(stopContext); err != nil {
+		log.Error("停止 login 认证工作池失败: %v", err)
+		// 认证池不属于 ActorSystem；在下游状态和存储关闭前继续等待退出。
+		finalContext, cancelFinal := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelFinal()
+		if err := m.login.Close(finalContext); err != nil {
+			log.Error("等待 login 认证工作池退出失败: %v", err)
+		}
+	}
+	if err := m.scope.Stop(stopContext); err != nil {
 		log.Error("停止 login Actor Scope 失败: %v", err)
 	}
 }

@@ -52,7 +52,11 @@ func TestRuntimeInitializesEveryModuleBeforeRunningAnyModule(t *testing.T) {
 
 	runtime := module.NewRuntime(newModule(), newModule())
 	runtime.Start()
-	t.Cleanup(runtime.Stop)
+	t.Cleanup(func() {
+		if err := runtime.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
 
 	for range 2 {
 		if got := <-runAfterInitialized; got != 2 {

@@ -1,6 +1,7 @@
 package game
 
 import (
+	"context"
 	managerplayer "gameserver/modules/game/internal/managers/player"
 	playermodel "gameserver/modules/game/internal/models/player"
 	"testing"
@@ -8,9 +9,9 @@ import (
 
 type fakeOnlinePlayerFinder map[int64]managerplayer.Snapshot
 
-func (f fakeOnlinePlayerFinder) GetPlayerSnapshot(playerID int64) (managerplayer.Snapshot, bool) {
+func (f fakeOnlinePlayerFinder) GetPlayerSnapshot(ctx context.Context, playerID int64) (managerplayer.Snapshot, bool, error) {
 	snapshot, found := f[playerID]
-	return snapshot, found
+	return snapshot, found, nil
 }
 
 func TestRankPlayerReaderCopiesOnlinePlayerSnapshot(t *testing.T) {
@@ -26,9 +27,9 @@ func TestRankPlayerReaderCopiesOnlinePlayerSnapshot(t *testing.T) {
 		},
 	}}
 
-	snapshot, ok := reader.FindOnline(42)
+	snapshot, ok, err := reader.FindOnline(context.Background(), 42)
 
-	if !ok {
+	if err != nil || !ok {
 		t.Fatal("在线 Player 应返回快照")
 	}
 	if snapshot.Name != "测试玩家" {
@@ -47,7 +48,7 @@ func TestRankPlayerReaderRejectsPlayerWithoutInfo(t *testing.T) {
 		42: {PlayerID: 42},
 	}}
 
-	if snapshot, ok := reader.FindOnline(42); ok {
+	if snapshot, ok, err := reader.FindOnline(context.Background(), 42); ok || err != nil {
 		t.Fatalf("缺少 PlayerInfo 的 Player 不应返回快照: %#v", snapshot)
 	}
 }

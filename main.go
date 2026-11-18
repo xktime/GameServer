@@ -9,7 +9,6 @@ import (
 	"gameserver/common/config"
 	"gameserver/common/db/mongodb"
 	"gameserver/common/event_dispatcher"
-	"gameserver/common/schedule"
 	"gameserver/common/utils"
 	"gameserver/conf"
 	lconf "gameserver/core/conf"
@@ -129,9 +128,6 @@ func Init() error {
 	}); err != nil {
 		return err
 	}
-
-	// 初始化定时任务
-	schedule.Init()
 
 	return nil
 }

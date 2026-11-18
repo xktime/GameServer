@@ -21,7 +21,7 @@ func (m SeasonManager) GetPersistId() interface{} {
 
 func (m *SeasonManager) AfterLoad() { m.PersistId = 1 }
 
-func (m *SeasonManager) onCrossDay(rank *RankManager, now int64) {
+func (m *SeasonManager) onCrossDay(rank *rankActor, now int64) {
 	if !utils.IsCrossDay(m.LastCrossDayTime, now) {
 		return
 	}

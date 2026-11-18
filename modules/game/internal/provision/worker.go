@@ -3,13 +3,7 @@ package provision
 import (
 	"context"
 	"errors"
-	"fmt"
-	"gameserver/common/db/mongodb"
 	"gameserver/core/log"
-	"gameserver/modules/game/internal/managers/player"
-	"gameserver/modules/game/internal/managers/team"
-	playermodel "gameserver/modules/game/internal/models/player"
-	model "gameserver/modules/game/internal/provision"
 	"sync"
 	"time"
 )
@@ -22,42 +16,13 @@ const (
 // Materializer 根据创建意图幂等地写入领域文档，
 // 由调用方负责将意图标记为已应用。
 type Materializer interface {
-	Apply(model.Intent) error
+	Apply(context.Context, Intent) error
 }
 
 // FailureHandler 在创建意图耗尽重试次数仍无法完成持久化时，
 // 终止基于该意图创建的内存会话。
 type FailureHandler interface {
-	HandleProvisionFailure(context.Context, model.Intent) error
-}
-
-type MongoMaterializer struct{}
-
-func (MongoMaterializer) Apply(intent model.Intent) error {
-	teamDoc := &team.Team{
-		TeamId:      intent.Team.TeamID,
-		LeaderId:    intent.Team.LeaderID,
-		TeamMembers: append([]int64(nil), intent.Team.MemberIDs...),
-		RoomId:      intent.Team.RoomID,
-	}
-	if _, err := mongodb.SaveIfAbsent(teamDoc); err != nil {
-		return fmt.Errorf("save Team %d: %w", intent.Team.TeamID, err)
-	}
-
-	playerDoc := &player.Player{
-		PlayerId:   intent.Player.PlayerID,
-		PlayerInfo: clonePlayerInfo(intent.Player.PlayerInfo),
-		TeamId:     intent.Player.TeamID,
-		TowerLevel: intent.Player.TowerLevel,
-	}
-	if _, err := mongodb.SaveIfAbsent(playerDoc); err != nil {
-		return fmt.Errorf("save Player %d: %w", intent.Player.PlayerID, err)
-	}
-
-	if _, err := mongodb.SaveIfAbsent(&intent.User); err != nil {
-		return fmt.Errorf("save User %s: %w", intent.User.AccountId, err)
-	}
-	return nil
+	HandleProvisionFailure(context.Context, Intent) error
 }
 
 // Worker 管理当前进程内玩家创建持久化操作的重试循环。
@@ -69,11 +34,13 @@ type Worker struct {
 	maxAttempts  int
 	failure      FailureHandler
 
-	mu      sync.Mutex
-	runMu   sync.Mutex
-	started bool
-	stop    chan context.Context
-	done    chan struct{}
+	mu       sync.Mutex
+	runMu    sync.Mutex
+	started  bool
+	stopping bool
+	cancel   context.CancelFunc
+	stop     chan context.Context
+	done     chan struct{}
 }
 
 func NewWorker(repository Repository, materializer Materializer, failure FailureHandler) (*Worker, error) {
@@ -103,19 +70,27 @@ func (w *Worker) Start() {
 		return
 	}
 	w.started = true
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancel = cancel
 	w.stop = make(chan context.Context, 1)
 	w.done = make(chan struct{})
-	go w.run()
+	go w.run(ctx)
 }
 
-func (w *Worker) run() {
+func (w *Worker) run(ctx context.Context) {
 	defer close(w.done)
+	defer w.cancel()
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-ticker.C:
-			if err := w.RunOnce(context.Background()); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if err := w.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("玩家创建 Intent 处理失败: %v", err)
 			}
 		case stopContext := <-w.stop:
@@ -128,7 +103,7 @@ func (w *Worker) run() {
 }
 
 // Stop 停止后续扫描；待处理意图保留在持久化存储中，供下次进程
-// 启动时继续处理。上下文限制等待当前扫描结束的时间。
+// 启动时继续处理。等待超时后取消当前扫描；后续调用仍等待同一次退出。
 func (w *Worker) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("player provision: context is nil")
@@ -138,15 +113,23 @@ func (w *Worker) Stop(ctx context.Context) error {
 		w.mu.Unlock()
 		return nil
 	}
-	w.stop <- ctx
+	if !w.stopping {
+		w.stopping = true
+		w.stop <- ctx
+	}
 	done := w.done
-	w.started = false
 	w.mu.Unlock()
 
 	select {
 	case <-done:
 		return nil
+	default:
+	}
+	select {
+	case <-done:
+		return nil
 	case <-ctx.Done():
+		w.cancel()
 		return ctx.Err()
 	}
 }
@@ -158,7 +141,7 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	}
 	w.runMu.Lock()
 	defer w.runMu.Unlock()
-	intents, err := w.repository.FindPending(w.now())
+	intents, err := w.repository.FindPending(ctx, w.now())
 	if err != nil {
 		return err
 	}
@@ -167,21 +150,21 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return errors.Join(append(runErrors, err)...)
 		}
-		if err := w.materializer.Apply(intent); err != nil {
+		if err := w.materializer.Apply(ctx, intent); err != nil {
 			intent.Attempts++
 			intent.LastError = err.Error()
 			intent.UpdatedAt = w.now()
 			if intent.Attempts >= w.maxAttempts {
-				intent.Status = model.StatusFailed
+				intent.Status = StatusFailed
 			} else {
 				intent.NextAttemptAt = w.now().Add(retryDelay(intent.Attempts))
 			}
-			if saveErr := w.repository.Save(&intent); saveErr != nil {
+			if saveErr := w.repository.Save(ctx, &intent); saveErr != nil {
 				runErrors = append(runErrors, errors.Join(err, saveErr))
 			} else {
 				runErrors = append(runErrors, err)
 			}
-			if intent.Status == model.StatusFailed {
+			if intent.Status == StatusFailed {
 				if failureErr := w.failure.HandleProvisionFailure(ctx, intent); failureErr != nil {
 					runErrors = append(runErrors, failureErr)
 				}
@@ -189,10 +172,10 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			continue
 		}
 		// 领域文档全部写入后才更新意图状态；若状态保存失败，下次可幂等重放。
-		intent.Status = model.StatusApplied
+		intent.Status = StatusApplied
 		intent.LastError = ""
 		intent.UpdatedAt = w.now()
-		if err := w.repository.Save(&intent); err != nil {
+		if err := w.repository.Save(ctx, &intent); err != nil {
 			runErrors = append(runErrors, err)
 		}
 	}
@@ -206,12 +189,4 @@ func retryDelay(attempt int) time.Duration {
 	}
 	delay := time.Second << min(attempt-1, 5)
 	return delay
-}
-
-func clonePlayerInfo(info *playermodel.PlayerInfo) *playermodel.PlayerInfo {
-	if info == nil {
-		return nil
-	}
-	copyOfInfo := *info
-	return &copyOfInfo
 }

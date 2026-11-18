@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/core/log"
@@ -8,7 +9,7 @@ import (
 
 type LoginManager interface {
 	SubmitLogin(*message.C2S_Login, gate.ConnectionAgent, uint32) error
-	Close()
+	Close(context.Context) error
 }
 
 type ConnectManager interface {

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"gameserver/common"
 	"gameserver/common/base/actor"
 	"gameserver/common/msg/message"
@@ -34,8 +35,9 @@ type fakeMatchJob struct {
 	stopped bool
 }
 
-func (j *fakeMatchJob) Stop() {
+func (j *fakeMatchJob) Stop(context.Context) error {
 	j.stopped = true
+	return nil
 }
 
 type fakeMatchCycle struct {

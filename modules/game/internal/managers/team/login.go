@@ -11,7 +11,7 @@ import (
 // LoginPreparation records only membership created by this cold login. Abort
 // never deletes durable Team data or removes an existing member.
 type LoginPreparation struct {
-	team     *Team
+	team     *teamActor
 	playerID int64
 	added    bool
 	created  bool
@@ -22,12 +22,12 @@ func (p *LoginPreparation) TeamID() int64 { return p.team.TeamId }
 func (r *Registry) PrepareLogin(ctx context.Context, teamID, playerID int64, initial bool) (*LoginPreparation, error) {
 	var stored *Team
 	instance, err := r.lookup(ctx, teamID)
-	if err != nil && !errors.Is(err, actor.ErrActorStopped) {
+	if err != nil && !errors.Is(err, actor.ErrActorNotFound) {
 		return nil, err
 	}
 	if instance == nil {
 		if !initial && teamID != 0 {
-			stored, err = r.repository.FindByID(teamID)
+			stored, err = r.repository.FindByID(ctx, teamID)
 			if err != nil {
 				return nil, err
 			}
@@ -41,7 +41,10 @@ func (r *Registry) PrepareLogin(ctx context.Context, teamID, playerID int64, ini
 		}
 	}
 	prepared := &LoginPreparation{team: instance, playerID: playerID}
-	_, err = actor.CallUntilDone(ctx, instance.Ref(), func(actor.Context) (struct{}, error) {
+	_, err = actor.Command(ctx, instance.Ref(), func(actor.Context) (struct{}, error) {
+		if instance.deleted {
+			return struct{}{}, actor.ErrActorStopping
+		}
 		if instance.TeamId == 0 {
 			prepared.created = stored == nil
 			instance.TeamId = teamID
@@ -70,8 +73,8 @@ func (p *LoginPreparation) Abort(ctx context.Context) error {
 	if p == nil {
 		return nil
 	}
-	stopping := false
-	_, err := actor.CallUntilDone(ctx, p.team.Ref(), func(execution actor.Context) (struct{}, error) {
+	var draining <-chan struct{}
+	stopping, err := actor.Command(ctx, p.team.Ref(), func(execution actor.Context) (actor.StopResult, error) {
 		if p.added {
 			p.team.TeamMembers = slices.DeleteFunc(p.team.TeamMembers, func(id int64) bool { return id == p.playerID })
 			if p.team.LeaderId == p.playerID {
@@ -82,18 +85,18 @@ func (p *LoginPreparation) Abort(ctx context.Context) error {
 			}
 		}
 		if p.created && len(p.team.TeamMembers) == 0 {
-			stopping = true
 			// Reject later joins in the same Actor turn that confirms emptiness.
 			// Skip persistence and preserve the durable provision Intent/Team.
-			return struct{}{}, p.team.Ref().ForceStop(execution)
+			draining = p.team.dispatcher.seal(&p.team.broadcasts)
+			return execution.ForceStopSelf()
 		}
-		return struct{}{}, nil
+		return actor.StopResult{}, nil
 	})
-	if errors.Is(err, actor.ErrActorStopped) {
-		return nil
+	if errors.Is(err, actor.ErrActorStopped) || errors.Is(err, actor.ErrStaleActorRef) {
+		return waitBroadcasts(ctx, p.team.dispatcher.seal(&p.team.broadcasts))
 	}
-	if err == nil && stopping {
-		return p.team.Ref().ForceStop(ctx)
+	if err != nil {
+		return err
 	}
-	return err
+	return errors.Join(stopping.Wait(ctx), waitBroadcasts(ctx, draining))
 }

@@ -10,7 +10,6 @@ import (
 	"gameserver/common/utils"
 	"gameserver/core/gate"
 	"gameserver/modules/game/internal/managers/player"
-	provisionmanager "gameserver/modules/game/internal/managers/provision"
 	"gameserver/modules/game/internal/managers/team"
 	playermodel "gameserver/modules/game/internal/models/player"
 	gameprovision "gameserver/modules/game/internal/provision"
@@ -32,7 +31,16 @@ type fakeUserRepository struct {
 	saved   []models.User
 }
 
-func (r *fakeUserRepository) FindByLogin(openID string, serverID int32) (*models.User, error) {
+type stubTeamRepository struct{}
+
+func (stubTeamRepository) FindByID(context.Context, int64) (*team.Team, error) {
+	return nil, nil
+}
+
+func (stubTeamRepository) Save(context.Context, *team.Team) error  { return nil }
+func (stubTeamRepository) DeleteByID(context.Context, int64) error { return nil }
+
+func (r *fakeUserRepository) FindByLogin(ctx context.Context, openID string, serverID int32) (*models.User, error) {
 	r.findCalls = append(r.findCalls, struct {
 		openID   string
 		serverID int32
@@ -40,7 +48,7 @@ func (r *fakeUserRepository) FindByLogin(openID string, serverID int32) (*models
 	return nil, r.findErr
 }
 
-func (r *fakeUserRepository) Save(user *models.User) error {
+func (r *fakeUserRepository) Save(ctx context.Context, user *models.User) error {
 	r.saved = append(r.saved, *user)
 	return r.saveErr
 }
@@ -82,8 +90,8 @@ func beginUserLogin(t *testing.T, manager *UserManager, agent *userManagerAgent,
 	if agent.id == 0 {
 		agent.id = gate.ConnectionID(userTestConnectionID.Add(1))
 	}
-	manager.sessions.Register(agent)
-	attempt, err := manager.sessions.Begin(agent.id, sequence)
+	manager.actor.sessions.Register(agent)
+	attempt, err := manager.actor.sessions.Begin(agent.id, sequence)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,37 +126,36 @@ func TestUserManagerInitializationCommandCanRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 Scope: %v", err)
 	}
-	teams, err := team.NewRegistry(scope)
+	teams, err := team.NewRegistryWithRepository(scope, stubTeamRepository{})
 	if err != nil {
 		t.Fatalf("创建 Team Registry: %v", err)
 	}
-	players, err := player.NewRegistry(scope, teams)
-	if err != nil {
-		t.Fatalf("创建 Player Registry: %v", err)
-	}
-
 	loadFailure := errors.New("database unavailable")
 	attempts := 0
-	manager, err := newUserManager(context.Background(), scope, players, teams, &fakeUserRepository{}, func() ([]player.Player, error) {
+	players, err := player.NewRegistryWithRepository(scope, teams, &userPlayerRepository{load: func(context.Context) ([]player.Player, error) {
 		attempts++
 		if attempts == 1 {
 			return nil, loadFailure
 		}
 		return []player.Player{{PlayerInfo: &playermodel.PlayerInfo{PlayerName: "重试成功"}}}, nil
-	}, provisionmanager.NewMemoryRepository())
+	}})
+	if err != nil {
+		t.Fatalf("创建 Player Registry: %v", err)
+	}
+	manager, err := newUserManager(context.Background(), scope, players, teams, &fakeUserRepository{}, gameprovision.NewMemoryRepository())
 	if err != nil {
 		t.Fatalf("初始化 UserManager: %v", err)
 	}
 
-	if !manager.initialized || !manager.nameCache["重试成功"] || attempts != 2 {
-		t.Fatalf("重试结果不正确: initialized=%t names=%v attempts=%d", manager.initialized, manager.nameCache, attempts)
+	if !manager.actor.initialized || !manager.actor.nameCache["重试成功"] || attempts != 2 {
+		t.Fatalf("重试结果不正确: initialized=%t names=%v attempts=%d", manager.actor.initialized, manager.actor.nameCache, attempts)
 	}
 }
 
 func TestUserManagerLoginCreatesNewUserThroughRepository(t *testing.T) {
 	saveFailure := errors.New("save unavailable")
 	repository := &fakeUserRepository{saveErr: saveFailure}
-	manager := newUserManagerRepositoryTestHarness(t, repository, provisionmanager.NewMemoryRepository())
+	manager := newUserManagerRepositoryTestHarness(t, repository, gameprovision.NewMemoryRepository())
 	agent := &userManagerAgent{}
 
 	response := testUserLogin(t, manager, agent, "new-open-id", 7, message.LoginType_None)
@@ -174,10 +181,44 @@ func TestUserManagerLoginCreatesNewUserThroughRepository(t *testing.T) {
 	repository.saveErr = nil
 }
 
+func TestUserManagerFirstLoginReservesNameBeforeProvisioning(t *testing.T) {
+	for _, replay := range []bool{false, true} {
+		name := "new-intent"
+		if replay {
+			name = "pending-intent"
+		}
+		t.Run(name, func(t *testing.T) {
+			intents := gameprovision.NewMemoryRepository()
+			manager := newUserManagerRepositoryTestHarness(t, &fakeUserRepository{}, intents)
+			playerName := "initial-name"
+			if replay {
+				user := models.User{AccountId: "7_initial-name", OpenId: "initial-name", ServerId: 7, PlayerId: 42}
+				playerData, teamData := gameprovision.NewInitialData(user, 8)
+				playerName = "pending-name"
+				playerData.PlayerInfo.PlayerName = playerName
+				if err := intents.Save(context.Background(), &gameprovision.Intent{
+					AccountID: user.AccountId, User: user, Player: playerData, Team: teamData,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if result := manager.CheckName(playerName); result != message.Result_Success {
+				t.Fatalf("name %q before login = %v; want Success", playerName, result)
+			}
+			if response := testUserLogin(t, manager, &userManagerAgent{}, "initial-name", 7, message.LoginType_None); response.LoginResult != 1 {
+				t.Fatalf("first login = %#v", response)
+			}
+			if result := manager.CheckName(playerName); result != message.Result_Duplicate {
+				t.Fatalf("committed name %q before provisioning = %v; want Duplicate", playerName, result)
+			}
+		})
+	}
+}
+
 func TestUserManagerLoginFailsWhenRepositoryLoadFails(t *testing.T) {
 	loadFailure := errors.New("load unavailable")
 	repository := &fakeUserRepository{findErr: loadFailure}
-	manager := newUserManagerRepositoryTestHarness(t, repository, provisionmanager.NewMemoryRepository())
+	manager := newUserManagerRepositoryTestHarness(t, repository, gameprovision.NewMemoryRepository())
 	agent := &userManagerAgent{}
 
 	response := testUserLogin(t, manager, agent, "existing-open-id", 8, message.LoginType_None)
@@ -194,14 +235,14 @@ func TestUserManagerLoginFailsWhenRepositoryLoadFails(t *testing.T) {
 
 func TestUserManagerLoginReusesPendingProvisionIntent(t *testing.T) {
 	repository := &fakeUserRepository{}
-	intents := provisionmanager.NewMemoryRepository()
+	intents := gameprovision.NewMemoryRepository()
 	manager := newUserManagerRepositoryTestHarness(t, repository, intents)
 
 	first := &userManagerAgent{}
 	if response := testUserLogin(t, manager, first, "pending-open-id", 9, message.LoginType_None); response.LoginResult != 1 {
 		t.Fatalf("首次登录结果 = %d，期望成功", response.LoginResult)
 	}
-	firstIntent, err := intents.FindByAccount("9_pending-open-id")
+	firstIntent, err := intents.FindByAccount(context.Background(), "9_pending-open-id")
 	if err != nil || firstIntent == nil {
 		t.Fatalf("首次登录未创建 Intent: %v, %#v", err, firstIntent)
 	}
@@ -210,7 +251,7 @@ func TestUserManagerLoginReusesPendingProvisionIntent(t *testing.T) {
 	if response := testUserLogin(t, manager, second, "pending-open-id", 9, message.LoginType_None); response.LoginResult != 1 {
 		t.Fatalf("重试登录结果 = %d，期望成功", response.LoginResult)
 	}
-	secondIntent, err := intents.FindByAccount("9_pending-open-id")
+	secondIntent, err := intents.FindByAccount(context.Background(), "9_pending-open-id")
 	if err != nil || secondIntent == nil {
 		t.Fatalf("重试登录读取 Intent 失败: %v, %#v", err, secondIntent)
 	}
@@ -222,7 +263,7 @@ func TestUserManagerLoginReusesPendingProvisionIntent(t *testing.T) {
 }
 
 func TestUserManagerTerminatesSessionAfterProvisionFailure(t *testing.T) {
-	manager := newUserManagerRepositoryTestHarness(t, &fakeUserRepository{}, provisionmanager.NewMemoryRepository())
+	manager := newUserManagerRepositoryTestHarness(t, &fakeUserRepository{}, gameprovision.NewMemoryRepository())
 	agent := &userManagerAgent{}
 	if response := testUserLogin(t, manager, agent, "failed-open-id", 10, message.LoginType_None); response.LoginResult != 1 {
 		t.Fatalf("登录结果 = %d，期望成功", response.LoginResult)
@@ -241,7 +282,7 @@ func TestUserManagerTerminatesSessionAfterProvisionFailure(t *testing.T) {
 	}
 }
 
-func newUserManagerRepositoryTestHarness(t *testing.T, repository userRepository, intentRepository provisionmanager.Repository) *UserManager {
+func newUserManagerRepositoryTestHarness(t *testing.T, repository userRepository, intentRepository gameprovision.Repository) *UserManager {
 	t.Helper()
 	utils.InitSnowflake(1)
 	system := actor.NewActorSystem(time.Second)
@@ -254,17 +295,15 @@ func newUserManagerRepositoryTestHarness(t *testing.T, repository userRepository
 	if err != nil {
 		t.Fatalf("创建 Scope: %v", err)
 	}
-	teams, err := team.NewRegistry(scope)
+	teams, err := team.NewRegistryWithRepository(scope, stubTeamRepository{})
 	if err != nil {
 		t.Fatalf("创建 Team Registry: %v", err)
 	}
-	players, err := player.NewRegistry(scope, teams)
+	players, err := player.NewRegistryWithRepository(scope, teams, &userPlayerRepository{})
 	if err != nil {
 		t.Fatalf("创建 Player Registry: %v", err)
 	}
-	manager, err := newUserManager(context.Background(), scope, players, teams, repository, func() ([]player.Player, error) {
-		return nil, nil
-	}, intentRepository)
+	manager, err := newUserManager(context.Background(), scope, players, teams, repository, intentRepository)
 	if err != nil {
 		t.Fatalf("创建 UserManager: %v", err)
 	}

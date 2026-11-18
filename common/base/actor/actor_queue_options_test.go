@@ -14,21 +14,21 @@ type queueManagerTestActor struct {
 	BaseActor
 }
 
-func TestDefineUsesGroupQueueDefaults(t *testing.T) {
+func TestDefinitionsDeclareQueueCapacity(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	scope, err := system.NewScope("queue-defaults")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	playerDefinition, err := Define(scope, Player, func(context.Context, int64) (*queueDefaultTestActor, error) {
+	playerDefinition, err := Define(scope, func(context.Context, int64) (*queueDefaultTestActor, error) {
 		return &queueDefaultTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 256})
 	if err != nil {
 		t.Fatalf("define player: %v", err)
 	}
-	managerDefinition, err := Define(scope, User, func(context.Context, string) (*queueManagerTestActor, error) {
+	managerDefinition, err := Define(scope, func(context.Context, string) (*queueManagerTestActor, error) {
 		return &queueManagerTestActor{}, nil
-	})
+	}, DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("define manager: %v", err)
 	}
@@ -41,32 +41,32 @@ func TestDefineUsesGroupQueueDefaults(t *testing.T) {
 		t.Fatalf("create manager: %v", err)
 	}
 
-	playerEntry, err := player.Ref().resolve()
+	playerCell, err := player.Ref().resolveCell()
 	if err != nil {
 		t.Fatalf("resolve player: %v", err)
 	}
-	managerEntry, err := manager.Ref().resolve()
+	managerCell, err := manager.Ref().resolveCell()
 	if err != nil {
 		t.Fatalf("resolve manager: %v", err)
 	}
-	if got := cap(playerEntry.cell.queue); got != defaultEntityQueueCapacity {
-		t.Fatalf("player queue capacity = %d, want %d", got, defaultEntityQueueCapacity)
+	if got := cap(playerCell.queue); got != 256 {
+		t.Fatalf("player queue capacity = %d, want 256", got)
 	}
-	if got := cap(managerEntry.cell.queue); got != defaultManagerQueueCapacity {
-		t.Fatalf("manager queue capacity = %d, want %d", got, defaultManagerQueueCapacity)
+	if got := cap(managerCell.queue); got != 1024 {
+		t.Fatalf("manager queue capacity = %d, want 1024", got)
 	}
 	if err := system.Stop(context.Background()); err != nil {
 		t.Fatalf("stop system: %v", err)
 	}
 }
 
-func TestDefineWithOptionsOverridesQueueDefault(t *testing.T) {
+func TestDefinitionOptionsOverrideQueueDefault(t *testing.T) {
 	system := NewActorSystem(time.Second)
 	scope, err := system.NewScope("queue-override")
 	if err != nil {
 		t.Fatalf("create scope: %v", err)
 	}
-	definition, err := DefineWithOptions(scope, Player, func(context.Context, int64) (*queueDefaultTestActor, error) {
+	definition, err := Define(scope, func(context.Context, int64) (*queueDefaultTestActor, error) {
 		return &queueDefaultTestActor{}, nil
 	}, DefinitionOptions{QueueCapacity: 3})
 	if err != nil {
@@ -76,11 +76,11 @@ func TestDefineWithOptionsOverridesQueueDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create actor: %v", err)
 	}
-	entry, err := instance.Ref().resolve()
+	cell, err := instance.Ref().resolveCell()
 	if err != nil {
 		t.Fatalf("resolve actor: %v", err)
 	}
-	if got := cap(entry.cell.queue); got != 3 {
+	if got := cap(cell.queue); got != 3 {
 		t.Fatalf("queue capacity = %d, want 3", got)
 	}
 	if err := system.Stop(context.Background()); err != nil {

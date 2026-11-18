@@ -1,6 +1,8 @@
 package module
 
 import (
+	"errors"
+	"fmt"
 	"gameserver/core/conf"
 	"gameserver/core/log"
 	"runtime"
@@ -11,6 +13,11 @@ type Module interface {
 	OnInit()
 	OnDestroy()
 	Run(closeSig chan bool)
+}
+
+// ShutdownModule 允许模块将关闭失败交回运行时；实现后替代 OnDestroy 调用。
+type ShutdownModule interface {
+	Shutdown() error
 }
 
 type module struct {
@@ -45,13 +52,17 @@ func (r *Runtime) Start() {
 	}
 }
 
-func (r *Runtime) Stop() {
+func (r *Runtime) Stop() error {
+	var failures []error
 	for i := len(r.modules) - 1; i >= 0; i-- {
 		m := r.modules[i]
 		m.closeSig <- true
 		m.wg.Wait()
-		destroy(m)
+		if err := destroy(m); err != nil {
+			failures = append(failures, fmt.Errorf("shutdown module %T: %w", m.mi, err))
+		}
 	}
+	return errors.Join(failures...)
 }
 
 func run(m *module) {
@@ -59,9 +70,10 @@ func run(m *module) {
 	m.wg.Done()
 }
 
-func destroy(m *module) {
+func destroy(m *module) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			err = fmt.Errorf("module shutdown panic: %v", r)
 			if conf.LenStackBuf > 0 {
 				buf := make([]byte, conf.LenStackBuf)
 				l := runtime.Stack(buf, false)
@@ -72,5 +84,9 @@ func destroy(m *module) {
 		}
 	}()
 
+	if shutdown, ok := m.mi.(ShutdownModule); ok {
+		return shutdown.Shutdown()
+	}
 	m.mi.OnDestroy()
+	return nil
 }

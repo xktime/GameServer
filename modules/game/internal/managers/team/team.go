@@ -10,15 +10,24 @@ import (
 	"slices"
 )
 
+// Team 是 Mongo 持久化数据；运行时状态由 teamActor 持有。
 type Team struct {
-	actor.BaseActor `bson:"-"`
-	TeamId          int64          `bson:"_id"`
-	LeaderId        int64          `bson:"leader_id"`
-	TeamMembers     []int64        `bson:"team_members"`
-	RoomId          string         `bson:"room_id"`
-	deleted         bool           `bson:"-"`
-	repository      teamRepository `bson:"-"`
+	TeamId      int64   `bson:"_id"`
+	LeaderId    int64   `bson:"leader_id"`
+	TeamMembers []int64 `bson:"team_members"`
+	RoomId      string  `bson:"room_id"`
 }
+
+type teamActor struct {
+	actor.BaseActor
+	Team
+	deleted    bool
+	repository Repository
+	dispatcher *broadcastActor
+	broadcasts teamBroadcasts
+}
+
+var ErrTeamNotReady = errors.New("team: initialization is not complete")
 
 type Snapshot struct {
 	TeamID    int64
@@ -28,76 +37,76 @@ type Snapshot struct {
 }
 
 type Registry struct {
-	definition *actor.Definition[*Team, int64]
-	repository teamRepository
+	definition *actor.Definition[*teamActor, int64]
+	broadcasts *broadcastActor
+	repository Repository
+	recoveryMu utils.KeyedMutex[int64]
 }
 
 func NewRegistry(scope *actor.Scope) (*Registry, error) {
-	return newRegistry(scope, mongoTeamRepository{})
+	return NewRegistryWithRepository(scope, mongoTeamRepository{})
 }
 
-func newRegistry(scope *actor.Scope, repository teamRepository) (*Registry, error) {
+func NewRegistryWithRepository(scope *actor.Scope, repository Repository) (*Registry, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("game: Team Repository is nil")
 	}
 	registry := &Registry{repository: repository}
-	definition, err := actor.Define(scope, actor.Team, func(context.Context, int64) (*Team, error) {
-		return &Team{repository: repository}, nil
-	})
+	definition, err := actor.Define(scope, func(_ context.Context, teamID int64) (*teamActor, error) {
+		return &teamActor{
+			repository: repository,
+			dispatcher: registry.broadcasts,
+			broadcasts: teamBroadcasts{teamID: teamID},
+		}, nil
+	}, actor.DefinitionOptions{QueueCapacity: 256})
 	if err != nil {
 		return nil, err
 	}
 	registry.definition = definition
+	broadcasts, err := actor.Define(scope, func(context.Context, string) (*broadcastActor, error) {
+		return &broadcastActor{active: make(map[*teamBroadcasts]struct{})}, nil
+	}, actor.DefinitionOptions{QueueCapacity: broadcastQueueCapacity})
+	if err != nil {
+		return nil, err
+	}
+	registry.broadcasts, err = broadcasts.GetOrCreate(context.Background(), "singleton")
+	if err != nil {
+		return nil, err
+	}
 	return registry, nil
 }
 
-func (r *Registry) Create(ctx context.Context, leaderID int64) (Snapshot, error) {
-	return r.GetOrCreate(ctx, utils.FlakeId(), leaderID)
-}
-
-func (r *Registry) GetOrCreate(ctx context.Context, teamID int64, leaderID int64) (Snapshot, error) {
-	team, err := r.definition.GetOrCreate(ctx, teamID)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	return actor.Call(ctx, team.Ref(), func(actor.Context) (Snapshot, error) {
-		if team.TeamId == 0 {
-			team.TeamId = teamID
-			team.LeaderId = leaderID
-		}
-		return team.snapshot(), nil
-	})
-}
-
-func (r *Registry) lookup(ctx context.Context, teamID int64) (*Team, error) {
+func (r *Registry) lookup(ctx context.Context, teamID int64) (*teamActor, error) {
 	return r.definition.Lookup(ctx, teamID)
 }
 
+// Snapshot 只观察已有状态。离线数据直接从仓库返回，不激活 Actor。
 func (r *Registry) Snapshot(ctx context.Context, teamID int64) (Snapshot, error) {
-	team, err := r.lookup(ctx, teamID)
-	var stored *Team
-	if errors.Is(err, actor.ErrActorStopped) {
-		stored, err = r.repository.FindByID(teamID)
+	instance, err := r.lookup(ctx, teamID)
+	if errors.Is(err, actor.ErrActorNotFound) {
+		stored, err := r.repository.FindByID(ctx, teamID)
 		if err != nil {
 			return Snapshot{}, err
 		}
 		if stored == nil {
-			return Snapshot{}, actor.ErrActorStopped
+			return Snapshot{}, actor.ErrActorNotFound
 		}
-		team, err = r.definition.GetOrCreate(ctx, teamID)
+		return stored.snapshot(), nil
 	}
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return actor.Call(ctx, team.Ref(), func(actor.Context) (Snapshot, error) {
-		if stored != nil && team.TeamId == 0 {
-			team.TeamId = teamID
-			team.LeaderId = stored.LeaderId
-			team.TeamMembers = append([]int64(nil), stored.TeamMembers...)
-			team.RoomId = stored.RoomId
+	return actor.Query(ctx, instance.Ref(), func(actor.Context) (Snapshot, error) {
+		if err := instance.readyError(); err != nil {
+			return Snapshot{}, err
 		}
-		return team.snapshot(), nil
+		return instance.snapshot(), nil
 	})
+}
+
+// Stop 等待已接收的广播完成，也是持久化或删除失败后的唯一重试入口。
+func (r *Registry) Stop(ctx context.Context, teamID int64) error {
+	return r.definition.Stop(ctx, teamID)
 }
 
 func (r *Registry) Join(ctx context.Context, teamID int64, playerID int64) error {
@@ -105,7 +114,10 @@ func (r *Registry) Join(ctx context.Context, teamID int64, playerID int64) error
 	if err != nil {
 		return err
 	}
-	_, err = actor.Call(ctx, team.Ref(), func(actor.Context) (struct{}, error) {
+	_, err = actor.Command(ctx, team.Ref(), func(actor.Context) (struct{}, error) {
+		if err := team.readyError(); err != nil {
+			return struct{}{}, err
+		}
 		if slices.Contains(team.TeamMembers, playerID) {
 			return struct{}{}, nil
 		}
@@ -124,7 +136,11 @@ func (r *Registry) Leave(ctx context.Context, teamID int64, playerID int64) erro
 	if err != nil {
 		return err
 	}
-	empty, err := actor.CallUntilDone(ctx, team.Ref(), func(actor.Context) (bool, error) {
+	var stopping actor.StopResult
+	empty, err := actor.Command(ctx, team.Ref(), func(execution actor.Context) (bool, error) {
+		if err := team.readyError(); err != nil {
+			return false, err
+		}
 		log.Debug("玩家 %d 请求离开队伍 %d", playerID, team.TeamId)
 		if team.LeaderId == playerID {
 			team.LeaderId = 0
@@ -137,7 +153,9 @@ func (r *Registry) Leave(ctx context.Context, teamID int64, playerID int64) erro
 		}
 		if len(team.TeamMembers) == 0 {
 			team.deleted = true
-			return true, nil
+			var err error
+			stopping, err = execution.StopSelf(ctx)
+			return true, err
 		}
 		if team.LeaderId == 0 {
 			team.LeaderId = team.TeamMembers[0]
@@ -148,32 +166,38 @@ func (r *Registry) Leave(ctx context.Context, teamID int64, playerID int64) erro
 		return err
 	}
 	if empty {
-		return team.Ref().Stop(ctx)
+		return stopping.Wait(ctx)
 	}
 	return nil
 }
 
-func (r *Registry) SetRoomProjection(ctx context.Context, teamID int64, roomID string) (bool, error) {
+func (r *Registry) SetRoomProjection(ctx context.Context, teamID int64, roomID string) error {
 	team, err := r.lookup(ctx, teamID)
 	if err != nil {
-		return false, err
+		return err
 	}
-	_, err = actor.Call(ctx, team.Ref(), func(actor.Context) (struct{}, error) {
+	_, err = actor.Command(ctx, team.Ref(), func(actor.Context) (struct{}, error) {
+		if err := team.readyError(); err != nil {
+			return struct{}{}, err
+		}
 		team.RoomId = roomID
 		return struct{}{}, nil
 	})
-	return err == nil, err
+	return err
 }
 
 func (t Team) GetPersistId() interface{} {
 	return t.TeamId
 }
 
-func (t *Team) OnStop(context.Context) error {
-	if t.deleted {
-		return t.repository.DeleteByID(t.TeamId)
+func (t *teamActor) OnStop(ctx context.Context) error {
+	if err := waitBroadcasts(ctx, t.dispatcher.seal(&t.broadcasts)); err != nil {
+		return err
 	}
-	return t.repository.Save(t)
+	if t.deleted {
+		return t.repository.DeleteByID(ctx, t.TeamId)
+	}
+	return t.repository.Save(ctx, &t.Team)
 }
 
 func (t *Team) snapshot() Snapshot {
@@ -183,4 +207,14 @@ func (t *Team) snapshot() Snapshot {
 		MemberIDs: append([]int64(nil), t.TeamMembers...),
 		RoomID:    t.RoomId,
 	}
+}
+
+func (t *teamActor) readyError() error {
+	if t.deleted {
+		return actor.ErrActorStopping
+	}
+	if t.TeamId == 0 {
+		return ErrTeamNotReady
+	}
+	return nil
 }

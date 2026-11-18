@@ -5,41 +5,57 @@ import (
 	"errors"
 	"fmt"
 	"gameserver/common/base/actor"
-	"gameserver/common/db/mongodb"
 	"gameserver/common/models"
 	"gameserver/common/msg/message"
 	"gameserver/common/session"
 	"gameserver/common/utils"
 	"gameserver/core/log"
 	"gameserver/modules/game/internal/managers/player"
-	provisionmanager "gameserver/modules/game/internal/managers/provision"
 	"gameserver/modules/game/internal/managers/team"
 	gameprovision "gameserver/modules/game/internal/provision"
 	"gameserver/modules/game/playersession"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson"
 	"google.golang.org/protobuf/proto"
 )
 
 const managerInitializationRetryDelay = 100 * time.Millisecond
 
 type UserManager struct {
-	actor.BaseActor
+	*userDependencies
+	actor      *userActor
+	definition *actor.Definition[*userActor, string]
+	mu         sync.RWMutex
+	recoveryMu utils.KeyedMutex[string]
+}
+
+func (h *UserManager) currentActor() *userActor {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.actor
+}
+
+// userDependencies 由 Manager 与各代 Actor 共享；offline 仅在启动时设置。
+type userDependencies struct {
 	players          *player.Registry
 	teams            *team.Registry
 	sessions         *playersession.State
-	offline          func(int64) bool
-	nameCache        map[string]bool
-	nameBloomFilter  *utils.BloomFilter
-	repository       userRepository                  `bson:"-"`
-	intentRepository provisionmanager.Repository     `bson:"-"`
-	loadPlayers      func() ([]player.Player, error) `bson:"-"`
-	initialized      bool                            `bson:"-"`
+	offline          func(context.Context, int64) bool
+	repository       userRepository
+	intentRepository gameprovision.Repository
 }
 
-func NewManagers(ctx context.Context, scope *actor.Scope, intentRepository provisionmanager.Repository) (*UserManager, *TeamManager, error) {
+// userActor 的可变状态只允许在所属邮箱内访问。
+type userActor struct {
+	actor.BaseActor
+	*userDependencies
+	nameCache   map[string]bool
+	initialized bool
+}
+
+func NewManagers(ctx context.Context, scope *actor.Scope, intentRepository gameprovision.Repository) (*UserManager, *TeamManager, error) {
 	teams, err := team.NewRegistry(scope)
 	if err != nil {
 		return nil, nil, err
@@ -52,17 +68,15 @@ func NewManagers(ctx context.Context, scope *actor.Scope, intentRepository provi
 	if err != nil {
 		return nil, nil, err
 	}
-	teamManager, err := NewTeamManager(ctx, scope, players, teams)
+	teamManager, err := NewTeamManager(players, teams)
 	if err != nil {
 		return nil, nil, err
 	}
 	return users, teamManager, nil
 }
 
-func NewUserManager(ctx context.Context, scope *actor.Scope, players *player.Registry, teams *team.Registry, intentRepository provisionmanager.Repository) (*UserManager, error) {
-	return newUserManager(ctx, scope, players, teams, mongoUserRepository{}, func() ([]player.Player, error) {
-		return mongodb.FindAll[player.Player](bson.M{})
-	}, intentRepository)
+func NewUserManager(ctx context.Context, scope *actor.Scope, players *player.Registry, teams *team.Registry, intentRepository gameprovision.Repository) (*UserManager, error) {
+	return newUserManager(ctx, scope, players, teams, mongoUserRepository{}, intentRepository)
 }
 
 func newUserManager(
@@ -71,8 +85,7 @@ func newUserManager(
 	players *player.Registry,
 	teams *team.Registry,
 	repository userRepository,
-	loadPlayers func() ([]player.Player, error),
-	intentRepository provisionmanager.Repository,
+	intentRepository gameprovision.Repository,
 ) (*UserManager, error) {
 	if players == nil {
 		return nil, fmt.Errorf("game: Player Registry is nil")
@@ -83,25 +96,22 @@ func newUserManager(
 	if repository == nil {
 		return nil, fmt.Errorf("game: User Repository is nil")
 	}
-	if loadPlayers == nil {
-		return nil, fmt.Errorf("game: Player loader is nil")
-	}
 	if intentRepository == nil {
 		return nil, fmt.Errorf("game: Player Provision Repository is nil")
 	}
-	definition, err := actor.Define(scope, actor.User, func(context.Context, string) (*UserManager, error) {
-		manager := &UserManager{
-			players:          players,
-			teams:            teams,
-			sessions:         playersession.NewState(),
+	handle := &UserManager{userDependencies: &userDependencies{
+		players:          players,
+		teams:            teams,
+		sessions:         playersession.NewState(),
+		repository:       repository,
+		intentRepository: intentRepository,
+	}}
+	definition, err := actor.Define(scope, func(context.Context, string) (*userActor, error) {
+		return &userActor{
+			userDependencies: handle.userDependencies,
 			nameCache:        make(map[string]bool),
-			nameBloomFilter:  utils.NewBloomFilter(1000000, 7),
-			repository:       repository,
-			intentRepository: intentRepository,
-			loadPlayers:      loadPlayers,
-		}
-		return manager, nil
-	})
+		}, nil
+	}, actor.DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		return nil, err
 	}
@@ -112,10 +122,11 @@ func newUserManager(
 	if err := manager.initializeUntilReady(ctx); err != nil {
 		return nil, err
 	}
-	return manager, nil
+	handle.actor, handle.definition = manager, definition
+	return handle, nil
 }
 
-func (m *UserManager) initializeUntilReady(ctx context.Context) error {
+func (m *userActor) initializeUntilReady(ctx context.Context) error {
 	for {
 		err := m.initialize(ctx)
 		if err == nil {
@@ -129,12 +140,12 @@ func (m *UserManager) initializeUntilReady(ctx context.Context) error {
 	}
 }
 
-func (m *UserManager) initialize(ctx context.Context) error {
-	_, err := actor.Call(ctx, m.Ref(), func(actor.Context) (struct{}, error) {
+func (m *userActor) initialize(ctx context.Context) error {
+	_, err := actor.Command(ctx, m.Ref(), func(actor.Context) (struct{}, error) {
 		if m.initialized {
 			return struct{}{}, nil
 		}
-		if err := m.preloadNames(); err != nil {
+		if err := m.preloadNames(ctx); err != nil {
 			return struct{}{}, err
 		}
 		m.initialized = true
@@ -143,7 +154,7 @@ func (m *UserManager) initialize(ctx context.Context) error {
 	return err
 }
 
-func (m *UserManager) OnStop(context.Context) error {
+func (m *userActor) OnStop(ctx context.Context) error {
 	if !m.initialized {
 		return nil
 	}
@@ -152,20 +163,26 @@ func (m *UserManager) OnStop(context.Context) error {
 	for _, active := range m.sessions.All() {
 		user := active.User
 		user.LastOfflineTime = now
-		if err := m.repository.Save(&user); err != nil {
+		if err := m.repository.Save(ctx, &user); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
 	return errors.Join(stopErrors...)
 }
 
-func (m *UserManager) LoginState() *playersession.State { return m.sessions }
+func (handle *UserManager) LoginState() *playersession.State {
+	return handle.sessions
+}
 
 // SetOfflineNotifier is configured during startup, before requests are served.
-func (m *UserManager) SetOfflineNotifier(notify func(int64) bool) { m.offline = notify }
+func (handle *UserManager) SetOfflineNotifier(notify func(context.Context, int64) bool) {
+	handle.offline = notify
+}
 
-func (m *UserManager) UserLogin(attempt *playersession.Attempt, openID string, serverID int32, loginType message.LoginType) error {
-	_, err := actor.CallUntilDone(context.Background(), m.Ref(), func(execution actor.Context) (struct{}, error) {
+func (handle *UserManager) UserLogin(attempt *playersession.Attempt, openID string, serverID int32, loginType message.LoginType) error {
+	m := handle.currentActor()
+
+	_, err := actor.Command(context.Background(), m.Ref(), func(execution actor.Context) (struct{}, error) {
 		return struct{}{}, m.doUserLogin(execution, attempt, openID, serverID, loginType)
 	})
 	return err
@@ -174,11 +191,13 @@ func (m *UserManager) UserLogin(attempt *playersession.Attempt, openID string, s
 // HandleProvisionFailure 关闭与失败的首次登录创建意图关联的
 // 在线会话，同时保留已持久化的创建意图，
 // 以便后续重试。
-func (m *UserManager) HandleProvisionFailure(ctx context.Context, intent gameprovision.Intent) error {
+func (handle *UserManager) HandleProvisionFailure(ctx context.Context, intent gameprovision.Intent) error {
+	m := handle.currentActor()
+
 	if ctx == nil {
 		return errors.New("game: provision failure context is nil")
 	}
-	_, err := actor.CallUntilDone(ctx, m.Ref(), func(execution actor.Context) (struct{}, error) {
+	_, err := actor.Command(ctx, m.Ref(), func(execution actor.Context) (struct{}, error) {
 		active, ok := m.sessions.Current(intent.AccountID)
 		if !ok {
 			return struct{}{}, nil
@@ -187,12 +206,12 @@ func (m *UserManager) HandleProvisionFailure(ctx context.Context, intent gamepro
 		if !ok {
 			return struct{}{}, nil
 		}
-		return struct{}{}, m.doUserOffline(execution, active, true)
+		return struct{}{}, m.doUserOffline(execution, active)
 	})
 	return err
 }
 
-func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.Attempt, openID string, serverID int32, loginType message.LoginType) error {
+func (m *userActor) doUserLogin(ctx context.Context, attempt *playersession.Attempt, openID string, serverID int32, loginType message.LoginType) error {
 	if openID == "" {
 		return fmt.Errorf("game: invalid login identity for server %d", serverID)
 	}
@@ -207,7 +226,7 @@ func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.At
 	user := &existing.User
 	if !online {
 		var err error
-		user, err = m.repository.FindByLogin(openID, serverID)
+		user, err = m.repository.FindByLogin(ctx, openID, serverID)
 		if err != nil {
 			return err
 		}
@@ -225,7 +244,7 @@ func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.At
 			Platform:   loginType,
 			CreateTime: loginTime,
 		}
-		intent, findErr := m.intentRepository.FindByAccount(accountID)
+		intent, findErr := m.intentRepository.FindByAccount(ctx, accountID)
 		if findErr != nil {
 			return findErr
 		}
@@ -242,7 +261,7 @@ func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.At
 			intent.NextAttemptAt = time.Time{}
 			intent.LastError = ""
 			intent.UpdatedAt = time.Now()
-			if err := m.intentRepository.Save(intent); err != nil {
+			if err := m.intentRepository.Save(ctx, intent); err != nil {
 				return err
 			}
 		} else {
@@ -261,7 +280,7 @@ func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.At
 				Player:        playerData,
 				Team:          teamData,
 			}
-			if err := m.intentRepository.Save(intent); err != nil {
+			if err := m.intentRepository.Save(ctx, intent); err != nil {
 				return err
 			}
 		}
@@ -297,46 +316,50 @@ func (m *UserManager) doUserLogin(ctx context.Context, attempt *playersession.At
 		}
 		return playersession.ErrStaleAttempt
 	}
-	if err := m.repository.Save(user); err != nil {
+	// Player 文档可能仍在等待创建意图落盘，先登记已提交的初始名字。
+	if isNew && playerData.PlayerInfo != nil {
+		m.addNameToCache(playerData.PlayerInfo.PlayerName)
+	}
+	if err := m.repository.Save(ctx, user); err != nil {
 		log.Error("保存登录用户 %s 失败: %v", accountID, err)
 	}
 	return err
 }
 
-func (m *UserManager) ClosePlayerSession(snapshot session.PlayerSession) {
+func (handle *UserManager) ClosePlayerSession(snapshot session.PlayerSession) {
+	m := handle.currentActor()
+
 	if err := actor.Tell(context.Background(), m.Ref(), func(execution actor.Context) error {
 		active, ok := m.sessions.Close(snapshot)
 		if !ok {
 			return nil
 		}
-		return m.doUserOffline(execution, active, true)
+		return m.doUserOffline(execution, active)
 	}); err != nil {
 		log.Error("提交 Player Session %d 下线失败: %v", snapshot.ID, err)
 	}
 }
 
-func (m *UserManager) doUserOffline(ctx context.Context, active playersession.Active, save bool) error {
+func (m *userActor) doUserOffline(ctx context.Context, active playersession.Active) error {
 	user := active.User
 	offlineErrors := make([]error, 0)
 	// Only a verified current Session reaches this point. Room no longer treats
 	// raw transport CloseAgent events as Player offline events.
 	if m.offline != nil {
-		m.offline(user.PlayerId)
+		m.offline(ctx, user.PlayerId)
 	}
-	if save {
-		user.LastOfflineTime = time.Now().Unix()
-		if err := m.repository.Save(&user); err != nil {
-			offlineErrors = append(offlineErrors, err)
-		}
+	user.LastOfflineTime = time.Now().Unix()
+	if err := m.repository.Save(ctx, &user); err != nil {
+		offlineErrors = append(offlineErrors, err)
 	}
 
 	playerSnapshot, err := m.players.Offline(ctx, user.PlayerId)
-	if err != nil && !errors.Is(err, actor.ErrActorStopped) {
+	if err != nil && !errors.Is(err, actor.ErrActorNotFound) {
 		offlineErrors = append(offlineErrors, err)
 	}
 	if playerSnapshot.TeamID != 0 {
 		if leaveErr := m.teams.Leave(ctx, playerSnapshot.TeamID, user.PlayerId); leaveErr != nil &&
-			!errors.Is(leaveErr, actor.ErrActorStopped) {
+			!errors.Is(leaveErr, actor.ErrActorNotFound) {
 			offlineErrors = append(offlineErrors, leaveErr)
 		}
 	}
@@ -347,12 +370,14 @@ func (m *UserManager) doUserOffline(ctx context.Context, active playersession.Ac
 	return errors.Join(offlineErrors...)
 }
 
-func (m *UserManager) ModifyName(playerID int64, name string) (message.Result, string) {
+func (handle *UserManager) ModifyName(playerID int64, name string) (message.Result, string) {
+	m := handle.currentActor()
+
 	type result struct {
 		status message.Result
 		name   string
 	}
-	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (result, error) {
+	response, err := actor.Command(context.Background(), m.Ref(), func(execution actor.Context) (result, error) {
 		status, appliedName, err := m.players.ModifyName(execution, playerID, name)
 		if err != nil {
 			return result{}, err
@@ -369,8 +394,30 @@ func (m *UserManager) ModifyName(playerID int64, name string) (message.Result, s
 	return response.status, response.name
 }
 
-func (m *UserManager) CheckName(playerName string) message.Result {
-	response, err := actor.Call(context.Background(), m.Ref(), func(actor.Context) (message.Result, error) {
+func (handle *UserManager) CheckName(playerName string) message.Result {
+	m := handle.currentActor()
+
+	response, err := actor.Query(context.Background(), m.Ref(), func(actor.Context) (message.Result, error) {
+		return m.checkName(playerName), nil
+	})
+	if err != nil {
+		log.Error("检查名字失败: %v", err)
+		return message.Result_Fail
+	}
+	if response != message.Result_Success {
+		return response
+	}
+	// 缓存未命中时的数据库读取不占用会话邮箱。
+	exists, err := handle.players.NameExists(context.Background(), playerName)
+	if err != nil {
+		log.Error("CheckName query database failed: %v", err)
+		return message.Result_Fail
+	}
+	response, err = actor.Command(context.Background(), m.Ref(), func(actor.Context) (message.Result, error) {
+		if exists {
+			m.addNameToCache(playerName)
+		}
+		// 数据库读取期间，登录或改名可能已经登记了这个名字。
 		return m.checkName(playerName), nil
 	})
 	if err != nil {
@@ -380,95 +427,72 @@ func (m *UserManager) CheckName(playerName string) message.Result {
 	return response
 }
 
-func (m *UserManager) checkName(playerName string) message.Result {
+func (m *userActor) checkName(playerName string) message.Result {
 	if len(playerName) < 2 || len(playerName) > 20 {
 		return message.Result_Illegal
 	}
-	if !m.nameBloomFilter.Contains(playerName) {
-		return message.Result_Success
-	}
-	if duplicate, exists := m.nameCache[playerName]; exists {
-		if duplicate {
-			return message.Result_Duplicate
-		}
-		return message.Result_Success
-	}
-	existingPlayer, err := mongodb.FindOne[player.Player](bson.M{"player_info.player_name": playerName})
-	if err != nil {
-		log.Error("CheckName query database failed: %v", err)
-		return message.Result_Fail
-	}
-	m.nameCache[playerName] = existingPlayer != nil
-	m.nameBloomFilter.Add(playerName)
-	if existingPlayer != nil {
+	if m.nameCache[playerName] {
 		return message.Result_Duplicate
 	}
 	return message.Result_Success
 }
 
-func (m *UserManager) ModifyAvatarSuffix(playerID int64, avatar string) (message.Result, string) {
-	type result struct {
-		status message.Result
-		avatar string
-	}
-	response, err := actor.Call(context.Background(), m.Ref(), func(execution actor.Context) (result, error) {
-		status, appliedAvatar, err := m.players.ModifyAvatarSuffix(execution, playerID, avatar)
-		return result{status: status, avatar: appliedAvatar}, err
-	})
+func (handle *UserManager) ModifyAvatarSuffix(playerID int64, avatar string) (message.Result, string) {
+	status, appliedAvatar, err := handle.players.ModifyAvatarSuffix(context.Background(), playerID, avatar)
 	if err != nil {
 		log.Error("修改玩家 %d 头像失败: %v", playerID, err)
 		return message.Result_Fail, ""
 	}
-	return response.status, response.avatar
+	return status, appliedAvatar
 }
 
-func (m *UserManager) GetPlayerSnapshot(playerID int64) (player.Snapshot, bool) {
-	snapshot, err := m.players.Snapshot(context.Background(), playerID)
-	if err != nil {
-		if !errors.Is(err, actor.ErrActorStopped) {
-			log.Error("获取玩家 %d 快照失败: %v", playerID, err)
-		}
-		return player.Snapshot{}, false
+func (handle *UserManager) GetPlayerSnapshot(ctx context.Context, playerID int64) (player.Snapshot, bool, error) {
+	snapshot, err := handle.players.Snapshot(ctx, playerID)
+	if errors.Is(err, actor.ErrActorNotFound) {
+		return player.Snapshot{}, false, nil
 	}
-	return snapshot, true
+	return snapshot, err == nil, err
 }
 
-func (m *UserManager) GetPlayerInfo(playerID int64) (*message.PlayerInfo, bool) {
-	if snapshot, found := m.GetPlayerSnapshot(playerID); found && snapshot.PlayerInfo != nil {
+func (handle *UserManager) GetPlayerInfo(playerID int64) (*message.PlayerInfo, bool) {
+	snapshot, err := handle.players.Snapshot(context.Background(), playerID)
+	if err == nil && snapshot.PlayerInfo != nil {
 		return snapshot.PlayerInfo.ToMsg(), true
 	}
-	offlinePlayer, err := mongodb.FindOneById[player.Player](playerID)
-	if err != nil {
-		log.Error("获取离线玩家 %d 失败: %v", playerID, err)
+	if !errors.Is(err, actor.ErrActorNotFound) {
 		return nil, false
 	}
-	if offlinePlayer == nil || offlinePlayer.PlayerInfo == nil {
+	offlinePlayer, err := handle.players.StoredSnapshot(context.Background(), playerID)
+	if err != nil {
+		if !errors.Is(err, actor.ErrActorNotFound) {
+			log.Error("获取离线玩家 %d 失败: %v", playerID, err)
+		}
+		return nil, false
+	}
+	if offlinePlayer.PlayerInfo == nil {
 		return nil, false
 	}
 	return offlinePlayer.PlayerInfo.ToMsg(), true
 }
 
-func (m *UserManager) SendToPlayer(playerID int64, msg proto.Message) {
-	if err := m.players.SendToClient(context.Background(), playerID, msg); err != nil && !errors.Is(err, actor.ErrActorStopped) {
+func (handle *UserManager) SendToPlayer(playerID int64, msg proto.Message) {
+	if err := handle.players.SendToClient(context.Background(), playerID, msg); err != nil && !errors.Is(err, actor.ErrActorNotFound) {
 		log.Error("发送消息给玩家 %d 失败: %v", playerID, err)
 	}
 }
 
-func (m *UserManager) preloadNames() error {
-	players, err := m.loadPlayers()
+func (m *userActor) preloadNames(ctx context.Context) error {
+	names, err := m.players.StoredNames(ctx)
 	if err != nil {
 		return fmt.Errorf("preload player names: %w", err)
 	}
-	for _, playerData := range players {
-		if playerData.PlayerInfo != nil && playerData.PlayerInfo.PlayerName != "" {
-			m.addNameToCache(playerData.PlayerInfo.PlayerName)
-		}
+	for _, name := range names {
+		m.addNameToCache(name)
 	}
 	log.Debug("Preloaded %d names from database", len(m.nameCache))
 	return nil
 }
 
-func (m *UserManager) addNameToCache(playerName string) {
+func (m *userActor) addNameToCache(playerName string) {
 	m.nameCache[playerName] = true
-	m.nameBloomFilter.Add(playerName)
 }

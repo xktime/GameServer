@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"errors"
 	"gameserver/common/msg/message"
 	"gameserver/modules/rank/internal/documents"
@@ -12,9 +13,9 @@ import (
 
 type fakePlayerReader map[int64]playerread.PlayerSnapshot
 
-func (f fakePlayerReader) FindOnline(playerID int64) (playerread.PlayerSnapshot, bool) {
+func (f fakePlayerReader) FindOnline(ctx context.Context, playerID int64) (playerread.PlayerSnapshot, bool, error) {
 	snapshot, ok := f[playerID]
-	return snapshot, ok
+	return snapshot, ok, nil
 }
 
 func rankTestNow() time.Time {
@@ -23,7 +24,7 @@ func rankTestNow() time.Time {
 
 func TestRankManagerInitializationCommandCanRetry(t *testing.T) {
 	repository := &memoryRankStore{loadSeasonErrors: []error{errors.New("database unavailable")}}
-	if err := repository.Save(&SeasonManager{PersistId: 1, Season: 3, LastCrossDayTime: rankTestNow().Unix()}); err != nil {
+	if err := repository.Save(context.Background(), &SeasonManager{PersistId: 1, Season: 3, LastCrossDayTime: rankTestNow().Unix()}); err != nil {
 		t.Fatal(err)
 	}
 	manager, _ := startTestRankManager(t, repository, fakePlayerReader{}, rankTestNow)
@@ -45,7 +46,7 @@ func TestRankManagerInitializesMissingPersistedCache(t *testing.T) {
 func TestRankManagerRebuildsPersistedRankIndexBeforeUpdatingPlayer(t *testing.T) {
 	rankType := message.RankType_RankType_ChallengePoint
 	repository := &memoryRankStore{}
-	if err := repository.Save(&documents.RankManager{
+	if err := repository.Save(context.Background(), &documents.RankManager{
 		PersistId: 1,
 		RankCache: map[message.RankType]map[int32]*rankmodels.RankSnapshot{
 			rankType: {0: {RankType: rankType, Items: []*rankmodels.RankItem{
@@ -153,7 +154,7 @@ func TestRankManagerUsesClockToOrderEqualScores(t *testing.T) {
 	now := time.Now().UTC().Add(24 * time.Hour)
 	rankType := message.RankType_RankType_ChallengePoint
 	repository := &memoryRankStore{}
-	if err := repository.Save(&documents.RankManager{
+	if err := repository.Save(context.Background(), &documents.RankManager{
 		PersistId: 1,
 		RankCache: map[message.RankType]map[int32]*rankmodels.RankSnapshot{
 			rankType: {0: {RankType: rankType, Items: []*rankmodels.RankItem{

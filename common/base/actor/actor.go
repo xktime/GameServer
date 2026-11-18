@@ -1,5 +1,10 @@
 package actor
 
+// Actor 是运行时绑定实例所需的最小能力。
+type Actor interface {
+	ActorBase() *BaseActor
+}
+
 // BaseActor 提供通用的Actor基础实现
 type BaseActor struct {
 	ref ActorRef

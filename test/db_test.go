@@ -83,11 +83,12 @@ func (u User) GetPersistId() interface{} {
 
 func TestDB_TestMongo(t *testing.T) {
 	initMongoTest(t)
+	ctx := context.Background()
 
-	if _, err := mongodb.Save(&User{ID: "1", Name: "张三", Age: 20}); err != nil {
+	if _, err := mongodb.SaveContext(ctx, &User{ID: "1", Name: "张三", Age: 20}); err != nil {
 		t.Fatalf("保存用户失败: %v", err)
 	}
-	user, err := mongodb.FindOneById[User]("1")
+	user, err := mongodb.FindOneByIDContext[User](ctx, "1")
 	if err != nil {
 		t.Fatalf("查询用户失败: %v", err)
 	}
@@ -95,10 +96,10 @@ func TestDB_TestMongo(t *testing.T) {
 		t.Fatalf("查询结果不符合预期: %#v", user)
 	}
 
-	if _, err := mongodb.Save(&User{ID: "2", Name: "李四", Age: 20}); err != nil {
+	if _, err := mongodb.SaveContext(ctx, &User{ID: "2", Name: "李四", Age: 20}); err != nil {
 		t.Fatalf("保存第二个用户失败: %v", err)
 	}
-	users, err := mongodb.FindAll[User](bson.M{})
+	users, err := mongodb.FindAllContext[User](ctx, bson.M{})
 	if err != nil {
 		t.Fatalf("查询全部用户失败: %v", err)
 	}
@@ -106,10 +107,10 @@ func TestDB_TestMongo(t *testing.T) {
 		t.Fatalf("用户数量 = %d，期望 2", len(users))
 	}
 
-	if _, err := mongodb.DeleteByID[User]("2"); err != nil {
+	if _, err := mongodb.DeleteByIDContext[User](ctx, "2"); err != nil {
 		t.Fatalf("删除用户失败: %v", err)
 	}
-	deletedUser, err := mongodb.FindOneById[User]("2")
+	deletedUser, err := mongodb.FindOneByIDContext[User](ctx, "2")
 	if err != nil {
 		t.Fatalf("查询已删除用户失败: %v", err)
 	}
@@ -117,10 +118,10 @@ func TestDB_TestMongo(t *testing.T) {
 		t.Fatalf("用户删除后仍可查询: %#v", deletedUser)
 	}
 
-	if _, err := mongodb.Save(&User{ID: "1", Name: "张三123", Age: 21}); err != nil {
+	if _, err := mongodb.SaveContext(ctx, &User{ID: "1", Name: "张三123", Age: 21}); err != nil {
 		t.Fatalf("更新用户失败: %v", err)
 	}
-	user, err = mongodb.FindOneById[User]("1")
+	user, err = mongodb.FindOneByIDContext[User](ctx, "1")
 	if err != nil {
 		t.Fatalf("查询更新后的用户失败: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestBulkSave(t *testing.T) {
 	// 验证保存结果
 	for _, data := range users {
 		user := data.(*models.User)
-		savedUser, err := mongodb.FindOneById[models.User](user.AccountId)
+		savedUser, err := mongodb.FindOneByIDContext[models.User](context.Background(), user.AccountId)
 		if err != nil {
 			t.Fatalf("查询用户失败: %v", err)
 		}
@@ -168,8 +169,9 @@ func TestBulkSave(t *testing.T) {
 
 func TestSaveIfAbsentKeepsExistingDocument(t *testing.T) {
 	initMongoTest(t)
+	ctx := context.Background()
 
-	inserted, err := mongodb.SaveIfAbsent(&User{ID: "first", Name: "原始", Age: 1})
+	inserted, err := mongodb.SaveIfAbsentContext(ctx, &User{ID: "first", Name: "原始", Age: 1})
 	if err != nil {
 		t.Fatalf("首次 SaveIfAbsent 失败: %v", err)
 	}
@@ -177,14 +179,14 @@ func TestSaveIfAbsentKeepsExistingDocument(t *testing.T) {
 		t.Fatal("首次 SaveIfAbsent 应插入文档")
 	}
 
-	inserted, err = mongodb.SaveIfAbsent(&User{ID: "first", Name: "覆盖", Age: 2})
+	inserted, err = mongodb.SaveIfAbsentContext(ctx, &User{ID: "first", Name: "覆盖", Age: 2})
 	if err != nil {
 		t.Fatalf("重复 SaveIfAbsent 失败: %v", err)
 	}
 	if inserted {
 		t.Fatal("重复 SaveIfAbsent 不应覆盖文档")
 	}
-	user, err := mongodb.FindOneById[User]("first")
+	user, err := mongodb.FindOneByIDContext[User](ctx, "first")
 	if err != nil {
 		t.Fatalf("读取 SaveIfAbsent 文档失败: %v", err)
 	}

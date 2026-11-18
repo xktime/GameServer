@@ -21,6 +21,12 @@ type fakeTeamRoomProjection struct {
 	err     error
 }
 
+type teamRoomProjectionFunc func(context.Context, []participant.DesiredTeamRoom) error
+
+func (f teamRoomProjectionFunc) Apply(ctx context.Context, desired []participant.DesiredTeamRoom) error {
+	return f(ctx, desired)
+}
+
 type reorderedTeamRoomProjection struct {
 	joinStarted chan struct{}
 	releaseJoin chan struct{}
@@ -29,7 +35,7 @@ type reorderedTeamRoomProjection struct {
 	applied     [][]participant.DesiredTeamRoom
 }
 
-func (p *reorderedTeamRoomProjection) Apply(desired []participant.DesiredTeamRoom) error {
+func (p *reorderedTeamRoomProjection) Apply(ctx context.Context, desired []participant.DesiredTeamRoom) error {
 	isFirstJoin := false
 	if len(desired) == 1 && desired[0].RoomID != "" {
 		p.joinOnce.Do(func() {
@@ -56,7 +62,10 @@ func (p *reorderedTeamRoomProjection) history() [][]participant.DesiredTeamRoom 
 	return history
 }
 
-func (f *fakeTeamRoomProjection) Apply(desired []participant.DesiredTeamRoom) error {
+func (f *fakeTeamRoomProjection) Apply(ctx context.Context, desired []participant.DesiredTeamRoom) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	f.applied = append(f.applied, append([]participant.DesiredTeamRoom(nil), desired...))
 	return f.err
 }
@@ -115,6 +124,39 @@ func newTestRoomManager(
 	return manager
 }
 
+func TestCanceledMatchCreationCleansActorAndAllowsRetry(t *testing.T) {
+	projection := &fakeTeamRoomProjection{}
+	messenger := &fakePlayerMessenger{}
+	nextRoomID := 0
+	manager := newTestRoomManager(t, projection, messenger, time.Now, func() string {
+		nextRoomID++
+		return "room-" + strconv.Itoa(nextRoomID)
+	})
+	admission := matchentry.Admission{
+		MatchID: "match-1",
+		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if result := manager.AcceptMatch(ctx, admission); result.Status != matchentry.Retryable {
+		t.Fatalf("canceled admission = %#v; want Retryable", result)
+	}
+	lookupContext, cancelLookup := context.WithTimeout(context.Background(), time.Second)
+	defer cancelLookup()
+	if _, err := manager.roomDefinition.Lookup(lookupContext, "room-1"); !errors.Is(err, actor.ErrActorNotFound) {
+		t.Fatalf("canceled admission left an Actor registered: %v", err)
+	}
+	if len(manager.rooms) != 0 || len(manager.matchRooms) != 0 || len(manager.playerRooms) != 0 || len(manager.teamRooms) != 0 {
+		t.Fatal("canceled admission left Room indexes populated")
+	}
+	if len(projection.applied) != 0 || len(messenger.delivered) != 0 {
+		t.Fatal("canceled admission projected or notified an uncommitted Room")
+	}
+	if result := manager.AcceptMatch(context.Background(), admission); result.Status != matchentry.Accepted || result.RoomID != "room-2" {
+		t.Fatalf("retry admission = %#v; want room-2 accepted", result)
+	}
+}
+
 func TestAcceptMatchCommitsRoomAndNotifiesOnlyRealPlayers(t *testing.T) {
 	projection := &fakeTeamRoomProjection{}
 	messenger := &fakePlayerMessenger{}
@@ -125,7 +167,7 @@ func TestAcceptMatchCommitsRoomAndNotifiesOnlyRealPlayers(t *testing.T) {
 		func() string { return "room-1" },
 	)
 
-	result := manager.AcceptMatch(matchentry.Admission{
+	result := manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams: []matchentry.MatchedTeam{
 			{TeamID: 7, PlayerIDs: []int64{42, 43}},
@@ -152,6 +194,43 @@ func TestAcceptMatchCommitsRoomAndNotifiesOnlyRealPlayers(t *testing.T) {
 	}
 }
 
+func TestAcceptMatchNotifiesAfterCallerCancellationFollowingCommit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	projection := &fakeTeamRoomProjection{}
+	messenger := &fakePlayerMessenger{}
+	manager := newTestRoomManager(t, teamRoomProjectionFunc(func(ctx context.Context, desired []participant.DesiredTeamRoom) error {
+		cancel()
+		return projection.Apply(ctx, desired)
+	}), messenger, time.Now, func() string { return "room-1" })
+	admission := matchentry.Admission{
+		MatchID: "match-1",
+		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+	}
+
+	result := manager.AcceptMatch(ctx, admission)
+	if result.Status != matchentry.Accepted || result.RoomID != "room-1" {
+		t.Fatalf("AcceptMatch() = %#v", result)
+	}
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatal("caller context was not canceled after Room commit")
+	}
+	if retry := manager.AcceptMatch(context.Background(), admission); retry.Status != matchentry.AlreadyAccepted || retry.RoomID != result.RoomID {
+		t.Fatalf("duplicate admission = %#v", retry)
+	}
+	if len(messenger.delivered) != 1 || !slices.Equal(messenger.delivered[0].playerIDs, []int64{42}) {
+		t.Fatalf("MatchResult after caller cancellation = %#v", messenger.delivered)
+	}
+	matchResult, ok := messenger.delivered[0].msg.(*message.S2C_MatchResult)
+	if !ok || matchResult.RoomId != result.RoomID {
+		t.Fatalf("MatchResult = %#v", messenger.delivered[0].msg)
+	}
+	wantProjection := []participant.DesiredTeamRoom{{TeamID: 7, RoomID: "room-1"}}
+	if len(projection.applied) != 1 || !slices.Equal(projection.applied[0], wantProjection) {
+		t.Fatalf("Team Room projection after caller cancellation = %#v", projection.applied)
+	}
+}
+
 func TestAcceptMatchReturnsExistingRoomForDuplicateMatchID(t *testing.T) {
 	projection := &fakeTeamRoomProjection{}
 	messenger := &fakePlayerMessenger{}
@@ -171,8 +250,8 @@ func TestAcceptMatchReturnsExistingRoomForDuplicateMatchID(t *testing.T) {
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	}
 
-	first := manager.AcceptMatch(admission)
-	second := manager.AcceptMatch(admission)
+	first := manager.AcceptMatch(context.Background(), admission)
+	second := manager.AcceptMatch(context.Background(), admission)
 
 	if first.Status != matchentry.Accepted || second.Status != matchentry.AlreadyAccepted || second.RoomID != first.RoomID {
 		t.Fatalf("duplicate results = %#v, %#v", first, second)
@@ -195,12 +274,12 @@ func TestAcceptMatchRejectsParticipantAlreadyInActiveRoom(t *testing.T) {
 			return "room-" + strconv.Itoa(roomNumber)
 		},
 	)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
 
-	result := manager.AcceptMatch(matchentry.Admission{
+	result := manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-2",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 8, PlayerIDs: []int64{42, 43}}},
 	})
@@ -239,7 +318,7 @@ func TestAcceptMatchRejectsStructurallyInvalidAdmission(t *testing.T) {
 				func() string { return "room-invalid" },
 			)
 
-			result := manager.AcceptMatch(test.admission)
+			result := manager.AcceptMatch(context.Background(), test.admission)
 
 			if result.Status != matchentry.Rejected {
 				t.Fatalf("invalid admission result = %#v", result)
@@ -261,7 +340,7 @@ func TestAcceptMatchKeepsFailedTeamProjectionForReconciliation(t *testing.T) {
 		func() string { return "room-1" },
 	)
 
-	result := manager.AcceptMatch(matchentry.Admission{
+	result := manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
@@ -297,12 +376,12 @@ func TestCloseRoomReleasesMembershipAndIsIdempotent(t *testing.T) {
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	}
-	manager.AcceptMatch(firstAdmission)
+	manager.AcceptMatch(context.Background(), firstAdmission)
 
 	if !manager.CloseRoom("room-1") || !manager.CloseRoom("room-1") {
 		t.Fatal("CloseRoom() was not idempotent")
 	}
-	second := manager.AcceptMatch(matchentry.Admission{
+	second := manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-2",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
@@ -333,7 +412,7 @@ func TestCloseRoomCoalescesPendingProjectionToLatestDesiredRoom(t *testing.T) {
 		func() time.Time { return time.Unix(100, 0) },
 		func() string { return "room-1" },
 	)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
@@ -362,7 +441,7 @@ func TestCloseRoomReappliesLatestProjectionAfterStaleJoinCompletes(t *testing.T)
 	)
 	accepted := make(chan matchentry.Acceptance, 1)
 	go func() {
-		accepted <- manager.AcceptMatch(matchentry.Admission{
+		accepted <- manager.AcceptMatch(context.Background(), matchentry.Admission{
 			MatchID: "match-1",
 			Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 		})
@@ -405,13 +484,13 @@ func TestClosedMatchIDIsRejectedUntilTombstoneExpires(t *testing.T) {
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	}
-	manager.AcceptMatch(admission)
+	manager.AcceptMatch(context.Background(), admission)
 	manager.CloseRoom("room-1")
 
 	now = now.Add(4 * time.Minute)
-	withinTombstone := manager.AcceptMatch(admission)
+	withinTombstone := manager.AcceptMatch(context.Background(), admission)
 	now = now.Add(time.Minute)
-	afterTombstone := manager.AcceptMatch(admission)
+	afterTombstone := manager.AcceptMatch(context.Background(), admission)
 
 	if withinTombstone.Status != matchentry.Rejected || !slices.Equal(withinTombstone.RejectedTeamIDs, []int64{7}) {
 		t.Fatalf("within tombstone = %#v", withinTombstone)
@@ -429,7 +508,7 @@ func TestMaintainProactivelyPrunesExpiredMatchTombstones(t *testing.T) {
 		func() time.Time { return now },
 		func() string { return "room-1" },
 	)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
@@ -440,11 +519,62 @@ func TestMaintainProactivelyPrunesExpiredMatchTombstones(t *testing.T) {
 	if len(manager.closedMatches) != 1 {
 		t.Fatalf("到期前 tombstones = %#v", manager.closedMatches)
 	}
+	if !manager.CloseRoom("room-1") {
+		t.Fatal("到期前重复关闭应保持幂等")
+	}
 
 	now = now.Add(time.Nanosecond)
 	manager.Maintain()
 	if len(manager.closedMatches) != 0 {
 		t.Fatalf("到期时 tombstones = %#v", manager.closedMatches)
+	}
+	if len(manager.closedRooms) != 0 || manager.CloseRoom("room-1") {
+		t.Fatalf("到期后仍保留已完成的关闭记录: %#v", manager.closedRooms)
+	}
+}
+
+func TestMaintainRetainsPendingRoomCleanupPastTombstoneTTL(t *testing.T) {
+	for _, pending := range []string{"projection", "actor stop"} {
+		t.Run(pending, func(t *testing.T) {
+			now := time.Unix(100, 0)
+			projection := &fakeTeamRoomProjection{}
+			manager := newTestRoomManager(t, projection, &fakePlayerMessenger{}, func() time.Time { return now }, func() string { return "room-1" })
+			manager.AcceptMatch(context.Background(), matchentry.Admission{
+				MatchID: "match-1",
+				Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+			})
+			ctx := context.Background()
+			wantErr := errors.New("projection unavailable")
+			if pending == "projection" {
+				projection.err = wantErr
+			} else {
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx, wantErr = canceled, context.Canceled
+			}
+			if closed, err := manager.closeRoom(ctx, "room-1", false); !closed || !errors.Is(err, wantErr) {
+				t.Fatalf("first close = %t, %v; want %v", closed, err, wantErr)
+			}
+
+			now = now.Add(MatchTombstoneTTL)
+			manager.Maintain()
+			if _, retained := manager.closedRooms["room-1"]; !retained {
+				t.Fatal("墓碑到期不应丢弃未完成的房间清理")
+			}
+			if pending == "actor stop" {
+				if manager.projectedTeamRoomVersions[7] != manager.desiredTeamRooms[7].version {
+					t.Fatal("Actor 停止重试不应阻塞投影补交")
+				}
+				if _, err := manager.closeRoom(context.Background(), "room-1", false); err != nil {
+					t.Fatalf("retry close = %v", err)
+				}
+			}
+			projection.err = nil
+			manager.Maintain()
+			if _, retained := manager.closedRooms["room-1"]; retained {
+				t.Fatal("清理完成后应回收已到期的房间关闭记录")
+			}
+		})
 	}
 }
 
@@ -456,7 +586,7 @@ func TestHandleRecordOperateAuthorizesCanonicalMembership(t *testing.T) {
 		func() time.Time { return time.Unix(100, 0) },
 		func() string { return "room-1" },
 	)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams: []matchentry.MatchedTeam{
 			{TeamID: 7, PlayerIDs: []int64{42, 43}},
@@ -492,7 +622,7 @@ func TestPlayerOfflineNotifiesOthersWithoutRemovingMembership(t *testing.T) {
 		func() time.Time { return time.Unix(100, 0) },
 		func() string { return "room-1" },
 	)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams: []matchentry.MatchedTeam{
 			{TeamID: 7, PlayerIDs: []int64{42, 43}},
@@ -501,8 +631,8 @@ func TestPlayerOfflineNotifiesOthersWithoutRemovingMembership(t *testing.T) {
 	})
 	messenger.delivered = nil
 
-	notified := manager.PlayerOffline(42)
-	unknown := manager.PlayerOffline(99)
+	notified := manager.PlayerOffline(context.Background(), 42)
+	unknown := manager.PlayerOffline(context.Background(), 99)
 	operation := manager.HandleRecordOperate(42, "room-1", "reconnected-move")
 
 	if !notified || unknown || operation.OperateInfo != "reconnected-move" {
@@ -534,23 +664,23 @@ func TestCloseExpiredClosesOnlyRoomsAtMaximumLifetime(t *testing.T) {
 			return "room-" + strconv.Itoa(roomNumber)
 		},
 	)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
 	now = now.Add(time.Minute)
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-2",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 8, PlayerIDs: []int64{43}}},
 	})
 
 	now = createdAt.Add(MaxRoomLifetime)
 	closed := manager.CloseExpired()
-	firstTeam := manager.AcceptMatch(matchentry.Admission{
+	firstTeam := manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-3",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
-	secondTeam := manager.AcceptMatch(matchentry.Admission{
+	secondTeam := manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-4",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 8, PlayerIDs: []int64{43}}},
 	})
@@ -575,9 +705,9 @@ func TestRoomManagerStopClosesOwnedRoomsWithoutStoppingOtherActors(t *testing.T)
 			t.Errorf("Stop ActorSystem: %v", err)
 		}
 	})
-	otherDefinition, err := actor.Define(otherScope, actor.Test1, func(context.Context, string) (*unrelatedRoomTestActor, error) {
+	otherDefinition, err := actor.Define(otherScope, func(context.Context, string) (*unrelatedRoomTestActor, error) {
 		return &unrelatedRoomTestActor{}, nil
-	})
+	}, actor.DefinitionOptions{QueueCapacity: 1024})
 	if err != nil {
 		t.Fatalf("Define unrelated actor: %v", err)
 	}
@@ -595,15 +725,15 @@ func TestRoomManagerStopClosesOwnedRoomsWithoutStoppingOtherActors(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewRoomManager: %v", err)
 	}
-	manager.AcceptMatch(matchentry.Admission{
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
 		MatchID: "match-1",
 		Teams:   []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
 	})
 
-	manager.Stop()
-	manager.Stop()
+	manager.Stop(context.Background())
+	manager.Stop(context.Background())
 
-	if _, err := actor.Call(context.Background(), unrelated.Ref(), func(actor.Context) (struct{}, error) {
+	if _, err := actor.Command(context.Background(), unrelated.Ref(), func(actor.Context) (struct{}, error) {
 		return struct{}{}, nil
 	}); err != nil {
 		t.Fatalf("RoomManager.Stop affected unrelated actor: %v", err)
@@ -637,6 +767,93 @@ func TestNewRoomManagerRejectsMissingDependency(t *testing.T) {
 			}
 			if _, err := NewRoomManager(scope, test.projection, test.messenger, test.now, test.newRoomID); err == nil {
 				t.Fatal("NewRoomManager accepted missing dependency")
+			}
+		})
+	}
+}
+
+func TestRecordOperateRejectsStoppedRoom(t *testing.T) {
+	manager := newTestRoomManager(t, &fakeTeamRoomProjection{}, &fakePlayerMessenger{}, time.Now, func() string { return "room-1" })
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
+		MatchID: "match-1", Teams: []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+	})
+	if err := manager.rooms["room-1"].Ref().Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if response := manager.HandleRecordOperate(42, "room-1", "move"); response.OperateInfo != "" {
+		t.Fatalf("stopped Room acknowledged an unapplied operation: %#v", response)
+	}
+}
+
+func TestRoomManagerStopRespectsDeadlineAndRejectsLaterMatches(t *testing.T) {
+	manager := newTestRoomManager(t, &fakeTeamRoomProjection{}, &fakePlayerMessenger{}, time.Now, func() string { return "room-1" })
+	manager.AcceptMatch(context.Background(), matchentry.Admission{
+		MatchID: "match-1", Teams: []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+	})
+	room := manager.rooms["room-1"]
+	started, release := make(chan struct{}), make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
+	if err := actor.Tell(context.Background(), room.Ref(), func(actor.Context) error {
+		close(started)
+		<-release
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := manager.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop while Room is busy = %v", err)
+	}
+	result := manager.AcceptMatch(context.Background(), matchentry.Admission{
+		MatchID: "match-2", Teams: []matchentry.MatchedTeam{{TeamID: 8, PlayerIDs: []int64{43}}},
+	})
+	if result.Status != matchentry.Retryable {
+		t.Fatalf("match after Stop = %#v", result)
+	}
+	releaseOnce()
+	if err := room.Ref().Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRoomManagerStopRetriesPendingProjection(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(canceled), func(t *testing.T) {
+			projection := &fakeTeamRoomProjection{}
+			manager := newTestRoomManager(t, projection, &fakePlayerMessenger{}, time.Now, func() string { return "room-1" })
+			manager.AcceptMatch(context.Background(), matchentry.Admission{
+				MatchID: "match-1", Teams: []matchentry.MatchedTeam{{TeamID: 7, PlayerIDs: []int64{42}}},
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			failure := errors.New("projection unavailable")
+			if canceled {
+				cancel()
+				failure = context.Canceled
+			} else {
+				projection.err = failure
+			}
+			if err := manager.Stop(ctx); !errors.Is(err, failure) {
+				t.Fatalf("first Stop = %v; want %v", err, failure)
+			}
+			beforeRetry := len(projection.applied)
+			projection.err = nil
+			if err := manager.Stop(context.Background()); err != nil {
+				t.Fatalf("retry Stop = %v", err)
+			}
+			if len(projection.applied) != beforeRetry+1 {
+				t.Fatalf("retry did not apply the pending projection: before=%d after=%d", beforeRetry, len(projection.applied))
+			}
+			last := projection.applied[len(projection.applied)-1]
+			if !slices.Equal(last, []participant.DesiredTeamRoom{{TeamID: 7, RoomID: ""}}) {
+				t.Fatalf("retry left stale RoomID: %#v", last)
+			}
+			applied := len(projection.applied)
+			if err := manager.Stop(context.Background()); err != nil || len(projection.applied) != applied {
+				t.Fatalf("completed cleanup was repeated: err=%v calls=%d", err, len(projection.applied))
 			}
 		})
 	}

@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"gameserver/common/db/mongodb"
@@ -14,12 +15,12 @@ import (
 // rankDocumentStore 的 Mongo 与 BSON 内存实现共用迁移、保存顺序和重试逻辑。
 // 只在 Rank Actor 内同步使用；读写文档均不保留 Actor 状态的引用。
 type rankDocumentStore interface {
-	LoadRank() (*documents.RankManager, error)
-	LoadSeason() (*SeasonManager, error)
-	LoadBoards() ([]documents.Leaderboard, error)
-	Save(mongodb.PersistData) error
-	InsertBoard(*documents.Leaderboard) error
-	DeleteBoard(string) error
+	LoadRank(ctx context.Context) (*documents.RankManager, error)
+	LoadSeason(ctx context.Context) (*SeasonManager, error)
+	LoadBoards(ctx context.Context) ([]documents.Leaderboard, error)
+	Save(context.Context, mongodb.PersistData) error
+	InsertBoard(context.Context, *documents.Leaderboard) error
+	DeleteBoard(context.Context, string) error
 }
 
 type rankRepository struct{ store rankDocumentStore }
@@ -30,8 +31,8 @@ type rankState struct {
 	boards   []documents.Leaderboard
 }
 
-func (r *rankRepository) Load() (*rankState, error) {
-	season, err := r.store.LoadSeason()
+func (r *rankRepository) Load(ctx context.Context) (*rankState, error) {
+	season, err := r.store.LoadSeason(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load season: %w", err)
 	}
@@ -39,7 +40,7 @@ func (r *rankRepository) Load() (*rankState, error) {
 		season = &SeasonManager{PersistId: 1}
 	}
 	season.AfterLoad()
-	metadata, err := r.store.LoadRank()
+	metadata, err := r.store.LoadRank(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load rank metadata: %w", err)
 	}
@@ -51,11 +52,11 @@ func (r *rankRepository) Load() (*rankState, error) {
 		return nil, fmt.Errorf("unsupported rank storage version: %d", metadata.StorageVersion)
 	}
 	if metadata.StorageVersion < documents.StorageVersion {
-		if err := r.migrate(metadata, season); err != nil {
+		if err := r.migrate(ctx, metadata, season); err != nil {
 			return nil, err
 		}
 	}
-	boards, err := r.store.LoadBoards()
+	boards, err := r.store.LoadBoards(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load leaderboards: %w", err)
 	}
@@ -71,7 +72,7 @@ func (r *rankRepository) Load() (*rankState, error) {
 	return &rankState{metadata: metadata, season: season, boards: boards}, nil
 }
 
-func (r *rankRepository) migrate(metadata *documents.RankManager, season *SeasonManager) error {
+func (r *rankRepository) migrate(ctx context.Context, metadata *documents.RankManager, season *SeasonManager) error {
 	var failures []error
 	for rankType, seasons := range metadata.RankCache {
 		if !validRankType(rankType) {
@@ -88,7 +89,7 @@ func (r *rankRepository) migrate(metadata *documents.RankManager, season *Season
 			}
 			board := &documents.Leaderboard{PersistId: documents.BoardID(rankType, seasonID), RankSnapshot: copy}
 			// 即使新文档是空榜也不能覆盖；迁移中断后只补齐缺失的文档。
-			if err := r.store.InsertBoard(board); err != nil {
+			if err := r.store.InsertBoard(ctx, board); err != nil {
 				failures = append(failures, fmt.Errorf("migrate leaderboard %s: %w", board.PersistId, err))
 			}
 		}
@@ -98,53 +99,37 @@ func (r *rankRepository) migrate(metadata *documents.RankManager, season *Season
 	}
 	metadata.StorageVersion = documents.StorageVersion
 	metadata.RankCache = nil
-	if err := r.store.Save(metadata); err != nil {
+	if err := r.store.Save(ctx, metadata); err != nil {
 		return fmt.Errorf("finish rank migration: %w", err)
 	}
 	return nil
 }
 
-func (r *rankRepository) Save(manager *RankManager) error {
+func (r *rankRepository) Save(ctx context.Context, state *rankState) error {
 	var failures []error
-	for _, seasons := range manager.rankCache {
-		for _, rank := range seasons {
-			snapshot := rank.Export()
-			board := &documents.Leaderboard{
-				PersistId: documents.BoardID(snapshot.RankType, snapshot.Season), RankSnapshot: snapshot,
-			}
-			if err := r.store.Save(board); err != nil {
-				failures = append(failures, fmt.Errorf("save leaderboard %s: %w", board.PersistId, err))
-			}
+	for i := range state.boards {
+		board := &state.boards[i]
+		if err := r.store.Save(ctx, board); err != nil {
+			failures = append(failures, fmt.Errorf("save leaderboard %s: %w", board.PersistId, err))
 		}
 	}
 	if err := errors.Join(failures...); err != nil {
 		return err
 	}
-	metadata := &documents.RankManager{
-		PersistId: 1, StorageVersion: documents.StorageVersion, CodeIndex: manager.codeIndex,
-		ChallengeCodeCache: make(map[int32]*models.ChallengeCode, len(manager.challengeCodeCache)),
-	}
-	for code, info := range manager.challengeCodeCache {
-		if info != nil {
-			copy := *info
-			metadata.ChallengeCodeCache[code] = &copy
-		}
-	}
-	if err := r.store.Save(metadata); err != nil {
+	if err := r.store.Save(ctx, state.metadata); err != nil {
 		return fmt.Errorf("save rank metadata: %w", err)
 	}
-	season := *manager.season
-	if err := r.store.Save(&season); err != nil {
+	if err := r.store.Save(ctx, state.season); err != nil {
 		return fmt.Errorf("save season: %w", err)
 	}
 	// 只有所有活跃榜及元数据都落盘后，才清理过期赛季。
-	boards, err := r.store.LoadBoards()
+	boards, err := r.store.LoadBoards(ctx)
 	if err != nil {
 		return fmt.Errorf("load expired leaderboards: %w", err)
 	}
 	for _, board := range boards {
-		if board.RankType == message.RankType_RankType_LadderPoint && board.Season < season.Season-1 {
-			if err := r.store.DeleteBoard(board.PersistId); err != nil {
+		if board.RankType == message.RankType_RankType_LadderPoint && board.Season < state.season.Season-1 {
+			if err := r.store.DeleteBoard(ctx, board.PersistId); err != nil {
 				failures = append(failures, fmt.Errorf("delete expired leaderboard %s: %w", board.PersistId, err))
 			}
 		}
@@ -170,41 +155,29 @@ func retainedBoard(rankType message.RankType, season, current int32) bool {
 
 type mongoRankStore struct{}
 
-func (mongoRankStore) LoadRank() (*documents.RankManager, error) {
-	return mongodb.FindOneById[documents.RankManager](int64(1))
+func (mongoRankStore) LoadRank(ctx context.Context) (*documents.RankManager, error) {
+	return mongodb.FindOneByIDContext[documents.RankManager](ctx, int64(1))
 }
 
-func (mongoRankStore) LoadSeason() (*SeasonManager, error) {
-	return mongodb.FindOneById[SeasonManager](int64(1))
+func (mongoRankStore) LoadSeason(ctx context.Context) (*SeasonManager, error) {
+	return mongodb.FindOneByIDContext[SeasonManager](ctx, int64(1))
 }
 
-func (mongoRankStore) LoadBoards() ([]documents.Leaderboard, error) {
-	return mongodb.FindAll[documents.Leaderboard](bson.M{})
+func (mongoRankStore) LoadBoards(ctx context.Context) ([]documents.Leaderboard, error) {
+	return mongodb.FindAllContext[documents.Leaderboard](ctx, bson.M{})
 }
 
-func (mongoRankStore) Save(data mongodb.PersistData) error {
-	result, err := mongodb.Save(data)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return fmt.Errorf("MongoDB is not initialized")
-	}
-	return nil
-}
-
-func (mongoRankStore) InsertBoard(board *documents.Leaderboard) error {
-	_, err := mongodb.SaveIfAbsent(board)
+func (mongoRankStore) Save(ctx context.Context, data mongodb.PersistData) error {
+	_, err := mongodb.SaveContext(ctx, data)
 	return err
 }
 
-func (mongoRankStore) DeleteBoard(id string) error {
-	result, err := mongodb.DeleteByID[documents.Leaderboard](id)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return fmt.Errorf("MongoDB is not initialized")
-	}
-	return nil
+func (mongoRankStore) InsertBoard(ctx context.Context, board *documents.Leaderboard) error {
+	_, err := mongodb.SaveIfAbsentContext(ctx, board)
+	return err
+}
+
+func (mongoRankStore) DeleteBoard(ctx context.Context, id string) error {
+	_, err := mongodb.DeleteByIDContext[documents.Leaderboard](ctx, id)
+	return err
 }

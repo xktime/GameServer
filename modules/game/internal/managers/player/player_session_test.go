@@ -29,7 +29,7 @@ func (a *lifecycleAgent) SetUserData(data any)          { a.userData = data }
 
 func TestPlayerStopDoesNotOwnSessionConnection(t *testing.T) {
 	agent := &lifecycleAgent{}
-	player := &Player{PlayerId: 42, repository: &fakePlayerRepository{}}
+	player := &playerActor{Player: Player{PlayerId: 42}, repository: &fakePlayerRepository{}}
 	state := playersession.NewState()
 	state.Register(agent)
 	attempt, err := state.Begin(agent.ConnectionID(), 1)

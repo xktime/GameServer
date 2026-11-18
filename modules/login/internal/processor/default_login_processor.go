@@ -30,7 +30,7 @@ func NewDefaultLoginProcessor() *DefaultLoginProcessor {
 	return &DefaultLoginProcessor{}
 }
 
-func (p *DefaultLoginProcessor) ReqLogin(agent gate.Agent, context context.Context, req *message.C2S_Login) *models.LoginResponse {
+func (p *DefaultLoginProcessor) ReqLogin(agent gate.Agent, ctx context.Context, req *message.C2S_Login) *models.LoginResponse {
 	if !conf.Server.Debug.AllowDefaultLogin {
 		return &models.LoginResponse{
 			ErrCode: -1,
@@ -46,7 +46,7 @@ func (p *DefaultLoginProcessor) ReqLogin(agent gate.Agent, context context.Conte
 
 	ip := agent.RemoteAddr().(*net.TCPAddr).IP.String()
 	code := ip + "_" + req.Code
-	accountCache, err := mongodb.FindOneById[AccountCache](code)
+	accountCache, err := mongodb.FindOneByIDContext[AccountCache](ctx, code)
 	if err != nil {
 		return &models.LoginResponse{
 			ErrCode: -1,
@@ -63,7 +63,7 @@ func (p *DefaultLoginProcessor) ReqLogin(agent gate.Agent, context context.Conte
 		}
 	} else {
 		openId := strconv.FormatInt(utils.FlakeId(), 10)
-		mongodb.Save(AccountCache{
+		mongodb.SaveContext(ctx, AccountCache{
 			Code:   code,
 			OpenId: openId,
 		})

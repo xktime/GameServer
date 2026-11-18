@@ -2,6 +2,7 @@ package managers
 
 import (
 	"context"
+	"errors"
 	"gameserver/common/msg/message"
 	"gameserver/core/gate"
 	"gameserver/modules/login/internal/models"
@@ -35,7 +36,7 @@ func TestAuthWorkerPoolRejectsTasksAfterQueueIsFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建认证 Worker Pool: %v", err)
 	}
-	defer p.close()
+	defer p.close(context.Background())
 
 	completed := make(chan struct{}, 2)
 	task := func() authTask {
@@ -77,7 +78,7 @@ func TestAuthWorkerPoolPassesTimeoutToAuthenticator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建认证 Worker Pool: %v", err)
 	}
-	defer p.close()
+	defer p.close(context.Background())
 
 	responses := make(chan *models.LoginResponse, 1)
 	if err := p.submit(authTask{
@@ -98,3 +99,29 @@ func TestAuthWorkerPoolPassesTimeoutToAuthenticator(t *testing.T) {
 }
 
 var _ gate.ConnectionAgent = (*testConnectionAgent)(nil)
+
+func TestAuthWorkerPoolCloseRespectsDeadlineAndCanWaitAgain(t *testing.T) {
+	authenticator := &blockingAuthenticator{started: make(chan struct{}), release: make(chan struct{})}
+	pool, err := newAuthWorkerPool(authenticator, 1, 1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := sync.OnceFunc(func() { close(authenticator.release) })
+	t.Cleanup(func() { release(); _ = pool.close(context.Background()) })
+	if err := pool.submit(authTask{agent: &testConnectionAgent{id: 1}, request: &message.C2S_Login{}}); err != nil {
+		t.Fatal(err)
+	}
+	<-authenticator.started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := pool.close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("close while authentication is running = %v", err)
+	}
+	if err := pool.submit(authTask{}); !errors.Is(err, ErrAuthPoolClosed) {
+		t.Fatalf("submit after close = %v", err)
+	}
+	release()
+	if err := pool.close(context.Background()); err != nil {
+		t.Fatalf("wait for the same shutdown = %v", err)
+	}
+}
